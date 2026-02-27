@@ -27,6 +27,10 @@ argon2 = "0.5"
 jsonwebtoken = "9"
 oauth2 = "4"
 validator = { version = "0.18", features = ["derive"] }
+sha2 = "0.10"
+getrandom = "0.2"
+regex = "1"
+once_cell = "1"
 
 # IDs & time
 uuid = { version = "1", features = ["v4", "serde"] }

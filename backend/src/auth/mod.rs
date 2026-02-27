@@ -1,26 +1,30 @@
-use axum::Router;
-use uuid::Uuid;
+pub mod handlers;
+pub mod middleware;
+pub mod service;
+
+use axum::{routing::{delete, get, post}, Router};
 
 use crate::AppState;
 
+pub use middleware::{AuthUser, LoginRateLimiter, OptionalAuthUser};
+pub use service::{AccessClaims, JwtKeys};
+
 pub fn router() -> Router<AppState> {
     Router::new()
+        .route("/register", post(handlers::register))
+        .route("/login", post(handlers::login))
+        .route("/refresh", post(handlers::refresh))
+        .route("/logout", delete(handlers::logout))
+        .route("/verify-email", get(handlers::verify_email))
+        .route("/password-reset/request", post(handlers::request_password_reset))
+        // OAuth routes wired in S2 Week 6
+        // .route("/oauth/discord", get(oauth::discord_redirect))
+        // .route("/oauth/discord/callback", get(oauth::discord_callback))
 }
 
-/// JWT claims returned after token validation.
-#[derive(Debug)]
-pub struct Claims {
-    pub sub: Uuid,
-    pub exp: i64,
-}
-
-/// Validates an RS256 JWT access token.
-/// Returns Claims on success, or an error if invalid/expired.
-/// Full implementation in Phase 2 (auth module).
-pub async fn validate_access_token(
-    _token: &str,
-    _pool: &sqlx::PgPool,
-) -> anyhow::Result<Claims> {
-    // TODO: Phase 2 — parse & verify RS256 JWT, check exp, return Claims
-    anyhow::bail!("Auth not yet implemented — Phase 2")
+/// Called by the WebSocket hub to validate the first-message auth token.
+pub fn validate_ws_token(token: &str, keys: &JwtKeys) -> Option<uuid::Uuid> {
+    service::validate_access_token(token, keys)
+        .ok()
+        .map(|t| t.claims.sub)
 }

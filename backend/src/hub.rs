@@ -231,11 +231,7 @@ async fn wait_for_auth(
 }
 
 async fn validate_ws_token(token: &str, state: &AppState) -> Option<Uuid> {
-    // Delegate to auth module's JWT validation
-    crate::auth::validate_access_token(token, state.db.pool())
-        .await
-        .ok()
-        .map(|claims| claims.sub)
+    crate::auth::validate_ws_token(token, &state.jwt_keys)
 }
 
 async fn deliver_offline_messages(user_id: &Uuid, state: &AppState, tx: &ConnTx) {

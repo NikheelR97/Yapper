@@ -1,19 +1,32 @@
 use axum::{
     extract::State,
-    http::StatusCode,
+    http::{HeaderValue, Method, StatusCode},
     response::IntoResponse,
     routing::get,
     Json, Router,
 };
+use governor::{clock::DefaultClock, state::keyed::DefaultKeyedStateStore, RateLimiter};
 use serde_json::json;
-use std::sync::Arc;
+use std::{net::IpAddr, num::NonZeroU32, sync::Arc};
 use tokio::net::TcpListener;
 use tower_http::{
     compression::CompressionLayer,
     cors::CorsLayer,
+    set_header::SetResponseHeaderLayer,
     trace::TraceLayer,
 };
+
+// Security header constants
+const NOSNIFF: &str = "nosniff";
+const DENY_FRAME: &str = "DENY";
+const HSTS: &str = "max-age=63072000; includeSubDomains; preload";
+const CSP_API: &str = "default-src 'none'; frame-ancestors 'none'";
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+/// Per-IP rate limiter shared across all API routes.
+/// 100 requests/minute per IP (burst of 20).
+pub type IpRateLimiter =
+    Arc<RateLimiter<IpAddr, DefaultKeyedStateStore<IpAddr>, DefaultClock>>;
 
 mod db;
 mod error;
@@ -33,6 +46,7 @@ mod bots;
 mod discord;
 mod notifications;
 
+use auth::{JwtKeys, LoginRateLimiter};
 use db::Database;
 use hub::Hub;
 
@@ -40,6 +54,9 @@ use hub::Hub;
 pub struct AppState {
     pub db: Database,
     pub hub: Arc<Hub>,
+    pub rate_limiter: IpRateLimiter,
+    pub jwt_keys: Arc<JwtKeys>,
+    pub login_limiter: Arc<LoginRateLimiter>,
 }
 
 #[tokio::main]
@@ -63,7 +80,15 @@ async fn main() -> anyhow::Result<()> {
     db.run_migrations().await?;
 
     let hub = Arc::new(Hub::new());
-    let state = AppState { db, hub };
+
+    // Per-IP rate limiter: 100 requests/min, burst of 20
+    let quota = governor::Quota::per_minute(NonZeroU32::new(100).unwrap())
+        .allow_burst(NonZeroU32::new(20).unwrap());
+    let rate_limiter: IpRateLimiter = Arc::new(RateLimiter::keyed(quota));
+    let jwt_keys = Arc::new(JwtKeys::from_env()?);
+    let login_limiter = Arc::new(LoginRateLimiter::new());
+
+    let state = AppState { db, hub, rate_limiter, jwt_keys, login_limiter };
 
     let app = Router::new()
         .route("/health", get(health_handler))
@@ -71,6 +96,23 @@ async fn main() -> anyhow::Result<()> {
         .nest("/api/v1", api_router())
         .layer(TraceLayer::new_for_http())
         .layer(CompressionLayer::new())
+        // Security response headers
+        .layer(SetResponseHeaderLayer::overriding(
+            axum::http::header::X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static(NOSNIFF),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            axum::http::header::X_FRAME_OPTIONS,
+            HeaderValue::from_static(DENY_FRAME),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            axum::http::header::STRICT_TRANSPORT_SECURITY,
+            HeaderValue::from_static(HSTS),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            axum::http::header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static(CSP_API),
+        ))
         .layer(cors_layer())
         .with_state(state);
 
@@ -103,7 +145,6 @@ fn api_router() -> Router<AppState> {
 }
 
 fn cors_layer() -> CorsLayer {
-    use axum::http::{HeaderValue, Method};
     use tower_http::cors::Any;
 
     let origins: Vec<HeaderValue> = std::env::var("CORS_ORIGINS")
