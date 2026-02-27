@@ -1,0 +1,45 @@
+app = "yapper-api"
+primary_region = "lhr"  # London — change to nearest region
+
+[build]
+  dockerfile = "Dockerfile"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false   # always-on (free tier includes 3 VMs)
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 500
+    soft_limit = 400
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1
+
+[env]
+  HOST = "0.0.0.0"
+  PORT = "8080"
+  RUST_LOG = "info"
+  APP_ENV = "production"
+
+# Secrets (set via: fly secrets set KEY=value — never commit actual values)
+# DATABASE_URL
+# JWT_PRIVATE_KEY
+# JWT_PUBLIC_KEY
+# R2_ACCOUNT_ID
+# R2_ACCESS_KEY_ID
+# R2_SECRET_ACCESS_KEY
+# R2_BUCKET_NAME
+# R2_ENDPOINT
+# R2_PUBLIC_URL
+# RESEND_API_KEY
+# DISCORD_CLIENT_ID
+# DISCORD_CLIENT_SECRET
+# GOOGLE_CLIENT_ID
+# GOOGLE_CLIENT_SECRET
+# CORS_ORIGINS

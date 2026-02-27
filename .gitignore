@@ -1,0 +1,63 @@
+# Rust
+target/
+Cargo.lock
+**/*.rs.bk
+*.pdb
+
+# Node / Frontend
+node_modules/
+.svelte-kit/
+build/
+dist/
+.output/
+.vercel/
+.netlify/
+
+# Tauri
+src-tauri/target/
+
+# Capacitor
+ios/
+android/
+
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Cloudflare / Wrangler
+.wrangler/
+worker-build/
+
+# Editors
+.vscode/
+.idea/
+*.suo
+*.user
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Sentry
+.sentryclirc
+
+# sqlx offline cache
+.sqlx/
+
+# Firebase
+**/service-account.json
+**/google-services.json
+**/GoogleService-Info.plist
+
+# PDF exports (generated docs, not source)
+*.pdf
+
+# Build artifacts
+*.wasm

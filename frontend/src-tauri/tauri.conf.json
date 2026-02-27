@@ -1,0 +1,63 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Yapper",
+  "version": "0.1.0",
+  "identifier": "com.yapper.app",
+  "build": {
+    "frontendDist": "../build",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Yapper",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600,
+        "decorations": false,
+        "transparent": false,
+        "resizable": true,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' http://localhost:8080 ws://localhost:8080 https://api.yapper.app wss://api.yapper.app https://*.r2.cloudflarestorage.com; img-src 'self' data: https:; media-src 'self' blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'"
+    },
+    "trayIcon": {
+      "iconPath": "icons/tray.png",
+      "tooltip": "Yapper",
+      "menuOnLeftClick": false
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  },
+  "plugins": {
+    "deep-link": {
+      "mobile": [
+        {
+          "host": "yapper.app",
+          "pathPrefix": ["/invite"]
+        }
+      ],
+      "desktop": {
+        "schemes": ["yapper"]
+      }
+    },
+    "updater": {
+      "endpoints": ["https://api.yapper.app/updates/{{target}}/{{arch}}/{{current_version}}"],
+      "dialog": true
+    }
+  }
+}

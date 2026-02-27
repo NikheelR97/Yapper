@@ -1,0 +1,122 @@
+/* ─── CSS Variables: Yapper Design System ───────────────────────────────────── */
+:root {
+	/* Brand */
+	--color-brand: #7C3AED;       /* violet-600 */
+	--color-brand-light: #A78BFA; /* violet-400 */
+	--color-brand-dark: #5B21B6;  /* violet-700 */
+
+	/* Backgrounds (dark theme default) */
+	--color-bg-base: #0F0F0F;
+	--color-bg-surface: #1A1A1A;
+	--color-bg-elevated: #222222;
+	--color-bg-overlay: rgba(0, 0, 0, 0.7);
+
+	/* Text */
+	--color-text-primary: #FAFAFA;
+	--color-text-secondary: #A1A1AA;
+	--color-text-muted: #52525B;
+
+	/* Borders */
+	--color-border: #2A2A2A;
+	--color-border-subtle: #1E1E1E;
+
+	/* Feedback */
+	--color-success: #22C55E;
+	--color-warning: #F59E0B;
+	--color-error: #EF4444;
+	--color-info: #3B82F6;
+
+	/* Typography */
+	--font-sans: 'Inter', 'Segoe UI', system-ui, sans-serif;
+	--font-mono: 'JetBrains Mono', 'Cascadia Code', monospace;
+
+	/* Spacing */
+	--radius-sm: 6px;
+	--radius-md: 10px;
+	--radius-lg: 16px;
+	--radius-full: 9999px;
+
+	/* Transitions */
+	--transition-fast: 100ms ease;
+	--transition-base: 200ms ease;
+	--transition-slow: 350ms ease;
+}
+
+/* Light theme override */
+[data-theme='light'] {
+	--color-bg-base: #FFFFFF;
+	--color-bg-surface: #F4F4F5;
+	--color-bg-elevated: #E4E4E7;
+	--color-text-primary: #09090B;
+	--color-text-secondary: #52525B;
+	--color-text-muted: #A1A1AA;
+	--color-border: #D4D4D8;
+	--color-border-subtle: #E4E4E7;
+}
+
+/* ─── Reset ──────────────────────────────────────────────────────────────────── */
+*, *::before, *::after {
+	box-sizing: border-box;
+	margin: 0;
+	padding: 0;
+}
+
+html {
+	font-family: var(--font-sans);
+	font-size: 16px;
+	line-height: 1.5;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+body {
+	background-color: var(--color-bg-base);
+	color: var(--color-text-primary);
+	min-height: 100vh;
+	min-height: 100dvh;
+	overflow-x: hidden;
+}
+
+a {
+	color: var(--color-brand-light);
+	text-decoration: none;
+}
+
+a:hover {
+	text-decoration: underline;
+}
+
+button {
+	cursor: pointer;
+	font-family: inherit;
+}
+
+img {
+	max-width: 100%;
+	height: auto;
+}
+
+/* ─── Scrollbar ──────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+	width: 6px;
+	height: 6px;
+}
+
+::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+	background: var(--color-border);
+	border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+	background: var(--color-text-muted);
+}
+
+/* ─── Focus ──────────────────────────────────────────────────────────────────── */
+:focus-visible {
+	outline: 2px solid var(--color-brand);
+	outline-offset: 2px;
+}

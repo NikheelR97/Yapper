@@ -1,0 +1,80 @@
+[package]
+name = "yapper-server"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+
+[[bin]]
+name = "yapper-server"
+path = "src/main.rs"
+
+[dependencies]
+# Web framework
+axum = { version = "0.7", features = ["ws", "multipart", "macros"] }
+tokio = { version = "1", features = ["full"] }
+tower = { version = "0.4", features = ["full"] }
+tower-http = { version = "0.5", features = ["cors", "trace", "compression-gzip", "set-header", "request-id"] }
+
+# Database
+sqlx = { version = "0.7", features = ["postgres", "uuid", "chrono", "runtime-tokio", "migrate"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Auth
+argon2 = "0.5"
+jsonwebtoken = "9"
+oauth2 = "4"
+validator = { version = "0.18", features = ["derive"] }
+
+# IDs & time
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+# Rate limiting (in-memory, no Redis)
+governor = { version = "0.6", features = ["dashmap"] }
+dashmap = "5"
+
+# HTTP client (Discord API, Resend, FCM)
+reqwest = { version = "0.11", features = ["json", "multipart"] }
+
+# Cloudflare R2 (S3-compatible)
+aws-sdk-s3 = "1"
+aws-config = "1"
+
+# Image processing (emoji WebP conversion — pure Rust, no ffmpeg)
+image = { version = "0.24", features = ["png", "gif", "jpeg", "webp"] }
+
+# Signal Protocol (native Rust — no WASM wrapper needed on server)
+# Used for OPK consumption validation and key bundle verification only
+# Full encryption/decryption happens on clients
+
+# Logging & tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Error handling
+thiserror = "1"
+anyhow = "1"
+
+# Async utilities
+tokio-stream = "0.1"
+futures = "0.3"
+async-trait = "0.1"
+
+# WebSocket
+tokio-tungstenite = "0.21"
+
+# Environment
+dotenvy = "0.15"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full", "test-util"] }
+axum-test = "14"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
