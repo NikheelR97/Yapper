@@ -1,3 +1,5 @@
+#![deny(warnings)]
+
 use axum::{
     extract::State,
     http::{HeaderValue, Method, StatusCode},

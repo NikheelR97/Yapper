@@ -28,6 +28,7 @@ pub fn router() -> Router<AppState> {
 // ─── Upload Identity Key ─────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct UploadIdentityKeyReq {
     device_id: i32,
     /// Base64-encoded X25519 public key (32 bytes) — used for DH in X3DH.
@@ -78,6 +79,7 @@ async fn upload_identity_key(
 // ─── Upload Signed PreKey ────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct UploadSignedPreKeyReq {
     device_id: i32,
     key_id: i32,
@@ -135,6 +137,7 @@ async fn upload_signed_prekey(
 // ─── Upload One-Time PreKeys ──────────────────────────────────────────────────
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct OtpkItem {
     key_id: i32,
     /// Base64-encoded X25519 public key (32 bytes).
@@ -142,6 +145,7 @@ struct OtpkItem {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct UploadOtpkReq {
     device_id: i32,
     keys: Vec<OtpkItem>,
@@ -319,6 +323,7 @@ async fn get_key_bundle(
 // Blob format (client-defined): base64( salt || iv || ciphertext || tag ).
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct PutBackupReq {
     /// Base64-encoded opaque encrypted blob.
     encrypted_blob: String,

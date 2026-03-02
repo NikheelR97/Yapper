@@ -27,6 +27,7 @@ pub fn router() -> Router<AppState> {
 // ─── Create or Get DM Conversation ───────────────────────────────────────────
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct CreateConversationReq {
     peer_id: Uuid,
 }

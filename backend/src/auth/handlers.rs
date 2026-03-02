@@ -328,6 +328,7 @@ pub async fn logout(
 // ─── Email verification ───────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct VerifyEmailQuery {
     pub token: String,
 }
