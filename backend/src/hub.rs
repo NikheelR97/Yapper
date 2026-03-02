@@ -45,6 +45,8 @@ pub struct Hub {
     connections: DashMap<Uuid, DashMap<ConnectionId, ConnTx>>,
     /// Per-user message rate limiters — cleaned up on full disconnect.
     msg_limiters: DashMap<Uuid, MsgRateLimiter>,
+    /// Typing auto-stop timers keyed by (channel_id, user_id). Aborted on new TypingStart.
+    pub typing_timers: DashMap<(Uuid, Uuid), tokio::task::JoinHandle<()>>,
 }
 
 impl Hub {
@@ -52,6 +54,7 @@ impl Hub {
         Self {
             connections: DashMap::new(),
             msg_limiters: DashMap::new(),
+            typing_timers: DashMap::new(),
         }
     }
 
@@ -371,10 +374,10 @@ async fn handle_inbound(text: String, user_id: Uuid, state: &AppState, tx: &Conn
             }
         }
         WsInbound::TypingStart { channel_id } => {
-            tracing::debug!("User {user_id} typing in channel {channel_id}");
+            handle_typing_start(channel_id, user_id, state).await;
         }
         WsInbound::Read { message_id, channel_id } => {
-            tracing::debug!("User {user_id} read message {message_id} in channel {channel_id}");
+            handle_mark_read(message_id, channel_id, user_id, state).await;
         }
         WsInbound::Reauth { token } => {
             if validate_ws_token(&token, state).await.is_none() {
@@ -622,6 +625,92 @@ async fn store_and_fanout_channel(
                 state.hub.send_to_user(&uid, WsOutbound::Message { payload: payload.clone() });
             }
         }
+    }
+}
+
+// ─── Typing indicators ────────────────────────────────────────────────────────
+
+/// Resolves member UUIDs for a channel (bounded to MAX_FANOUT_MEMBERS).
+async fn fetch_channel_member_ids(channel_id: Uuid, state: &AppState) -> Option<Vec<Uuid>> {
+    debug_assert!(channel_id != Uuid::nil());
+    debug_assert!(MAX_FANOUT_MEMBERS >= 100);
+
+    let server_row = sqlx::query("SELECT server_id FROM channels WHERE id = $1")
+        .bind(channel_id)
+        .fetch_optional(state.db.pool())
+        .await
+        .ok()
+        .flatten()?;
+    let server_id: Uuid = server_row.try_get("server_id").ok()?;
+
+    let rows = sqlx::query(
+        "SELECT user_id FROM server_memberships WHERE server_id = $1 LIMIT $2",
+    )
+    .bind(server_id)
+    .bind(MAX_FANOUT_MEMBERS)
+    .fetch_all(state.db.pool())
+    .await
+    .ok()?;
+
+    Some(rows.iter().filter_map(|r| r.try_get::<Uuid, _>("user_id").ok()).collect())
+}
+
+/// Fan out a TypingStart event and schedule an auto-stop after 5 seconds of silence.
+async fn handle_typing_start(channel_id: Uuid, user_id: Uuid, state: &AppState) {
+    debug_assert!(user_id != Uuid::nil());
+    debug_assert!(channel_id != Uuid::nil());
+
+    let Some(member_ids) = fetch_channel_member_ids(channel_id, state).await else { return };
+    let key = (channel_id, user_id);
+
+    // Abort any existing timer to reset the 5-second window
+    if let Some((_, old)) = state.hub.typing_timers.remove(&key) {
+        old.abort();
+    }
+
+    for uid in member_ids.iter().take(MAX_FANOUT_MEMBERS as usize) {
+        if *uid != user_id {
+            state.hub.send_to_user(uid, WsOutbound::Typing { channel_id, user_id });
+        }
+    }
+
+    let hub = Arc::clone(&state.hub);
+    let ids = member_ids;
+    let handle = tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        for uid in ids.iter().take(MAX_FANOUT_MEMBERS as usize) {
+            if *uid != user_id {
+                hub.send_to_user(uid, WsOutbound::TypingStop { channel_id, user_id });
+            }
+        }
+        hub.typing_timers.remove(&key);
+    });
+    state.hub.typing_timers.insert(key, handle);
+}
+
+// ─── Read receipts ────────────────────────────────────────────────────────────
+
+/// Upsert a read receipt and fan out ReadReceipt to all channel members.
+async fn handle_mark_read(message_id: Uuid, channel_id: Uuid, user_id: Uuid, state: &AppState) {
+    debug_assert!(user_id != Uuid::nil());
+    debug_assert!(message_id != Uuid::nil());
+
+    let ok = sqlx::query(
+        "INSERT INTO message_read_receipts (message_id, user_id) \
+         VALUES ($1, $2) ON CONFLICT (message_id, user_id) DO NOTHING",
+    )
+    .bind(message_id)
+    .bind(user_id)
+    .execute(state.db.pool())
+    .await;
+
+    if ok.is_err() {
+        return;
+    }
+
+    let Some(member_ids) = fetch_channel_member_ids(channel_id, state).await else { return };
+    for uid in member_ids.iter().take(MAX_FANOUT_MEMBERS as usize) {
+        state.hub.send_to_user(uid, WsOutbound::ReadReceipt { message_id, user_id });
     }
 }
 

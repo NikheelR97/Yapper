@@ -1,11 +1,22 @@
 <script lang="ts">
 	import { createEventDispatcher } from 'svelte';
+	import { sendTypingStart } from '$stores/ws.js';
 
 	export let disabled = false;
 	export let placeholder = 'Send a message…';
+	/** When set, typing events are emitted to the server for this channel. */
+	export let channelId: string | undefined = undefined;
 
 	let text = '';
+	let typingThrottle: ReturnType<typeof setTimeout> | null = null;
 	const dispatch = createEventDispatcher<{ send: string }>();
+
+	function handleInput() {
+		if (!channelId || typingThrottle) return;
+		sendTypingStart(channelId);
+		// Throttle to once per 2s — server auto-stops after 5s silence
+		typingThrottle = setTimeout(() => { typingThrottle = null; }, 2000);
+	}
 
 	function handleSubmit() {
 		const trimmed = text.trim();
@@ -25,6 +36,7 @@
 <form class="input-bar" on:submit|preventDefault={handleSubmit}>
 	<textarea
 		bind:value={text}
+		on:input={handleInput}
 		on:keydown={handleKeydown}
 		{placeholder}
 		{disabled}

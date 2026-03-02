@@ -7,6 +7,7 @@
 	import ServerSidebar from '$lib/components/chat/ServerSidebar.svelte';
 	import MessageList from '$lib/components/chat/MessageList.svelte';
 	import MessageInput from '$lib/components/chat/MessageInput.svelte';
+	import TypingIndicator from '$lib/components/chat/TypingIndicator.svelte';
 
 	$: serverId = $page.params.id ?? '';
 	$: channelId = $page.params.channelId ?? '';
@@ -92,10 +93,14 @@
 			{/if}
 		</div>
 
+		<!-- Typing indicator sits just above the input -->
+		<TypingIndicator {channelId} />
+
 		<!-- Input -->
 		<MessageInput
 			disabled={sending || preparing}
 			placeholder={channelName ? `Message #${channelName}…` : 'Message…'}
+			channelId={channelId}
 			on:send={handleSend}
 		/>
 	</div>

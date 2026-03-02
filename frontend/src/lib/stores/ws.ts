@@ -150,6 +150,18 @@ function doConnect(): void {
 				break;
 			}
 
+			case 'typing':
+				handlers.get('typing')?.forEach((h) => h(frame));
+				break;
+
+			case 'typing_stop':
+				handlers.get('typing_stop')?.forEach((h) => h(frame));
+				break;
+
+			case 'read_receipt':
+				handlers.get('read_receipt')?.forEach((h) => h(frame));
+				break;
+
 			case 'pong':
 				break;
 
@@ -176,6 +188,16 @@ function doConnect(): void {
 			}, reconnectDelay);
 		}
 	};
+}
+
+/** Notify the server that the current user is typing in a channel (throttle client-side). */
+export function sendTypingStart(channelId: string): boolean {
+	return wsSend({ type: 'typing_start', channel_id: channelId });
+}
+
+/** Notify the server that a message has been read. */
+export function sendMarkRead(messageId: string, channelId: string): boolean {
+	return wsSend({ type: 'read', message_id: messageId, channel_id: channelId });
 }
 
 function startPing(ws: WebSocket): void {
