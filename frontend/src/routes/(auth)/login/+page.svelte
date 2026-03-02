@@ -9,6 +9,8 @@
 	let error = '';
 	let loading = false;
 
+	const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:8080';
+
 	async function handleLogin() {
 		error = '';
 		loading = true;
@@ -93,13 +95,13 @@
 			<div class="divider"><span>or continue with</span></div>
 
 			<div class="social-buttons">
-				<a href="/api/v1/auth/oauth/discord" class="btn-social btn-discord">
+				<a href="{apiUrl}/auth/oauth/discord" class="btn-social btn-discord">
 					<svg width="18" height="14" viewBox="0 0 18 14" fill="currentColor" aria-hidden="true">
 						<path d="M15.245 1.187A14.76 14.76 0 0 0 11.58 0c-.166.3-.36.703-.492 1.023a13.67 13.67 0 0 0-4.178 0C6.78.703 6.58.3 6.415 0A14.745 14.745 0 0 0 2.747 1.19C.395 4.787-.242 8.29.076 11.74c1.595 1.202 3.14 1.932 4.658 2.41a11.38 11.38 0 0 0 .978-1.625 9.633 9.633 0 0 1-1.54-.756c.13-.097.256-.198.378-.302 2.974 1.4 6.2 1.4 9.14 0 .123.104.25.205.377.302-.492.297-1.012.553-1.54.757.283.578.61 1.12.978 1.625 1.52-.478 3.067-1.208 4.663-2.41.382-4.047-.657-7.522-2.922-10.554ZM6.007 9.613c-.9 0-1.64-.844-1.64-1.877 0-1.034.722-1.88 1.64-1.88.916 0 1.652.846 1.638 1.88 0 1.033-.72 1.877-1.638 1.877Zm6.063 0c-.9 0-1.638-.844-1.638-1.877 0-1.034.72-1.88 1.638-1.88.92 0 1.65.846 1.64 1.88 0 1.033-.72 1.877-1.64 1.877Z"/>
 					</svg>
 					Discord
 				</a>
-				<a href="/api/v1/auth/oauth/google" class="btn-social btn-google">
+				<a href="{apiUrl}/auth/oauth/google" class="btn-social btn-google">
 					<svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
 						<path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.616Z"/>
 						<path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18Z"/>

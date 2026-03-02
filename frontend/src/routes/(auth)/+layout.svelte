@@ -3,10 +3,14 @@
 	import { onMount } from 'svelte';
 	import { get } from 'svelte/store';
 	import { authStore } from '$stores/auth.js';
-</script>
 
-<!-- Redirect to app if already logged in -->
-{#if false}<!-- handled in onMount -->{/if}
+	onMount(() => {
+		// If already logged in, redirect to app
+		if (get(authStore).user) {
+			goto('/explore');
+		}
+	});
+</script>
 
 <slot />
 

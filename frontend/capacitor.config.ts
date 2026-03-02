@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-	appId: 'com.yapper.app',
+	appId: 'com.yapperhq.app',
 	appName: 'Yapper',
 	webDir: 'build',
 	server: {

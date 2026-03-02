@@ -1,74 +1,268 @@
 /**
- * Signal Protocol WASM wrapper.
- * Wraps @signalapp/libsignal-client for use in browser/Tauri/Capacitor webviews.
+ * Signal Protocol wrapper — main API.
  *
- * Full implementation: Phase 3 (E2EE core).
- * This file establishes the module shape and WASM initialization pattern.
+ * Uses @noble/curves (Ed25519 + X25519) and Web Crypto AES-256-GCM.
+ * Works in all WebView environments: Tauri, Capacitor, and Web PWA.
+ *
+ * Typical call order:
+ *   1. generateIdentityKey()       — on first account setup
+ *   2. generateSignedPreKey(id)    — on setup + rotate weekly
+ *   3. generateOneTimePreKeys(100) — on setup + refill when low
+ *   4. uploadKeysToServer()        — after generating
+ *   5. encryptDm() / decryptDm()   — for each message
  */
 
-let initialized = false;
+import { x25519, ed25519 } from '@noble/curves/ed25519.js';
+import { api } from '$api/client.js';
+import * as ks from './keystore.js';
+import { x3dhInitiate, x3dhRespond } from './x3dh.js';
+import { encryptRatchet, decryptRatchet } from './ratchet.js';
+import type {
+	IdentityKeyPair,
+	KeyBundle,
+	PreKeyPair,
+	SignedPreKey,
+	Session,
+	EncryptedMessage,
+} from './types.js';
+
+export type { IdentityKeyPair, KeyBundle, PreKeyPair, SignedPreKey, Session, EncryptedMessage };
+export { backupKeys, restoreKeys } from './backup.js';
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function bytesToB64(bytes: Uint8Array): string {
+	return btoa(String.fromCharCode(...bytes));
+}
+
+function b64ToBytes(b64: string): Uint8Array {
+	return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+}
+
+// ─── Key Generation ───────────────────────────────────────────────────────────
 
 /**
- * Initialize the Signal WASM module.
- * Must be called once on app start (layout.svelte onMount) before any crypto operations.
+ * Generate a fresh identity key pair.
+ * Call once on first device registration; persist via keystore.
  */
-export async function initSignal(): Promise<void> {
-	if (initialized) return;
-
-	// @signalapp/libsignal-client ships a WASM binary that must be initialized
-	// before any Signal operations. This takes ~200ms on first call.
-	const { initializeFfi } = await import('@signalapp/libsignal-client');
-
-	// The WASM binary path — bundled by Vite
-	const wasmPath = new URL(
-		'@signalapp/libsignal-client/libsignal_client.wasm',
-		import.meta.url
-	);
-
-	await initializeFfi(wasmPath.href);
-	initialized = true;
+export async function generateIdentityKey(): Promise<IdentityKeyPair> {
+	const dhPrivateKey = x25519.utils.randomSecretKey();
+	const dhPublicKey = x25519.getPublicKey(dhPrivateKey);
+	const sigPrivateKey = ed25519.utils.randomSecretKey();
+	const sigPublicKey = ed25519.getPublicKey(sigPrivateKey);
+	return { dhPublicKey, dhPrivateKey, sigPublicKey, sigPrivateKey };
 }
 
 /**
- * Generate a new identity key pair (Ed25519 + X25519).
- * Called once during account creation/device registration.
- * Private key stored in keystore; public key uploaded to server.
+ * Generate a signed prekey.
+ * @param keyId  — monotonic integer, e.g. 1 for first key
  */
-export async function generateIdentityKey() {
-	// TODO: Phase 3 — implement with libsignal IdentityKeyPair
-	throw new Error('Signal Phase 3: generateIdentityKey not yet implemented');
-}
-
-/**
- * Generate a signed prekey for X3DH key exchange.
- * Rotated weekly.
- */
-export async function generateSignedPreKey(_identityKey: unknown, _keyId: number) {
-	// TODO: Phase 3 — implement with libsignal SignedPreKeyRecord
-	throw new Error('Signal Phase 3: generateSignedPreKey not yet implemented');
+export async function generateSignedPreKey(
+	identity: IdentityKeyPair,
+	keyId: number
+): Promise<SignedPreKey> {
+	const privateKey = x25519.utils.randomSecretKey();
+	const publicKey = x25519.getPublicKey(privateKey);
+	// Sign the X25519 public key with the Ed25519 identity signing key
+	const signature = ed25519.sign(publicKey, identity.sigPrivateKey);
+	return { keyId, publicKey, privateKey, signature, createdAt: Date.now() };
 }
 
 /**
  * Generate a batch of one-time prekeys.
- * @param count Number to generate (default: 100)
+ * @param count  — number of keys (default 100)
+ * @param startId — first key id in the batch
  */
-export async function generateOneTimePreKeys(_count = 100) {
-	// TODO: Phase 3 — implement with libsignal PreKeyRecord
-	throw new Error('Signal Phase 3: generateOneTimePreKeys not yet implemented');
+export async function generateOneTimePreKeys(
+	count = 100,
+	startId = 1
+): Promise<PreKeyPair[]> {
+	return Array.from({ length: count }, (_, i) => {
+		const privateKey = x25519.utils.randomSecretKey();
+		const publicKey = x25519.getPublicKey(privateKey);
+		return { keyId: startId + i, publicKey, privateKey };
+	});
+}
+
+// ─── Key Upload ───────────────────────────────────────────────────────────────
+
+/** Upload identity key to the server. Call once after generateIdentityKey(). */
+export async function uploadIdentityKey(identity: IdentityKeyPair): Promise<void> {
+	await api.post('/api/v1/keys/identity', {
+		device_id: 1,
+		dh_public_key: bytesToB64(identity.dhPublicKey),
+		signing_public_key: bytesToB64(identity.sigPublicKey),
+	});
+}
+
+/** Upload a signed prekey to the server. */
+export async function uploadSignedPreKey(spk: SignedPreKey): Promise<void> {
+	await api.post('/api/v1/keys/signed-prekey', {
+		device_id: 1,
+		key_id: spk.keyId,
+		public_key: bytesToB64(spk.publicKey),
+		signature: bytesToB64(spk.signature),
+	});
+}
+
+/** Upload a batch of one-time prekeys to the server. */
+export async function uploadOneTimePreKeys(prekeys: PreKeyPair[]): Promise<void> {
+	await api.post('/api/v1/keys/one-time-prekeys', {
+		device_id: 1,
+		keys: prekeys.map((k) => ({
+			key_id: k.keyId,
+			public_key: bytesToB64(k.publicKey),
+		})),
+	});
+}
+
+// ─── Full Setup ───────────────────────────────────────────────────────────────
+
+/**
+ * First-time key setup: generate all keys, persist locally, upload to server.
+ * Idempotent — if keys already exist in the keystore, this is a no-op.
+ */
+export async function setupKeys(): Promise<void> {
+	let identity = await ks.loadIdentityKeyPair();
+	if (identity) return; // Already set up
+
+	identity = await generateIdentityKey();
+	await ks.storeIdentityKeyPair(identity);
+
+	const spk = await generateSignedPreKey(identity, 1);
+	await ks.storeSignedPreKey(spk);
+
+	const prekeys = await generateOneTimePreKeys(100, 1);
+	for (const pk of prekeys) {
+		await ks.storePreKey(pk);
+	}
+
+	// Upload all keys to server
+	await uploadIdentityKey(identity);
+	await uploadSignedPreKey(spk);
+	await uploadOneTimePreKeys(prekeys);
 }
 
 /**
- * Encrypt a plaintext message using an established Signal session.
+ * Check OPK count on server and replenish if below threshold.
+ * Call after setupKeys() on each app start.
  */
-export async function encryptMessage(_sessionId: string, _plaintext: Uint8Array) {
-	// TODO: Phase 3 — SessionCipher.encrypt
-	throw new Error('Signal Phase 3: encryptMessage not yet implemented');
+export async function replenishPreKeysIfNeeded(): Promise<void> {
+	const { count, low } = await api.get<{ count: number; low: boolean }>(
+		'/api/v1/keys/one-time-prekey-count'
+	);
+	if (!low) return;
+
+	const identity = await ks.loadIdentityKeyPair();
+	if (!identity) return;
+
+	const existing = await ks.countPreKeys();
+	const startId = existing + 1;
+	const newKeys = await generateOneTimePreKeys(100, startId);
+	for (const pk of newKeys) {
+		await ks.storePreKey(pk);
+	}
+	await uploadOneTimePreKeys(newKeys);
+	console.debug(`[Signal] Replenished ${newKeys.length} OPKs (was ${count})`);
 }
 
+// ─── Encrypt DM ───────────────────────────────────────────────────────────────
+
 /**
- * Decrypt a ciphertext using an established Signal session.
+ * Encrypt a plaintext message for a DM conversation.
+ * If no session exists yet, initiates X3DH and returns ephemeral key info.
  */
-export async function decryptMessage(_sessionId: string, _ciphertext: Uint8Array) {
-	// TODO: Phase 3 — SessionCipher.decrypt
-	throw new Error('Signal Phase 3: decryptMessage not yet implemented');
+export async function encryptDm(
+	conversationId: string,
+	peerId: string,
+	plaintext: string
+): Promise<EncryptedMessage> {
+	let session = await ks.loadSession(conversationId);
+
+	let ephemeralKey: string | undefined;
+	let opkId: number | undefined;
+
+	if (!session) {
+		// No session — initiate X3DH
+		const identity = await ks.loadIdentityKeyPair();
+		if (!identity) throw new Error('No identity key — call setupKeys() first');
+
+		const bundle = await api.get<KeyBundle>(`/api/v1/keys/${peerId}`);
+		const result = await x3dhInitiate(identity, bundle, conversationId);
+
+		session = result.session;
+		ephemeralKey = bytesToB64(result.ephemeralPublicKey);
+		opkId = result.usedOpkId ?? undefined;
+	}
+
+	const plainBytes = new TextEncoder().encode(plaintext);
+	const { ciphertext, msgNum, updatedSession } = await encryptRatchet(session, plainBytes);
+
+	await ks.storeSession(updatedSession);
+
+	return {
+		ciphertext: bytesToB64(ciphertext),
+		ephemeralKey,
+		opkId,
+		msgNum,
+	};
+}
+
+// ─── Decrypt DM ───────────────────────────────────────────────────────────────
+
+/**
+ * Decrypt a received DM message.
+ * On first message from a peer, reconstructs the X3DH session (responder side).
+ */
+export async function decryptDm(
+	conversationId: string,
+	peerId: string,
+	msg: {
+		ciphertext: string;
+		ephemeral_key?: string | null;
+		opk_id?: number | null;
+	}
+): Promise<string> {
+	let session = await ks.loadSession(conversationId);
+	const cipherBytes = b64ToBytes(msg.ciphertext);
+
+	if (!session) {
+		// First message — perform X3DH responder role
+		if (!msg.ephemeral_key) {
+			throw new Error('No session and no ephemeral key — cannot decrypt');
+		}
+
+		const identity = await ks.loadIdentityKeyPair();
+		if (!identity) throw new Error('No identity key');
+
+		const spk = await ks.loadLatestSignedPreKey();
+		if (!spk) throw new Error('No signed prekey');
+
+		const opk = msg.opk_id != null ? await ks.loadPreKey(msg.opk_id) : null;
+		const ephemeralPubKey = b64ToBytes(msg.ephemeral_key);
+
+		// Fetch sender's DH public key from server to use in X3DH
+		const senderBundle = await api.get<KeyBundle>(`/api/v1/keys/${peerId}`);
+		const senderDhPub = b64ToBytes(senderBundle.identity_dh_key);
+
+		session = await x3dhRespond(
+			identity,
+			spk,
+			opk,
+			ephemeralPubKey,
+			senderDhPub,
+			conversationId,
+			peerId
+		);
+
+		// Delete consumed OPK
+		if (msg.opk_id != null) {
+			await ks.deletePreKey(msg.opk_id);
+		}
+	}
+
+	const { plaintext, updatedSession } = await decryptRatchet(session, cipherBytes);
+	await ks.storeSession(updatedSession);
+
+	return new TextDecoder().decode(plaintext);
 }

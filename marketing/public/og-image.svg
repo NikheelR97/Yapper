@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <!-- 3D sphere gradient -->
+    <radialGradient id="og-sphere" cx="35%" cy="35%" r="70%">
+      <stop offset="0%" stop-color="#c4b5fd"/>
+      <stop offset="45%" stop-color="#7c3aed"/>
+      <stop offset="100%" stop-color="#2e1065"/>
+    </radialGradient>
+
+    <!-- Ambient background glow -->
+    <radialGradient id="og-bg-glow" cx="50%" cy="45%" r="50%">
+      <stop offset="0%" stop-color="#7c3aed" stop-opacity="0.12"/>
+      <stop offset="70%" stop-color="#7c3aed" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Sphere drop shadow / glow -->
+    <filter id="og-shadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="16" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.486  0 0 0 0 0.227  0 0 0 0 0.929  0 0 0 0.5 0" result="colorBlur"/>
+      <feMerge>
+        <feMergeNode in="colorBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Specular highlight -->
+    <radialGradient id="og-hl" cx="38%" cy="30%" r="25%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Wordmark gradient -->
+    <linearGradient id="og-text" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#c4b5fd"/>
+      <stop offset="50%" stop-color="#7c3aed"/>
+      <stop offset="100%" stop-color="#a78bfa"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Dark background -->
+  <rect width="1200" height="630" fill="#0a0a0f"/>
+
+  <!-- Subtle background glow -->
+  <rect width="1200" height="630" fill="url(#og-bg-glow)"/>
+
+  <!-- Orbital rings (decorative) -->
+  <ellipse cx="600" cy="250" rx="280" ry="100" fill="none" stroke="#a78bfa" stroke-opacity="0.06" stroke-width="1.5" transform="rotate(-20 600 250)"/>
+  <ellipse cx="600" cy="250" rx="340" ry="130" fill="none" stroke="#a78bfa" stroke-opacity="0.04" stroke-width="1" transform="rotate(-20 600 250)"/>
+
+  <!-- Main sphere -->
+  <circle cx="600" cy="230" r="120" fill="url(#og-sphere)" filter="url(#og-shadow)"/>
+
+  <!-- Specular highlight -->
+  <circle cx="600" cy="230" r="120" fill="url(#og-hl)"/>
+
+  <!-- Outer glow ring -->
+  <circle cx="600" cy="230" r="140" fill="none" stroke="#7c3aed" stroke-opacity="0.1" stroke-width="2"/>
+
+  <!-- Small orbiting dot -->
+  <circle cx="740" cy="200" r="4" fill="#a78bfa" opacity="0.6"/>
+  <circle cx="460" cy="270" r="3" fill="#7c3aed" opacity="0.4"/>
+
+  <!-- Wordmark "Yapper" -->
+  <text x="600" y="430" text-anchor="middle" font-family="Inter, 'Segoe UI', system-ui, sans-serif" font-size="72" font-weight="800" fill="url(#og-text)" letter-spacing="-0.02em">Yapper</text>
+
+  <!-- Tagline -->
+  <text x="600" y="475" text-anchor="middle" font-family="Inter, 'Segoe UI', system-ui, sans-serif" font-size="22" font-weight="500" fill="#9ca3af" letter-spacing="0.03em">A New Way to Yap</text>
+
+  <!-- Subtle bottom border accent -->
+  <rect x="520" y="500" width="160" height="2" rx="1" fill="#7c3aed" opacity="0.3"/>
+</svg>

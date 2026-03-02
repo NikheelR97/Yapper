@@ -1,0 +1,171 @@
+---
+---
+
+<section class="section safety" id="safety">
+  <div class="container">
+    <div class="grid">
+
+      <!-- E2EE column -->
+      <div class="col">
+        <div class="col-icon e2ee-icon" aria-hidden="true">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2"/>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            <circle cx="12" cy="16" r="1" fill="currentColor" stroke="none"/>
+          </svg>
+        </div>
+
+        <div class="badge">End-to-End Encrypted</div>
+        <h2 class="col-title">We literally <span class="gradient-text">can't read</span> your messages.</h2>
+        <p class="col-body">
+          Yapper uses the Signal Protocol — the same cryptography trusted by Signal, WhatsApp, and Google Messages.
+          Messages are encrypted on your device before they leave it, and decrypted only on the recipient's device.
+        </p>
+
+        <ul class="fact-list">
+          <li>
+            <span class="fact-dot"></span>
+            <span><strong>X3DH</strong> — Extended Triple Diffie-Hellman key agreement</span>
+          </li>
+          <li>
+            <span class="fact-dot"></span>
+            <span><strong>Double Ratchet</strong> — forward secrecy + break-in recovery</span>
+          </li>
+          <li>
+            <span class="fact-dot"></span>
+            <span><strong>Sender Keys</strong> — efficient E2EE for group channels</span>
+          </li>
+          <li>
+            <span class="fact-dot"></span>
+            <span>Keys generated on your device, <em>never sent to our servers</em></span>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Parental controls column -->
+      <div class="col">
+        <div class="col-icon parent-icon" aria-hidden="true">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+          </svg>
+        </div>
+
+        <div class="badge">Parental Controls</div>
+        <h2 class="col-title">Safe for families. <span class="gradient-text">By design.</span></h2>
+        <p class="col-body">
+          E2EE is inviolable — parents can never read their child's messages and that's a feature.
+          What parents <em>can</em> do is control who their children connect with.
+        </p>
+
+        <ul class="fact-list">
+          <li>
+            <span class="fact-dot green"></span>
+            <span>Friend requests to children require <strong>parent approval</strong></span>
+          </li>
+          <li>
+            <span class="fact-dot green"></span>
+            <span>Server joins by children require parent approval before membership</span>
+          </li>
+          <li>
+            <span class="fact-dot green"></span>
+            <span>Screen time limits via <strong>iOS DeviceActivity</strong> &amp; <strong>Android UsageStats</strong></span>
+          </li>
+          <li>
+            <span class="fact-dot green"></span>
+            <span>Parents see only metadata — <em>who</em> messaged, never <em>what</em></span>
+          </li>
+        </ul>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<style>
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+  }
+
+  @media (max-width: 800px) {
+    .grid { grid-template-columns: 1fr; }
+  }
+
+  .col {
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-xl);
+    padding: clamp(1.75rem, 4vw, 2.5rem);
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .col-icon {
+    width: 60px;
+    height: 60px;
+    border-radius: var(--radius-lg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .e2ee-icon {
+    background: rgba(124,58,237,0.12);
+    color: var(--color-brand-light);
+    border: 1px solid rgba(167,139,250,0.2);
+  }
+
+  .parent-icon {
+    background: rgba(74,222,128,0.1);
+    color: #4ade80;
+    border: 1px solid rgba(74,222,128,0.2);
+  }
+
+  .col-title {
+    font-size: clamp(1.5rem, 2.5vw, 2rem);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+  }
+
+  .col-body {
+    color: var(--color-text-secondary);
+    font-size: 0.9375rem;
+    line-height: 1.7;
+  }
+
+  .col-body em { color: var(--color-text-primary); font-style: normal; }
+
+  .fact-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-top: 0.5rem;
+  }
+
+  .fact-list li {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    font-size: 0.9375rem;
+    color: var(--color-text-secondary);
+    line-height: 1.5;
+  }
+
+  .fact-list li strong { color: var(--color-text-primary); }
+  .fact-list li em    { color: var(--color-brand-light); font-style: normal; }
+
+  .fact-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--color-brand-light);
+    flex-shrink: 0;
+    margin-top: 6px;
+  }
+
+  .fact-dot.green { background: #4ade80; }
+</style>

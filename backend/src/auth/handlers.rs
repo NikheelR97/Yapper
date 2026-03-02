@@ -7,17 +7,12 @@ use axum::{
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
-use std::sync::Arc;
 use uuid::Uuid;
 use validator::Validate;
 
-use super::{
-    middleware::LoginRateLimiter,
-    service::{
-        generate_access_token, generate_email_token, generate_refresh_token,
-        hash_password, validate_refresh_token, verify_password, JwtKeys,
-        REFRESH_TTL_SECS,
-    },
+use super::service::{
+    generate_access_token, generate_email_token, generate_refresh_token, hash_password,
+    validate_refresh_token, verify_password, JwtKeys, REFRESH_TTL_SECS,
 };
 use crate::{
     error::{AppError, AppResult},
@@ -29,7 +24,7 @@ use crate::{
 #[derive(Debug, Deserialize, Validate)]
 #[serde(deny_unknown_fields)]
 pub struct RegisterRequest {
-    #[validate(length(min = 2, max = 32), regex(path = "USERNAME_RE"))]
+    #[validate(length(min = 2, max = 32))]
     pub username: String,
 
     #[validate(email)]
@@ -80,6 +75,12 @@ pub async fn register(
     req.validate()
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
 
+    if !USERNAME_RE.is_match(&req.username) {
+        return Err(AppError::BadRequest(
+            "Username may only contain letters, numbers and underscores".to_string(),
+        ));
+    }
+
     let pool = state.db.pool();
 
     // Check username + email uniqueness
@@ -93,14 +94,14 @@ pub async fn register(
     .unwrap_or(false);
 
     if exists {
-        return Err(AppError::Conflict("Username or email already taken".to_string()));
+        return Err(AppError::Conflict(
+            "Username or email already taken".to_string(),
+        ));
     }
 
     let password_hash = hash_password(&req.password)?;
     let email_token = generate_email_token();
-    let display_name = req
-        .display_name
-        .unwrap_or_else(|| req.username.clone());
+    let display_name = req.display_name.unwrap_or_else(|| req.username.clone());
 
     let user = sqlx::query_as!(
         UserDto,
@@ -128,16 +129,18 @@ pub async fn register(
         let _ = send_verification_email(&email, &token, &resend_key).await;
     });
 
-    let access_token =
-        generate_access_token(user.id, &user.account_type, &state.jwt_keys)?;
-    let refresh_token =
-        generate_refresh_token(user.id, Uuid::new_v4(), &state.jwt_keys)?;
+    let access_token = generate_access_token(user.id, &user.account_type, &state.jwt_keys)?;
+    let refresh_token = generate_refresh_token(user.id, Uuid::new_v4(), &state.jwt_keys)?;
 
     // Store refresh token session
     store_session(pool, user.id, &refresh_token, &state.jwt_keys).await?;
 
     let response = AuthResponse { access_token, user };
-    Ok((StatusCode::CREATED, refresh_cookie(&refresh_token), Json(response)))
+    Ok((
+        StatusCode::CREATED,
+        auth_cookies(&refresh_token),
+        Json(response),
+    ))
 }
 
 // ─── Login ────────────────────────────────────────────────────────────────────
@@ -200,10 +203,8 @@ pub async fn login(
     state.login_limiter.record_success(ip);
 
     let family_id = Uuid::new_v4();
-    let access_token =
-        generate_access_token(row.id, &row.account_type, &state.jwt_keys)?;
-    let refresh_token =
-        generate_refresh_token(row.id, family_id, &state.jwt_keys)?;
+    let access_token = generate_access_token(row.id, &row.account_type, &state.jwt_keys)?;
+    let refresh_token = generate_refresh_token(row.id, family_id, &state.jwt_keys)?;
 
     store_session(pool, row.id, &refresh_token, &state.jwt_keys).await?;
 
@@ -216,7 +217,10 @@ pub async fn login(
         is_premium: row.is_premium,
     };
 
-    Ok((refresh_cookie(&refresh_token), Json(AuthResponse { access_token, user })))
+    Ok((
+        refresh_cookie(&refresh_token),
+        Json(AuthResponse { access_token, user }),
+    ))
 }
 
 // ─── Refresh ──────────────────────────────────────────────────────────────────
@@ -225,11 +229,9 @@ pub async fn refresh(
     State(state): State<AppState>,
     headers: HeaderMap,
 ) -> AppResult<impl IntoResponse> {
-    let refresh_token = extract_refresh_cookie(&headers)
-        .ok_or(AppError::Unauthorized)?;
+    let refresh_token = extract_refresh_cookie(&headers).ok_or(AppError::Unauthorized)?;
 
-    let claims =
-        validate_refresh_token(&refresh_token, &state.jwt_keys)?.claims;
+    let claims = validate_refresh_token(&refresh_token, &state.jwt_keys)?.claims;
 
     let pool = state.db.pool();
 
@@ -267,12 +269,9 @@ pub async fn refresh(
         }
         Some(s) => {
             // Revoke current token (rotation)
-            sqlx::query!(
-                "UPDATE sessions SET revoked_at = NOW() WHERE id = $1",
-                s.id
-            )
-            .execute(pool)
-            .await?;
+            sqlx::query!("UPDATE sessions SET revoked_at = NOW() WHERE id = $1", s.id)
+                .execute(pool)
+                .await?;
         }
     }
 
@@ -292,7 +291,10 @@ pub async fn refresh(
 
     store_session(pool, user.id, &new_refresh, &state.jwt_keys).await?;
 
-    Ok((refresh_cookie(&new_refresh), Json(json_response(&new_access))))
+    Ok((
+        refresh_cookie(&new_refresh),
+        Json(json_response(&new_access)),
+    ))
 }
 
 // ─── Logout ───────────────────────────────────────────────────────────────────
@@ -320,7 +322,7 @@ pub async fn logout(
         }
     }
 
-    Ok((clear_refresh_cookie(), StatusCode::NO_CONTENT))
+    Ok((clear_auth_cookies(), StatusCode::NO_CONTENT))
 }
 
 // ─── Email verification ───────────────────────────────────────────────────────
@@ -356,7 +358,9 @@ pub async fn verify_email(
         ));
     }
 
-    Ok(Json(serde_json::json!({ "message": "Email verified successfully" })))
+    Ok(Json(
+        serde_json::json!({ "message": "Email verified successfully" }),
+    ))
 }
 
 // ─── Password reset request ───────────────────────────────────────────────────
@@ -415,8 +419,7 @@ async fn store_session(
 ) -> AppResult<()> {
     let claims = validate_refresh_token(refresh_token, keys)?.claims;
     let token_hash = sha256_hex(refresh_token);
-    let expires_at = chrono::DateTime::from_timestamp(claims.exp, 0)
-        .unwrap_or_else(Utc::now);
+    let expires_at = chrono::DateTime::from_timestamp(claims.exp, 0).unwrap_or_else(Utc::now);
 
     sqlx::query!(
         r#"
@@ -441,21 +444,40 @@ fn sha256_hex(input: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-fn refresh_cookie(token: &str) -> [(header::HeaderName, String); 1] {
-    [(
-        header::SET_COOKIE,
-        format!(
-            "refresh_token={token}; HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth/refresh; Max-Age={REFRESH_TTL_SECS}"
+/// Returns both the refresh cookie and a new CSRF cookie for login/register responses.
+fn auth_cookies(refresh_token: &str) -> [(header::HeaderName, String); 2] {
+    let csrf_token = Uuid::new_v4().to_string();
+    [
+        (
+            header::SET_COOKIE,
+            format!(
+                "refresh_token={refresh_token}; HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth/refresh; Max-Age={REFRESH_TTL_SECS}"
+            ),
         ),
-    )]
+        (
+            header::SET_COOKIE,
+            crate::csrf::csrf_cookie_header(&csrf_token),
+        ),
+    ]
 }
 
-fn clear_refresh_cookie() -> [(header::HeaderName, String); 1] {
-    [(
-        header::SET_COOKIE,
-        "refresh_token=; HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth/refresh; Max-Age=0"
-            .to_string(),
-    )]
+/// Refresh endpoint: rotate refresh token, issue fresh CSRF token.
+fn refresh_cookie(token: &str) -> [(header::HeaderName, String); 2] {
+    auth_cookies(token)
+}
+
+fn clear_auth_cookies() -> [(header::HeaderName, String); 2] {
+    [
+        (
+            header::SET_COOKIE,
+            "refresh_token=; HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth/refresh; Max-Age=0"
+                .to_string(),
+        ),
+        (
+            header::SET_COOKIE,
+            crate::csrf::clear_csrf_cookie(),
+        ),
+    ]
 }
 
 fn extract_refresh_cookie(headers: &HeaderMap) -> Option<String> {
@@ -481,25 +503,21 @@ fn json_response(access_token: &str) -> serde_json::Value {
     serde_json::json!({ "access_token": access_token })
 }
 
-async fn send_verification_email(
-    to: &str,
-    token: &str,
-    api_key: &str,
-) -> anyhow::Result<()> {
+async fn send_verification_email(to: &str, token: &str, api_key: &str) -> anyhow::Result<()> {
     if api_key.is_empty() {
         tracing::debug!("RESEND_API_KEY not set — skipping email to {to}");
         return Ok(());
     }
 
-    let frontend_url = std::env::var("FRONTEND_URL")
-        .unwrap_or_else(|_| "http://localhost:5173".to_string());
+    let frontend_url =
+        std::env::var("FRONTEND_URL").unwrap_or_else(|_| "http://localhost:5173".to_string());
 
     let client = reqwest::Client::new();
     client
         .post("https://api.resend.com/emails")
         .bearer_auth(api_key)
         .json(&serde_json::json!({
-            "from": std::env::var("EMAIL_FROM").unwrap_or_else(|_| "Yapper <hello@yapper.app>".to_string()),
+            "from": std::env::var("EMAIL_FROM").unwrap_or_else(|_| "Yapper <hello@yapperhq.com>".to_string()),
             "to": to,
             "subject": "Verify your Yapper email",
             "html": format!(
@@ -514,24 +532,20 @@ async fn send_verification_email(
     Ok(())
 }
 
-async fn send_password_reset_email(
-    to: &str,
-    token: &str,
-    api_key: &str,
-) -> anyhow::Result<()> {
+async fn send_password_reset_email(to: &str, token: &str, api_key: &str) -> anyhow::Result<()> {
     if api_key.is_empty() {
         return Ok(());
     }
 
-    let frontend_url = std::env::var("FRONTEND_URL")
-        .unwrap_or_else(|_| "http://localhost:5173".to_string());
+    let frontend_url =
+        std::env::var("FRONTEND_URL").unwrap_or_else(|_| "http://localhost:5173".to_string());
 
     let client = reqwest::Client::new();
     client
         .post("https://api.resend.com/emails")
         .bearer_auth(api_key)
         .json(&serde_json::json!({
-            "from": std::env::var("EMAIL_FROM").unwrap_or_else(|_| "Yapper <hello@yapper.app>".to_string()),
+            "from": std::env::var("EMAIL_FROM").unwrap_or_else(|_| "Yapper <hello@yapperhq.com>".to_string()),
             "to": to,
             "subject": "Reset your Yapper password",
             "html": format!(
@@ -544,4 +558,56 @@ async fn send_password_reset_email(
         .await?;
 
     Ok(())
+}
+
+// ─── Password reset confirm ───────────────────────────────────────────────────
+
+#[derive(Deserialize, Validate)]
+#[serde(deny_unknown_fields)]
+pub struct PasswordResetConfirm {
+    pub token: String,
+
+    #[validate(length(min = 8, max = 1024))]
+    pub new_password: String,
+}
+
+pub async fn confirm_password_reset(
+    State(state): State<AppState>,
+    Json(req): Json<PasswordResetConfirm>,
+) -> AppResult<impl IntoResponse> {
+    req.validate()
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
+
+    if req.token.is_empty() {
+        return Err(AppError::BadRequest("Token is required".to_string()));
+    }
+
+    let new_hash = hash_password(&req.new_password)?;
+
+    let rows_updated = sqlx::query!(
+        r#"
+        UPDATE users
+        SET password_hash = $1,
+            email_verify_token = NULL,
+            email_verify_expires_at = NULL
+        WHERE email_verify_token = $2
+          AND email_verify_expires_at > NOW()
+          AND deleted_at IS NULL
+        "#,
+        new_hash,
+        req.token,
+    )
+    .execute(state.db.pool())
+    .await?
+    .rows_affected();
+
+    if rows_updated == 0 {
+        return Err(AppError::BadRequest(
+            "Invalid or expired reset token".to_string(),
+        ));
+    }
+
+    Ok(Json(
+        serde_json::json!({ "message": "Password updated successfully" }),
+    ))
 }

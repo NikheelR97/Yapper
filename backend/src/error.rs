@@ -15,6 +15,7 @@ pub enum AppError {
     Unauthorized,
 
     #[error("Forbidden")]
+    #[allow(dead_code)]
     Forbidden,
 
     #[error("Bad request: {0}")]
@@ -44,12 +45,18 @@ impl IntoResponse for AppError {
             AppError::RateLimited => (StatusCode::TOO_MANY_REQUESTS, "Rate limited".to_string()),
             AppError::Internal(e) => {
                 tracing::error!("Internal error: {e:#}");
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal server error".to_string(),
+                )
             }
             AppError::Database(e) => {
                 // Don't leak DB internals to clients
                 tracing::error!("Database error: {e}");
-                (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error".to_string())
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Internal server error".to_string(),
+                )
             }
         };
 

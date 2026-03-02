@@ -35,6 +35,7 @@ impl Database {
 
 /// Sets up a PostgreSQL LISTEN/NOTIFY listener for the given channel.
 /// The callback receives the payload string for each notification.
+#[allow(dead_code)]
 pub async fn listen_notify(
     pool: &PgPool,
     channel: &str,

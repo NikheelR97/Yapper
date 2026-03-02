@@ -10,9 +10,7 @@ use serde_json::json;
 use std::{net::IpAddr, num::NonZeroU32, sync::Arc};
 use tokio::net::TcpListener;
 use tower_http::{
-    compression::CompressionLayer,
-    cors::CorsLayer,
-    set_header::SetResponseHeaderLayer,
+    compression::CompressionLayer, cors::CorsLayer, set_header::SetResponseHeaderLayer,
     trace::TraceLayer,
 };
 
@@ -25,28 +23,28 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Per-IP rate limiter shared across all API routes.
 /// 100 requests/minute per IP (burst of 20).
-pub type IpRateLimiter =
-    Arc<RateLimiter<IpAddr, DefaultKeyedStateStore<IpAddr>, DefaultClock>>;
+pub type IpRateLimiter = Arc<RateLimiter<IpAddr, DefaultKeyedStateStore<IpAddr>, DefaultClock>>;
 
+mod auth;
+mod bots;
+mod canvas;
+mod csrf;
+mod channels;
 mod db;
+mod discord;
+mod emojis;
 mod error;
 mod hub;
-mod auth;
-mod users;
-mod servers;
-mod channels;
-mod messages;
 mod keys;
 mod media;
-mod canvas;
-mod emojis;
+mod messages;
+mod notifications;
 mod parental;
 mod screentime;
-mod bots;
-mod discord;
-mod notifications;
+mod servers;
+mod users;
 
-use auth::{JwtKeys, LoginRateLimiter};
+use auth::{JwtKeys, LoginRateLimiter, OAuthStateStore};
 use db::Database;
 use hub::Hub;
 
@@ -57,6 +55,8 @@ pub struct AppState {
     pub rate_limiter: IpRateLimiter,
     pub jwt_keys: Arc<JwtKeys>,
     pub login_limiter: Arc<LoginRateLimiter>,
+    /// Short-lived CSRF state tokens for OAuth flows
+    pub oauth_states: Arc<OAuthStateStore>,
 }
 
 #[tokio::main]
@@ -73,8 +73,7 @@ async fn main() -> anyhow::Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let database_url = std::env::var("DATABASE_URL")
-        .expect("DATABASE_URL must be set");
+    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
 
     let db = Database::connect(&database_url).await?;
     db.run_migrations().await?;
@@ -87,12 +86,22 @@ async fn main() -> anyhow::Result<()> {
     let rate_limiter: IpRateLimiter = Arc::new(RateLimiter::keyed(quota));
     let jwt_keys = Arc::new(JwtKeys::from_env()?);
     let login_limiter = Arc::new(LoginRateLimiter::new());
+    let oauth_states = Arc::new(OAuthStateStore::new());
 
-    let state = AppState { db, hub, rate_limiter, jwt_keys, login_limiter };
+    let state = AppState {
+        db,
+        hub,
+        rate_limiter,
+        jwt_keys,
+        login_limiter,
+        oauth_states,
+    };
 
     let app = Router::new()
         .route("/health", get(health_handler))
         .route("/ws", get(hub::ws_handler))
+        // OAuth at top level — must match redirect URIs registered in Discord/Google consoles
+        .nest("/auth/oauth", auth::oauth_router())
         .nest("/api/v1", api_router())
         .layer(TraceLayer::new_for_http())
         .layer(CompressionLayer::new())
@@ -133,6 +142,7 @@ fn api_router() -> Router<AppState> {
         .nest("/users", users::router())
         .nest("/servers", servers::router())
         .nest("/channels", channels::router())
+        .nest("/conversations", messages::router())
         .nest("/keys", keys::router())
         .nest("/media", media::router())
         .nest("/canvas", canvas::router())
@@ -142,10 +152,12 @@ fn api_router() -> Router<AppState> {
         .nest("/bots", bots::router())
         .nest("/discord", discord::router())
         .nest("/notifications", notifications::router())
+        .layer(axum::middleware::from_fn(csrf::csrf_check))
 }
 
 fn cors_layer() -> CorsLayer {
-    use tower_http::cors::Any;
+    use axum::http::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE};
+    use axum::http::HeaderName;
 
     let origins: Vec<HeaderValue> = std::env::var("CORS_ORIGINS")
         .unwrap_or_else(|_| {
@@ -157,15 +169,33 @@ fn cors_layer() -> CorsLayer {
 
     CorsLayer::new()
         .allow_origin(origins)
-        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::PATCH, Method::DELETE])
-        .allow_headers(Any)
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::PATCH,
+            Method::DELETE,
+        ])
+        .allow_headers([
+            CONTENT_TYPE,
+            AUTHORIZATION,
+            ACCEPT,
+            HeaderName::from_static("x-csrf-token"),
+        ])
         .allow_credentials(true)
 }
 
 async fn health_handler(State(state): State<AppState>) -> impl IntoResponse {
     let db_ok = state.db.ping().await.is_ok();
-    let status = if db_ok { StatusCode::OK } else { StatusCode::SERVICE_UNAVAILABLE };
-    (status, Json(json!({ "status": if db_ok { "ok" } else { "degraded" }, "db": db_ok })))
+    let status = if db_ok {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    (
+        status,
+        Json(json!({ "status": if db_ok { "ok" } else { "degraded" }, "db": db_ok })),
+    )
 }
 
 #[cfg(test)]

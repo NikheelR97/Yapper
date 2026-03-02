@@ -160,26 +160,18 @@ pub fn generate_refresh_token(user_id: Uuid, family_id: Uuid, keys: &JwtKeys) ->
         .map_err(|e| AppError::Internal(anyhow::anyhow!("JWT encode: {e}")))
 }
 
-pub fn validate_access_token(
-    token: &str,
-    keys: &JwtKeys,
-) -> AppResult<TokenData<AccessClaims>> {
+pub fn validate_access_token(token: &str, keys: &JwtKeys) -> AppResult<TokenData<AccessClaims>> {
     let mut validation = Validation::new(Algorithm::RS256);
     validation.validate_exp = true;
 
-    decode::<AccessClaims>(token, &keys.decoding, &validation)
-        .map_err(|_| AppError::Unauthorized)
+    decode::<AccessClaims>(token, &keys.decoding, &validation).map_err(|_| AppError::Unauthorized)
 }
 
-pub fn validate_refresh_token(
-    token: &str,
-    keys: &JwtKeys,
-) -> AppResult<TokenData<RefreshClaims>> {
+pub fn validate_refresh_token(token: &str, keys: &JwtKeys) -> AppResult<TokenData<RefreshClaims>> {
     let mut validation = Validation::new(Algorithm::RS256);
     validation.validate_exp = true;
 
-    decode::<RefreshClaims>(token, &keys.decoding, &validation)
-        .map_err(|_| AppError::Unauthorized)
+    decode::<RefreshClaims>(token, &keys.decoding, &validation).map_err(|_| AppError::Unauthorized)
 }
 
 // ─── Email verification token ─────────────────────────────────────────────────

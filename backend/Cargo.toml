@@ -16,16 +16,18 @@ tower = { version = "0.4", features = ["full"] }
 tower-http = { version = "0.5", features = ["cors", "trace", "compression-gzip", "set-header", "request-id"] }
 
 # Database
-sqlx = { version = "0.7", features = ["postgres", "uuid", "chrono", "runtime-tokio", "migrate"] }
+sqlx = { version = "0.7", features = ["postgres", "uuid", "chrono", "runtime-tokio", "migrate", "tls-native-tls"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+base64 = "0.22"
 
 # Auth
 argon2 = "0.5"
 jsonwebtoken = "9"
 oauth2 = "4"
+url = "2"
 validator = { version = "0.18", features = ["derive"] }
 sha2 = "0.10"
 getrandom = "0.2"

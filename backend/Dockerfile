@@ -1,5 +1,5 @@
 # ─── Build stage ─────────────────────────────────────────────────────────────
-FROM rust:1.75-alpine AS builder
+FROM rust:1.93-alpine AS builder
 
 RUN apk add --no-cache musl-dev openssl-dev openssl-libs-static pkgconfig
 
@@ -15,6 +15,7 @@ RUN rm -rf src
 COPY . .
 # Touch main.rs to force rebuild (dependency cache is warm)
 RUN touch src/main.rs
+ENV SQLX_OFFLINE=true
 RUN cargo build --release
 
 # ─── Runtime stage ────────────────────────────────────────────────────────────

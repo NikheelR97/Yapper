@@ -328,7 +328,7 @@ These are non-negotiable security requirements, not suggestions.
 
 ### Headers
 - HSTS, CSP, X-Frame-Options, X-Content-Type-Options: nosniff — all via `tower-http`.
-- CORS allowlist: `yapper.app`, `tauri://localhost`, `capacitor://localhost`.
+- CORS allowlist: `yapperhq.com`, `tauri://localhost`, `capacitor://localhost`.
 
 ### Secrets
 - Never committed to git. Always in Fly.io secrets or Cloudflare Worker secrets.
@@ -541,11 +541,11 @@ fly status                    # Check VM health
 ### Frontend (Cloudflare Pages)
 - Auto-deploys on `git push` to `main`
 - Preview deployments on every PR (`*.pages.dev`)
-- Custom domain: `app.yapper.app`
+- Custom domain: `app.yapperhq.com`
 
 ### Marketing Site (Cloudflare Pages)
 - Auto-deploys on `git push` to `main` (separate Pages project)
-- Custom domain: `yapper.app`
+- Custom domain: `yapperhq.com`
 
 ### Wishlist Worker (Cloudflare Workers)
 ```bash

@@ -10,11 +10,19 @@ class ApiError extends Error {
 	}
 }
 
+/** Read the non-HttpOnly csrf_token cookie set by the server on login. */
+function getCsrfToken(): string | null {
+	if (typeof document === 'undefined') return null;
+	const match = document.cookie.split(';').find((c) => c.trim().startsWith('csrf_token='));
+	return match ? match.trim().slice('csrf_token='.length) : null;
+}
+
 async function request<T>(
 	path: string,
 	options: RequestInit = {}
 ): Promise<T> {
 	const { accessToken } = get(authStore);
+	const method = (options.method ?? 'GET').toUpperCase();
 
 	const headers: Record<string, string> = {
 		'Content-Type': 'application/json',
@@ -23,6 +31,12 @@ async function request<T>(
 
 	if (accessToken) {
 		headers['Authorization'] = `Bearer ${accessToken}`;
+	}
+
+	// CSRF double-submit: echo the non-HttpOnly cookie value as a header.
+	if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+		const csrf = getCsrfToken();
+		if (csrf) headers['X-CSRF-Token'] = csrf;
 	}
 
 	const response = await fetch(`${BASE_URL}${path}`, {

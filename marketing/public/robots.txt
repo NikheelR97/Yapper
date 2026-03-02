@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://yapperhq.com/sitemap.xml

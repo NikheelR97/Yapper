@@ -1,52 +1,103 @@
 /**
- * Abstract key storage layer.
+ * Persistent key storage using IndexedDB (via `idb`).
  *
- * Platform routing:
- *   - Desktop (Tauri)   → Tauri Stronghold plugin (hardware-backed on supported OSes)
- *   - Mobile (Capacitor)→ capacitor-secure-storage-plugin (iOS Keychain / Android Keystore)
- *   - Web PWA           → IndexedDB (idb) — acceptable for web-only; private key never leaves client
+ * Works in all WebView environments (Tauri, Capacitor, Web PWA).
+ * Tauri Stronghold integration is deferred to a later sprint.
  *
- * Full implementation: Phase 3.
+ * Store layout:
+ *   identity       — singleton IdentityKeyPair (keyed by 'own')
+ *   prekeys        — Map<keyId, PreKeyPair>
+ *   signed_prekeys — Map<keyId, SignedPreKey>
+ *   sessions       — Map<conversationId, Session>
  */
 
-export interface KeyRecord {
-	keyId: number;
-	publicKey: Uint8Array;
-	privateKey: Uint8Array;
+import { openDB, type IDBPDatabase } from 'idb';
+import type { IdentityKeyPair, PreKeyPair, SignedPreKey, Session } from './types.js';
+
+const DB_NAME = 'yapper-signal';
+const DB_VERSION = 1;
+
+let _db: IDBPDatabase | null = null;
+
+async function getDB(): Promise<IDBPDatabase> {
+	if (_db) return _db;
+	_db = await openDB(DB_NAME, DB_VERSION, {
+		upgrade(db) {
+			db.createObjectStore('identity');
+			db.createObjectStore('prekeys', { keyPath: 'keyId' });
+			db.createObjectStore('signed_prekeys', { keyPath: 'keyId' });
+			db.createObjectStore('sessions', { keyPath: 'conversationId' });
+		},
+	});
+	return _db;
 }
 
-/** Detect current platform */
-function platform(): 'tauri' | 'capacitor' | 'web' {
-	if (typeof window !== 'undefined' && '__TAURI__' in window) return 'tauri';
-	// Capacitor sets window.Capacitor
-	if (typeof window !== 'undefined' && 'Capacitor' in window) return 'capacitor';
-	return 'web';
+// ─── Identity Key ─────────────────────────────────────────────────────────────
+
+export async function storeIdentityKeyPair(kp: IdentityKeyPair): Promise<void> {
+	const db = await getDB();
+	await db.put('identity', kp, 'own');
 }
 
-/**
- * Store a private key material.
- * key: namespaced identifier, e.g. 'identity_private', 'signed_prekey_1'
- */
-export async function storeKey(_key: string, _material: Uint8Array): Promise<void> {
-	const p = platform();
-	// TODO: Phase 3 — route to Tauri Stronghold / Capacitor SecureStorage / IDB
-	throw new Error(`Phase 3: storeKey not yet implemented for platform=${p}`);
+export async function loadIdentityKeyPair(): Promise<IdentityKeyPair | null> {
+	const db = await getDB();
+	return (await db.get('identity', 'own')) ?? null;
 }
 
-/**
- * Retrieve stored key material.
- */
-export async function loadKey(_key: string): Promise<Uint8Array | null> {
-	const p = platform();
-	// TODO: Phase 3 — route to Tauri Stronghold / Capacitor SecureStorage / IDB
-	throw new Error(`Phase 3: loadKey not yet implemented for platform=${p}`);
+// ─── One-Time PreKeys ─────────────────────────────────────────────────────────
+
+export async function storePreKey(prekey: PreKeyPair): Promise<void> {
+	const db = await getDB();
+	await db.put('prekeys', prekey);
 }
 
-/**
- * Delete a stored key (e.g. consumed OPK).
- */
-export async function deleteKey(_key: string): Promise<void> {
-	const p = platform();
-	// TODO: Phase 3 — route to Tauri Stronghold / Capacitor SecureStorage / IDB
-	throw new Error(`Phase 3: deleteKey not yet implemented for platform=${p}`);
+export async function loadPreKey(keyId: number): Promise<PreKeyPair | null> {
+	const db = await getDB();
+	return (await db.get('prekeys', keyId)) ?? null;
+}
+
+export async function deletePreKey(keyId: number): Promise<void> {
+	const db = await getDB();
+	await db.delete('prekeys', keyId);
+}
+
+export async function countPreKeys(): Promise<number> {
+	const db = await getDB();
+	return db.count('prekeys');
+}
+
+// ─── Signed PreKey ────────────────────────────────────────────────────────────
+
+export async function storeSignedPreKey(spk: SignedPreKey): Promise<void> {
+	const db = await getDB();
+	await db.put('signed_prekeys', spk);
+}
+
+export async function loadSignedPreKey(keyId: number): Promise<SignedPreKey | null> {
+	const db = await getDB();
+	return (await db.get('signed_prekeys', keyId)) ?? null;
+}
+
+export async function loadLatestSignedPreKey(): Promise<SignedPreKey | null> {
+	const db = await getDB();
+	const all: SignedPreKey[] = await db.getAll('signed_prekeys');
+	if (!all.length) return null;
+	return all.reduce((a, b) => (a.createdAt > b.createdAt ? a : b));
+}
+
+// ─── Sessions ─────────────────────────────────────────────────────────────────
+
+export async function storeSession(session: Session): Promise<void> {
+	const db = await getDB();
+	await db.put('sessions', session);
+}
+
+export async function loadSession(conversationId: string): Promise<Session | null> {
+	const db = await getDB();
+	return (await db.get('sessions', conversationId)) ?? null;
+}
+
+export async function deleteSession(conversationId: string): Promise<void> {
+	const db = await getDB();
+	await db.delete('sessions', conversationId);
 }

@@ -15,6 +15,7 @@ use crate::{error::AppError, AppState};
 #[derive(Debug, Clone)]
 pub struct AuthUser {
     pub user_id: uuid::Uuid,
+    #[allow(dead_code)]
     pub account_type: String,
 }
 
@@ -36,8 +37,8 @@ impl FromRequestParts<AppState> for AuthUser {
             .strip_prefix("Bearer ")
             .ok_or_else(|| AppError::Unauthorized.into_response())?;
 
-        let claims = validate_access_token(token, &state.jwt_keys)
-            .map_err(|e| e.into_response())?;
+        let claims =
+            validate_access_token(token, &state.jwt_keys).map_err(|e| e.into_response())?;
 
         Ok(AuthUser {
             user_id: claims.claims.sub,
@@ -49,6 +50,7 @@ impl FromRequestParts<AppState> for AuthUser {
 // ─── Optional auth extractor ──────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct OptionalAuthUser(pub Option<AuthUser>);
 
 #[axum::async_trait]
@@ -84,6 +86,7 @@ impl FromRequestParts<AppState> for OptionalAuthUser {
 
 // ─── Role guard helpers ───────────────────────────────────────────────────────
 
+#[allow(dead_code)]
 impl AuthUser {
     pub fn require_parent(&self) -> Result<(), AppError> {
         if self.account_type == "parent" {
@@ -112,7 +115,9 @@ pub struct LoginRateLimiter {
 
 impl LoginRateLimiter {
     pub fn new() -> Self {
-        Self { state: DashMap::new() }
+        Self {
+            state: DashMap::new(),
+        }
     }
 
     pub fn is_locked(&self, ip: IpAddr) -> bool {
@@ -170,7 +175,10 @@ mod tests {
         let ip = IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4));
 
         for i in 0..4 {
-            assert!(!limiter.record_failure(ip), "Should not lock on iteration {i}");
+            assert!(
+                !limiter.record_failure(ip),
+                "Should not lock on iteration {i}"
+            );
             assert!(!limiter.is_locked(ip));
         }
         assert!(limiter.record_failure(ip), "5th failure should lock");

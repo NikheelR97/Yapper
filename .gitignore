@@ -51,6 +51,9 @@ logs/
 # sqlx offline cache
 .sqlx/
 
+# Secrets (JWT keys, service accounts)
+backend/secrets/
+
 # Firebase
 **/service-account.json
 **/google-services.json
@@ -58,6 +61,12 @@ logs/
 
 # PDF exports (generated docs, not source)
 *.pdf
+
+# Lighthouse / audit reports
+*.report.html
+*.report.json
+lighthouse*.json
+psi-result.json
 
 # Build artifacts
 *.wasm

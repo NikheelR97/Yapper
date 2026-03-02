@@ -3,15 +3,11 @@ use axum::{extract::State, response::IntoResponse, routing::get, Json, Router};
 use crate::{auth::AuthUser, error::AppResult, AppState};
 
 pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/me", get(get_me))
+    Router::new().route("/me", get(get_me))
 }
 
 /// GET /api/v1/users/me — returns the authenticated user's profile.
-async fn get_me(
-    auth: AuthUser,
-    State(state): State<AppState>,
-) -> AppResult<impl IntoResponse> {
+async fn get_me(auth: AuthUser, State(state): State<AppState>) -> AppResult<impl IntoResponse> {
     let user = sqlx::query!(
         r#"
         SELECT id, username, display_name, avatar_url, account_type, is_premium
@@ -21,7 +17,9 @@ async fn get_me(
     )
     .fetch_optional(state.db.pool())
     .await?
-    .ok_or(crate::error::AppError::NotFound("User not found".to_string()))?;
+    .ok_or(crate::error::AppError::NotFound(
+        "User not found".to_string(),
+    ))?;
 
     Ok(Json(serde_json::json!({
         "id": user.id,

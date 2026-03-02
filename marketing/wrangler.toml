@@ -1,0 +1,41 @@
+name            = "yapper-wishlist-api"
+main            = "worker/wishlist.js"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+# ---------------------------------------------------------------------------
+# D1 Database -- stores wishlist emails
+# Run `wrangler d1 create yapper-wishlist` and paste the database_id below.
+# ---------------------------------------------------------------------------
+[[d1_databases]]
+binding      = "DB"
+database_name = "yapper-wishlist"
+database_id  = "a13f92ef-9c9c-4006-a503-1188c843bc00"
+
+# ---------------------------------------------------------------------------
+# KV Namespace -- stores the live signup counter
+# Run `wrangler kv:namespace create yapper-counters` and paste the id below.
+# ---------------------------------------------------------------------------
+[[kv_namespaces]]
+binding = "KV"
+id      = "02cc3d0ec89449b0bdc82efe93e4754b"
+
+# ---------------------------------------------------------------------------
+# Routes -- serve the worker under your custom domain
+# Uncomment and fill in once your domain is connected to Cloudflare.
+# ---------------------------------------------------------------------------
+[[routes]]
+pattern = "yapperhq.com/api/*"
+zone_name = "yapperhq.com"
+
+# ---------------------------------------------------------------------------
+# Environment variables (non-secret)
+# ---------------------------------------------------------------------------
+[vars]
+SITE_ORIGIN = "https://yapperhq.com"
+FROM_EMAIL  = "Yapper <noreply@yapperhq.com>"
+
+# ---------------------------------------------------------------------------
+# Secrets (set via CLI -- never commit these):
+#   wrangler secret put RESEND_API_KEY
+# ---------------------------------------------------------------------------

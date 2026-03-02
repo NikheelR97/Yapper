@@ -1,5 +1,5 @@
 app = "yapper-api"
-primary_region = "lhr"  # London — change to nearest region
+primary_region = "jnb"  # Johannesburg
 
 [build]
   dockerfile = "Dockerfile"

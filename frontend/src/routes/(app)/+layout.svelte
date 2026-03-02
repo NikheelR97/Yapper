@@ -1,13 +1,17 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import { get } from 'svelte/store';
 	import { authStore } from '$stores/auth.js';
 	import { api } from '$api/client.js';
 	import type { User } from '$stores/auth.js';
 	import { setAuth } from '$stores/auth.js';
+	import { setupKeys, replenishPreKeysIfNeeded } from '$signal/index.js';
+	import { wsConnect, wsDisconnect } from '$stores/ws.js';
+	import { registerDmHandler, fetchConversations } from '$stores/conversations.js';
 
 	let ready = false;
+	let unregisterDmHandler: (() => void) | null = null;
 
 	onMount(async () => {
 		const state = get(authStore);
@@ -16,17 +20,33 @@
 			// Try to refresh session via HttpOnly cookie
 			try {
 				const res = await api.post<{ access_token: string }>('/api/v1/auth/refresh');
-				// Re-fetch current user
 				const user = await api.get<User>('/api/v1/users/me');
 				setAuth(user, res.access_token);
-				ready = true;
 			} catch {
 				await goto('/login');
 				return;
 			}
-		} else {
-			ready = true;
 		}
+
+		// Signal Protocol setup (idempotent — no-op if keys already exist)
+		try {
+			await setupKeys();
+			await replenishPreKeysIfNeeded();
+		} catch (e) {
+			console.warn('[Signal] Key setup failed:', e);
+		}
+
+		// WebSocket + DM handler
+		wsConnect();
+		unregisterDmHandler = registerDmHandler();
+		fetchConversations().catch(() => {});
+
+		ready = true;
+	});
+
+	onDestroy(() => {
+		unregisterDmHandler?.();
+		wsDisconnect();
 	});
 </script>
 

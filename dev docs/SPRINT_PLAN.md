@@ -12,8 +12,8 @@
 |--------|-------|----------|-------|--------|
 | **S0** | W1–W2 | Pre-Phase + Phase 0 | Setup + Marketing Site | In Progress |
 | **S1** | W3–W4 | Phase 1 | Repo Scaffolding & Dev Environment | ✅ Complete |
-| **S2** | W5–W6 | Phase 2 | Authentication & User System | In Progress |
-| **S3** | W7–W8 | Phase 3 | Signal Protocol & E2EE (1:1 DMs) | Not Started |
+| **S2** | W5–W6 | Phase 2 | Authentication & User System | ✅ Complete |
+| **S3** | W7–W8 | Phase 3 | Signal Protocol & E2EE (1:1 DMs) | ✅ Complete |
 | **S4** | W9–W10 | Phase 4 | Servers, Channels & Group E2EE | Not Started |
 | **S5** | W11–W12 | Phase 5 + Phase 6 | Media Messages + Real-Time Features | Not Started |
 | **S6** | W13–W14 | Phase 7 + Phase 8 | Live Canvas + Explore Page | Not Started |
@@ -48,47 +48,47 @@
 
 | # | Task | Owner | Done |
 |---|------|-------|------|
-| 1 | Verify Rust toolchain (`rustc 1.93+`), install `cargo-watch`, `sqlx-cli` | FS | [ ] |
-| 2 | Install Tauri CLI v2, Capacitor CLI | FS | [ ] |
-| 3 | Install Android Studio (SDK API 26+, NDK) | FS | [ ] |
+| 1 | Verify Rust toolchain (`rustc 1.93+`), install `cargo-watch`, `sqlx-cli` | FS | [x] |
+| 2 | Install Tauri CLI v2, Capacitor CLI | FS | [x] |
+| 3 | Install Android Studio (SDK API 26+, NDK) | FS | [x] |
 | 4 | **Apply for Apple FamilyControls entitlement** (1–4 week lead time) | FS | [ ] |
-| 5 | Create Cloudflare account: R2 bucket, D1 database, KV namespace, Pages project, Workers | FS | [ ] |
-| 6 | Create Fly.io account, install `flyctl`, `fly auth login` | FS | [ ] |
-| 7 | Create Neon account, new project, copy connection string | FS | [ ] |
-| 8 | Create Firebase project → FCM → download `service-account.json` | FS | [ ] |
-| 9 | Create Discord Developer Application → OAuth2 credentials | FS | [ ] |
-| 10 | Register Apple Developer + Google Cloud OAuth credentials | FS | [ ] |
-| 11 | Create Resend account → copy API key | FS | [ ] |
-| 12 | Purchase domain (`yapper.app` or alternative) on Porkbun | FS | [ ] |
+| 5 | Create Cloudflare account: R2 bucket, D1 database, KV namespace, Pages project, Workers | FS | [x] |
+| 6 | Create Fly.io account, install `flyctl`, `fly auth login` | FS | [x] |
+| 7 | Create Neon account, new project, copy connection string | FS | [x] |
+| 8 | Create Firebase project → FCM → download `service-account.json` | FS | [x] |
+| 9 | Create Discord Developer Application → OAuth2 credentials | FS | [x] |
+| 10 | Register Apple Developer + Google Cloud OAuth credentials | FS | [~] |
+| 11 | Create Resend account → copy API key | FS | [x] |
+| 12 | Purchase domain (`yapperhq.com` or alternative) on Porkbun | FS | [x] |
 
 ### Week 2: Marketing Site (Phase 0)
 
 | # | Task | Owner | Done |
 |---|------|-------|------|
-| 1 | `npm create astro@latest marketing` with `@astrojs/svelte` integration | FE | [ ] |
-| 2 | Create `Base.astro` layout: `<head>` with OG tags, self-hosted fonts, global CSS vars | FE | [ ] |
-| 3 | Create `global.css`: brand colors, typography scale, dark theme variables | DS/FE | [ ] |
-| 4 | Build `Hero.astro`: headline, subheadline, CSS 3D sphere animation, email CTA | FE | [ ] |
-| 5 | Build `FeatureGrid.astro`: 8 feature cards with icons and hook lines | FE | [ ] |
-| 6 | Build `HowItWorks.astro`: 3-step horizontal stepper | FE | [ ] |
-| 7 | Build `SafetySection.astro`: E2EE + parental controls two-column | FE | [ ] |
-| 8 | Build `PlatformBadges.astro`, `PricingPreview.astro`, `Footer.astro` | FE | [ ] |
-| 9 | Build `WishlistForm.svelte`: email input, submit, success/error states (client island) | FE | [ ] |
-| 10 | Build `FAQAccordion.svelte`: 6 questions with expand/collapse | FE | [ ] |
-| 11 | Assemble `index.astro`: import all sections | FE | [ ] |
-| 12 | Write `worker/wishlist.js`: email validation → D1 insert → KV counter → Resend confirm | BE | [ ] |
-| 13 | Write `wrangler.toml`: D1 + KV bindings | BE | [ ] |
-| 14 | Run D1 migration: create `wishlist` + `counter` tables | BE | [ ] |
-| 15 | Set Resend API key secret: `wrangler secret put RESEND_API_KEY` | BE | [ ] |
-| 16 | Create `og-image.png` (1200x630) and `favicon.svg` | DS | [ ] |
-| 17 | Deploy: Cloudflare Pages (Astro) + `wrangler deploy` (Worker) | FS | [ ] |
-| 18 | Configure custom domain in Cloudflare DNS | FS | [ ] |
-| 19 | Run Lighthouse audit — target all scores >= 95 | FE | [ ] |
+| 1 | `npm create astro@latest marketing` with `@astrojs/svelte` integration | FE | [x] |
+| 2 | Create `Base.astro` layout: `<head>` with OG tags, self-hosted fonts, global CSS vars | FE | [x] |
+| 3 | Create `global.css`: brand colors, typography scale, dark theme variables | DS/FE | [x] |
+| 4 | Build `Hero.astro`: headline, subheadline, CSS 3D sphere animation, email CTA | FE | [x] |
+| 5 | Build `FeatureGrid.astro`: 8 feature cards with icons and hook lines | FE | [x] |
+| 6 | Build `HowItWorks.astro`: 3-step horizontal stepper | FE | [x] |
+| 7 | Build `SafetySection.astro`: E2EE + parental controls two-column | FE | [x] |
+| 8 | Build `PlatformBadges.astro`, `PricingPreview.astro`, `Footer.astro` | FE | [x] |
+| 9 | Build `WishlistForm.svelte`: email input, submit, success/error states (client island) | FE | [x] |
+| 10 | Build `FAQAccordion.svelte`: 6 questions with expand/collapse | FE | [x] |
+| 11 | Assemble `index.astro`: import all sections | FE | [x] |
+| 12 | Write `worker/wishlist.js`: email validation → D1 insert → KV counter → Resend confirm | BE | [x] |
+| 13 | Write `wrangler.toml`: D1 + KV bindings | BE | [x] |
+| 14 | Run D1 migration: create `wishlist` + `counter` tables | BE | [x] |
+| 15 | Set Resend API key secret: `wrangler secret put RESEND_API_KEY` | BE | [x] |
+| 16 | Create `og-image.png` (1200x630) and `favicon.svg` | DS | [x] |
+| 17 | Deploy: Cloudflare Pages (Astro) + `wrangler deploy` (Worker) | FS | [x] |
+| 18 | Configure custom domain in Cloudflare DNS | FS | [x] |
+| 19 | Run Lighthouse audit — target all scores >= 95 | FE | [x] |
 
 ### S0 Acceptance Criteria
 - [ ] All service accounts created and credentials stored securely
-- [ ] Marketing site live at production URL
-- [ ] Wishlist form submits → email appears in D1 → confirmation email received
+- [x] Marketing site live at production URL (https://yapperhq.com)
+- [x] Wishlist form submits → email appears in D1 → confirmation email received
 - [ ] Live signup counter renders server-side
 - [ ] Lighthouse: Performance >= 95, Accessibility >= 95, Best Practices >= 95, SEO >= 95
 - [ ] Apple FamilyControls entitlement application submitted
@@ -117,7 +117,7 @@
 | 12 | Create `fly.toml`: `shared-cpu-1x`, `256mb` | BE | [x] |
 | 13 | Create `Dockerfile`: multi-stage (`rust:alpine` builder → `scratch` final image) | BE | [x] |
 | 14 | Create `.env.example` with all required env vars | FS | [x] |
-| 15 | Verify: `docker compose up -d` → PostgreSQL healthy → `cargo run` → `curl localhost:8080/health` → 200 | BE | [ ] |
+| 15 | Verify: `docker compose up -d` → PostgreSQL healthy → `cargo run` → `curl localhost:8080/health` → 200 | BE | [x] |
 
 ### Week 4: Frontend Skeleton + CI
 
@@ -127,9 +127,9 @@
 | 2 | Configure `svelte.config.js` with `adapter-static` | FE | [x] |
 | 3 | Configure `vite.config.ts` with API proxy to backend | FE | [x] |
 | 4 | `cd frontend && npm run tauri init` — Tauri v2 shell | FE | [x] |
-| 5 | Configure `tauri.conf.json`: bundle identifier `com.yapper.app`, window settings | FE | [x] |
-| 6 | `npx cap init Yapper com.yapper.app` — Capacitor setup | FE | [x] |
-| 7 | `npx cap add ios && npx cap add android` — add platforms | FE | [ ] |
+| 5 | Configure `tauri.conf.json`: bundle identifier `com.yapperhq.com`, window settings | FE | [x] |
+| 6 | `npx cap init Yapper com.yapperhq.com` — Capacitor setup | FE | [x] |
+| 7 | `npx cap add ios && npx cap add android` — add platforms | FE | [x] |
 | 8 | Create `capacitor.config.ts` with server URL config | FE | [x] |
 | 9 | Create `Makefile`: `dev-backend`, `dev-frontend`, `migrate`, `deploy`, `test` targets | FS | [x] |
 | 10 | Set up GitHub Actions CI: `cargo test`, `cargo clippy`, `cargo fmt --check`, `cargo audit`, `npm test`, `npm run build` | FS | [x] |
@@ -137,16 +137,16 @@
 | 12 | Add Playwright for E2E test scaffolding | FE | [ ] |
 | 13 | Write first backend test: health endpoint returns 200 | BE | [x] |
 | 14 | Write first frontend test: app shell renders | FE | [x] |
-| 15 | `fly deploy` → backend live on Fly.io → health check passes | FS | [ ] |
+| 15 | `fly deploy` → backend live on Fly.io → health check passes | FS | [x] |
 
 ### S1 Acceptance Criteria
-- [ ] `docker compose up -d && cargo run` → health endpoint responds
-- [ ] `cargo sqlx prepare` → SQL queries verified against live DB
-- [ ] `npm run dev` → SvelteKit at `localhost:5173`
-- [ ] `npm run tauri dev` → Tauri window opens with SvelteKit content
-- [ ] GitHub Actions CI passes on push to `main`
-- [ ] `fly deploy` → backend accessible on Fly.io
-- [ ] At least 1 backend test + 1 frontend test passing
+- [x] `docker compose up -d && cargo run` → health endpoint responds
+- [x] `cargo sqlx prepare` → SQL queries verified against live DB
+- [x] `npm run dev` → SvelteKit at `localhost:5173`
+- [x] `npm run tauri dev` → Tauri window opens with SvelteKit content
+- [x] GitHub Actions CI passes on push to `main`
+- [x] `fly deploy` → backend accessible on Fly.io
+- [x] At least 1 backend test + 1 frontend test passing
 
 ---
 
@@ -158,46 +158,46 @@
 
 | # | Task | Owner | Done |
 |---|------|-------|------|
-| 1 | Create `src/auth/mod.rs`, `handlers.rs`, `service.rs`, `middleware.rs` | BE | [ ] |
-| 2 | Implement `POST /auth/register`: Argon2id hash, email verification token, store user | BE | [ ] |
-| 3 | Implement `POST /auth/login`: verify password, return RS256 JWT (15min) + HttpOnly refresh cookie | BE | [ ] |
-| 4 | Implement `POST /auth/refresh`: rotate refresh token with family-based reuse detection | BE | [ ] |
-| 5 | Implement `DELETE /auth/logout`: invalidate token family, remove session | BE | [ ] |
-| 6 | Create JWT middleware extractor with `kid` header support for key rotation | BE | [ ] |
-| 7 | Add CSRF token validation on state-changing endpoints (`X-CSRF-Token` double-submit) | BE | [ ] |
-| 8 | Add login rate limiting: 5 failed attempts → 15-min lockout (in-memory `DashMap`) | BE | [ ] |
-| 9 | Implement email verification via Resend: `POST /email/verify` | BE | [ ] |
-| 10 | Implement password reset via Resend: `POST /email/password-reset` | BE | [ ] |
-| 11 | Write migrations: `users`, `sessions` tables with all columns from schema | BE | [ ] |
-| 12 | Write integration tests: register, login, refresh, reuse detection, rate limiting | BE | [ ] |
+| 1 | Create `src/auth/mod.rs`, `handlers.rs`, `service.rs`, `middleware.rs` | BE | [x] |
+| 2 | Implement `POST /auth/register`: Argon2id hash, email verification token, store user | BE | [x] |
+| 3 | Implement `POST /auth/login`: verify password, return RS256 JWT (15min) + HttpOnly refresh cookie | BE | [x] |
+| 4 | Implement `POST /auth/refresh`: rotate refresh token with family-based reuse detection | BE | [x] |
+| 5 | Implement `DELETE /auth/logout`: invalidate token family, remove session | BE | [x] |
+| 6 | Create JWT middleware extractor with `kid` header support for key rotation | BE | [x] |
+| 7 | Add CSRF token validation on state-changing endpoints (`X-CSRF-Token` double-submit) | BE | [x] |
+| 8 | Add login rate limiting: 5 failed attempts → 15-min lockout (in-memory `DashMap`) | BE | [x] |
+| 9 | Implement email verification via Resend: `POST /email/verify` | BE | [x] |
+| 10 | Implement password reset via Resend: `POST /email/password-reset` | BE | [x] |
+| 11 | Write migrations: `users`, `sessions` tables with all columns from schema | BE | [x] |
+| 12 | Write integration tests: register, login, refresh, reuse detection, rate limiting | BE | [x] |
 
 ### Week 6: Frontend Auth + OAuth
 
 | # | Task | Owner | Done |
 |---|------|-------|------|
-| 1 | Create `src/lib/api/client.ts`: typed fetch wrapper with JWT auto-attach and refresh interceptor | FE | [ ] |
-| 2 | Create `src/lib/stores/auth.ts`: auth state, token storage, login/logout actions | FE | [ ] |
-| 3 | Build Sign In page (Screen 7): dark split layout, email+password, social buttons, "Enter the Void" CTA | FE | [ ] |
-| 4 | Build Sign Up page (Screen 8): handle + email + password (strength meter), social buttons, "Join the Hype" CTA | FE | [ ] |
-| 5 | Build Onboarding Screen 1 (Screen 9): 3D sphere CSS, "A New Way to Yap", dot pagination | FE | [ ] |
-| 6 | Build Onboarding Screen 2 (Screen 10): community discovery cards, "Ready to Yap" CTA | FE | [ ] |
-| 7 | Implement Discord OAuth2 flow: `GET /auth/oauth/discord` → redirect → callback → user created/linked | BE | [ ] |
-| 8 | Implement Google OAuth2 flow | BE | [ ] |
+| 1 | Create `src/lib/api/client.ts`: typed fetch wrapper with JWT auto-attach and refresh interceptor | FE | [x] |
+| 2 | Create `src/lib/stores/auth.ts`: auth state, token storage, login/logout actions | FE | [x] |
+| 3 | Build Sign In page (Screen 7): dark split layout, email+password, social buttons, "Enter the Void" CTA | FE | [x] |
+| 4 | Build Sign Up page (Screen 8): handle + email + password (strength meter), social buttons, "Join the Hype" CTA | FE | [x] |
+| 5 | Build Onboarding Screen 1 (Screen 9): 3D sphere CSS, "A New Way to Yap", dot pagination | FE | [x] |
+| 6 | Build Onboarding Screen 2 (Screen 10): community discovery cards, "Ready to Yap" CTA | FE | [x] |
+| 7 | Implement Discord OAuth2 flow: `GET /auth/oauth/discord` → redirect → callback → user created/linked | BE | [x] |
+| 8 | Implement Google OAuth2 flow | BE | [x] |
 | 9 | Implement Apple Sign-In OAuth2 flow | BE | [ ] |
-| 10 | Wire frontend social login buttons to OAuth redirect endpoints | FE | [ ] |
-| 11 | Create `(auth)` layout group with route guards (redirect if logged in) | FE | [ ] |
-| 12 | Create `(app)` layout group with route guards (redirect if NOT logged in) | FE | [ ] |
+| 10 | Wire frontend social login buttons to OAuth redirect endpoints | FE | [x] |
+| 11 | Create `(auth)` layout group with route guards (redirect if logged in) | FE | [x] |
+| 12 | Create `(app)` layout group with route guards (redirect if NOT logged in) | FE | [x] |
 | 13 | Write Playwright E2E test: register → verify → login → see dashboard | FE | [ ] |
 | 14 | Write component tests: SignIn form validation, SignUp strength meter | FE | [ ] |
 
 ### S2 Acceptance Criteria
-- [ ] Full register → email verification → login flow works end-to-end
-- [ ] Access token expires → refresh token rotates correctly
-- [ ] Revoked refresh token replay → entire token family invalidated
-- [ ] Discord OAuth2 redirect creates/links user account
-- [ ] Rate limiter blocks after 5 failed login attempts
-- [ ] All 4 auth screens match mockup designs
-- [ ] CI passes with new tests
+- [x] Full register → email verification → login flow works end-to-end
+- [x] Access token expires → refresh token rotates correctly
+- [x] Revoked refresh token replay → entire token family invalidated
+- [x] Discord OAuth2 redirect creates/links user account
+- [x] Rate limiter blocks after 5 failed login attempts
+- [x] All 4 auth screens match mockup designs
+- [x] CI passes with new tests
 
 ---
 
@@ -209,46 +209,46 @@
 
 | # | Task | Owner | Done |
 |---|------|-------|------|
-| 1 | Write migrations: `identity_keys`, `signed_prekeys`, `one_time_prekeys` tables | BE | [ ] |
-| 2 | Create `src/keys/`: handlers + service for key bundle CRUD | BE | [ ] |
-| 3 | Implement `POST /api/v1/keys/identity` — upload identity public key | BE | [ ] |
-| 4 | Implement `POST /api/v1/keys/signed-prekey` — rotate signed prekey | BE | [ ] |
-| 5 | Implement `POST /api/v1/keys/one-time-prekeys` — batch upload 100 OPKs | BE | [ ] |
-| 6 | Implement `GET /api/v1/keys/{user_id}` — return key bundle, mark OPK consumed | BE | [ ] |
-| 7 | Implement `GET /api/v1/keys/one-time-prekey-count` — alert if < 10 | BE | [ ] |
-| 8 | Install `@signalapp/libsignal-client` WASM in frontend | FE | [ ] |
-| 9 | Create `src/lib/signal/index.ts`: `initSignal()`, `generateIdentityKey()`, `generateSignedPreKey()`, `generateOneTimePreKeys(n)`, `createSession()`, `encryptMessage()`, `decryptMessage()` | FE | [ ] |
-| 10 | Create `src/lib/signal/keystore.ts`: abstract storage (IndexedDB web, Capacitor SecureStorage mobile, Tauri Stronghold desktop) | FE | [ ] |
-| 11 | Implement key generation on first registration + upload to server | FE | [ ] |
+| 1 | Write migrations: `identity_keys`, `signed_prekeys`, `one_time_prekeys` tables | BE | [x] |
+| 2 | Create `src/keys/`: handlers + service for key bundle CRUD | BE | [x] |
+| 3 | Implement `POST /api/v1/keys/identity` — upload identity public key | BE | [x] |
+| 4 | Implement `POST /api/v1/keys/signed-prekey` — rotate signed prekey | BE | [x] |
+| 5 | Implement `POST /api/v1/keys/one-time-prekeys` — batch upload 100 OPKs | BE | [x] |
+| 6 | Implement `GET /api/v1/keys/{user_id}` — return key bundle, mark OPK consumed | BE | [x] |
+| 7 | Implement `GET /api/v1/keys/one-time-prekey-count` — alert if < 10 | BE | [x] |
+| 8 | Install `@noble/curves` + `@noble/hashes` (pure Web Crypto; libsignal-client is NAPI-only) | FE | [x] |
+| 9 | Create `src/lib/signal/index.ts`: `setupKeys()`, `encryptDm()`, `decryptDm()`, X3DH + ratchet | FE | [x] |
+| 10 | Create `src/lib/signal/keystore.ts`: IndexedDB storage via `idb` | FE | [x] |
+| 11 | Implement key generation on first registration + upload to server | FE | [x] |
 | 12 | Write backend tests: key upload, bundle fetch, OPK consumption + depletion | BE | [ ] |
 
 ### Week 8: WebSocket Hub + DM Messaging
 
 | # | Task | Owner | Done |
 |---|------|-------|------|
-| 1 | Write migrations: `dm_conversations`, `dm_participants`, `messages`, `message_read_receipts` tables | BE | [ ] |
-| 2 | Implement WebSocket upgrade handler: auth via first message `{ type: "auth", token }`, register in hub | BE | [ ] |
-| 3 | Implement re-authentication: server sends `re_auth_required` 60s before JWT expiry | BE | [ ] |
-| 4 | Implement DM message flow: receive encrypted frame → store ciphertext → route to recipient's `mpsc::Sender` → offline fallback to DB | BE | [ ] |
-| 5 | Implement offline delivery: on connect, query undelivered messages → push all → mark delivered | BE | [ ] |
-| 6 | Implement WS rate limiting: token bucket per user via `governor` | BE | [ ] |
-| 7 | Create `src/lib/stores/ws.ts`: WebSocket store with reconnect (exponential backoff) | FE | [ ] |
-| 8 | Build DM conversation page: `(app)/dm/[conversationId]/+page.svelte` | FE | [ ] |
-| 9 | Build `MessageList.svelte`: paginated message display with decryption | FE | [ ] |
-| 10 | Build `MessageInput.svelte`: text input, encrypt via Signal session, send via WS | FE | [ ] |
-| 11 | Implement X3DH session creation: Alice fetches Bob's bundle → local session → first message | FE | [ ] |
-| 12 | Implement PIN-based key backup: `PUT /api/v1/keys/backup` (encrypted blob) | BE/FE | [ ] |
+| 1 | Write migrations: `dm_conversations`, `dm_participants`, `messages`, `message_read_receipts` tables | BE | [x] |
+| 2 | Implement WebSocket upgrade handler: auth via first message `{ type: "auth", token }`, register in hub | BE | [x] |
+| 3 | Implement re-authentication: server sends `re_auth_required` 60s before JWT expiry | BE | [x] |
+| 4 | Implement DM message flow: receive encrypted frame → store ciphertext → route to recipient's `mpsc::Sender` → offline fallback to DB | BE | [x] |
+| 5 | Implement offline delivery: on connect, query undelivered messages → push all → mark delivered | BE | [x] |
+| 6 | Implement WS rate limiting: token bucket per user via `governor` | BE | [x] |
+| 7 | Create `src/lib/stores/ws.ts`: WebSocket store with reconnect (exponential backoff) | FE | [x] |
+| 8 | Build DM conversation page: `(app)/dm/[conversationId]/+page.svelte` | FE | [x] |
+| 9 | Build `MessageList.svelte`: paginated message display with decryption | FE | [x] |
+| 10 | Build `MessageInput.svelte`: text input, encrypt via Signal session, send via WS | FE | [x] |
+| 11 | Implement X3DH session creation: Alice fetches Bob's bundle → local session → first message | FE | [x] |
+| 12 | Implement PIN-based key backup: `PUT /api/v1/keys/backup` (encrypted blob) | BE/FE | [x] |
 | 13 | Write E2E test: Alice → Bob DM, verify DB has only ciphertext | BE | [ ] |
 | 14 | Write integration tests: WS auth, offline delivery, rate limiting | BE | [ ] |
 
 ### S3 Acceptance Criteria
-- [ ] Alice registers + uploads keys. Bob registers + uploads keys
-- [ ] Alice fetches Bob's key bundle → X3DH session created locally
-- [ ] Alice sends encrypted message → DB stores ONLY ciphertext (no plaintext)
-- [ ] Bob receives via WebSocket → decrypts successfully → plaintext visible in UI
-- [ ] Offline messages delivered on reconnect
-- [ ] WS auth rejects invalid/expired tokens
-- [ ] PIN-based key backup: set PIN → backup → restore on new session
+- [x] Alice registers + uploads keys. Bob registers + uploads keys
+- [x] Alice fetches Bob's key bundle → X3DH session created locally
+- [x] Alice sends encrypted message → DB stores ONLY ciphertext (no plaintext)
+- [x] Bob receives via WebSocket → decrypts successfully → plaintext visible in UI
+- [x] Offline messages delivered on reconnect
+- [x] WS auth rejects invalid/expired tokens
+- [x] PIN-based key backup: set PIN → backup → restore on new session
 - [ ] CI passes with Signal + WS tests
 
 ---
@@ -261,7 +261,7 @@
 
 | # | Task | Owner | Done |
 |---|------|-------|------|
-| 1 | Write migrations: `servers`, `server_memberships`, `channels`, `server_invite_links` tables + indexes | BE | [ ] |
+| 1 | Write migrations: `servers`, `server_memberships`, `channels`, `server_invite_links` tables + indexes | BE | [x] |
 | 2 | Create `src/servers/`: handlers + service | BE | [ ] |
 | 3 | Implement `POST /api/v1/servers` — create server | BE | [ ] |
 | 4 | Implement `GET /api/v1/servers/{id}`, `PATCH /api/v1/servers/{id}` | BE | [ ] |
@@ -575,7 +575,7 @@
 |---|------|-------|------|
 | 1 | Audit all rate limits: verify `governor` config per route (5/sec messages, 100/min API) | BE | [ ] |
 | 2 | Audit security headers: CSP, HSTS, X-Frame-Options, nosniff — verify in production | BE | [ ] |
-| 3 | Audit CORS: verify strict allowlist (`yapper.app`, `tauri://localhost`, `capacitor://localhost`) | BE | [ ] |
+| 3 | Audit CORS: verify strict allowlist (`yapperhq.com`, `tauri://localhost`, `capacitor://localhost`) | BE | [ ] |
 | 4 | Audit input validation: verify `#[serde(deny_unknown_fields)]` on ALL input DTOs | BE | [ ] |
 | 5 | Audit CSRF: verify `SameSite=Strict` + `X-CSRF-Token` on all state-changing endpoints | BE | [ ] |
 | 6 | Audit WebSocket: verify first-message auth, max frame 64KB, max 5 connections/user | BE | [ ] |
@@ -638,7 +638,7 @@
 | 12 | Test: data export → no plaintext; account deletion → PII purge | BE | [ ] |
 | 13 | Deploy final production build to Fly.io | FS | [ ] |
 | 14 | Deploy frontend to Cloudflare Pages (production) | FS | [ ] |
-| 15 | Configure custom domains: `api.yapper.app`, `app.yapper.app` | FS | [ ] |
+| 15 | Configure custom domains: `api.yapperhq.com`, `app.yapperhq.com` | FS | [ ] |
 | 16 | Submit to Apple App Store (requires Mac + Xcode + signing) | FS | [ ] |
 | 17 | Submit to Google Play Store | FS | [ ] |
 | 18 | Update marketing site: remove "Coming soon", add download links | FE | [ ] |
@@ -648,8 +648,8 @@
 - [ ] Premium gating works: free users see lock badges, premium flags respected server-side
 - [ ] Sentry captures errors in both backend and frontend
 - [ ] All 13 E2E testing checklist items pass
-- [ ] Production backend accessible at `api.yapper.app`
-- [ ] Production frontend accessible at `app.yapper.app`
+- [ ] Production backend accessible at `api.yapperhq.com`
+- [ ] Production frontend accessible at `app.yapperhq.com`
 - [ ] iOS app submitted to App Store (or TestFlight)
 - [ ] Android app submitted to Google Play
 - [ ] Marketing site updated with download links
@@ -742,5 +742,5 @@ APPLE_KEY_ID=...
 APPLE_PRIVATE_KEY=...
 FCM_SERVICE_ACCOUNT_JSON=...           # Firebase Cloud Messaging
 SENTRY_DSN=...                         # Error monitoring
-FRONTEND_URL=https://app.yapper.app    # CORS origin
+FRONTEND_URL=https://app.yapperhq.com    # CORS origin
 ```
