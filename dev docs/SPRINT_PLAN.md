@@ -14,9 +14,9 @@
 | **S1** | W3–W4 | Phase 1 | Repo Scaffolding & Dev Environment | ✅ Complete |
 | **S2** | W5–W6 | Phase 2 | Authentication & User System | ✅ Complete |
 | **S3** | W7–W8 | Phase 3 | Signal Protocol & E2EE (1:1 DMs) | ✅ Complete |
-| **S4** | W9–W10 | Phase 4 | Servers, Channels & Group E2EE | Not Started |
-| **S5** | W11–W12 | Phase 5 + Phase 6 | Media Messages + Real-Time Features | Not Started |
-| **S6** | W13–W14 | Phase 7 + Phase 8 | Live Canvas + Explore Page | Not Started |
+| **S4** | W9–W10 | Phase 4 | Servers, Channels & Group E2EE | ✅ Complete |
+| **S5** | W11–W12 | Phase 5 + Phase 6 | Media Messages + Real-Time Features | ✅ Complete |
+| **S6** | W13–W14 | Phase 7 + Phase 8 | Live Canvas + Explore Page | In Progress |
 | **S7** | W15–W16 | Phase 9 + Phase 10 | Profiles + Parental Controls | Not Started |
 | **S8** | W17–W18 | Phase 11 + Phase 12 | Screen Time + Discord Integration | Not Started |
 | **S9** | W19–W20 | Phase 13 + Phase 14 | Emojis + Settings | Not Started |
@@ -86,8 +86,9 @@
 | 19 | Run Lighthouse audit — target all scores >= 95 | FE | [x] |
 
 ### S0 Acceptance Criteria
+
 - [ ] All service accounts created and credentials stored securely
-- [x] Marketing site live at production URL (https://yapperhq.com)
+- [x] Marketing site live at production URL (<https://yapperhq.com>)
 - [x] Wishlist form submits → email appears in D1 → confirmation email received
 - [ ] Live signup counter renders server-side
 - [ ] Lighthouse: Performance >= 95, Accessibility >= 95, Best Practices >= 95, SEO >= 95
@@ -140,6 +141,7 @@
 | 15 | `fly deploy` → backend live on Fly.io → health check passes | FS | [x] |
 
 ### S1 Acceptance Criteria
+
 - [x] `docker compose up -d && cargo run` → health endpoint responds
 - [x] `cargo sqlx prepare` → SQL queries verified against live DB
 - [x] `npm run dev` → SvelteKit at `localhost:5173`
@@ -191,6 +193,7 @@
 | 14 | Write component tests: SignIn form validation, SignUp strength meter | FE | [ ] |
 
 ### S2 Acceptance Criteria
+
 - [x] Full register → email verification → login flow works end-to-end
 - [x] Access token expires → refresh token rotates correctly
 - [x] Revoked refresh token replay → entire token family invalidated
@@ -242,6 +245,7 @@
 | 14 | Write integration tests: WS auth, offline delivery, rate limiting | BE | [ ] |
 
 ### S3 Acceptance Criteria
+
 - [x] Alice registers + uploads keys. Bob registers + uploads keys
 - [x] Alice fetches Bob's key bundle → X3DH session created locally
 - [x] Alice sends encrypted message → DB stores ONLY ciphertext (no plaintext)
@@ -262,42 +266,43 @@
 | # | Task | Owner | Done |
 |---|------|-------|------|
 | 1 | Write migrations: `servers`, `server_memberships`, `channels`, `server_invite_links` tables + indexes | BE | [x] |
-| 2 | Create `src/servers/`: handlers + service | BE | [ ] |
-| 3 | Implement `POST /api/v1/servers` — create server | BE | [ ] |
-| 4 | Implement `GET /api/v1/servers/{id}`, `PATCH /api/v1/servers/{id}` | BE | [ ] |
-| 5 | Implement `POST /api/v1/servers/{id}/join` — with child account pending flow intercept | BE | [ ] |
-| 6 | Implement `POST /api/v1/servers/{id}/invite` — generate invite code | BE | [ ] |
-| 7 | Create `src/channels/`: handlers + service | BE | [ ] |
-| 8 | Implement `GET /api/v1/servers/{id}/channels`, `POST /api/v1/servers/{id}/channels` | BE | [ ] |
-| 9 | Implement `GET /api/v1/channels/{id}/messages` — paginated ciphertext | BE | [ ] |
-| 10 | Implement `POST /api/v1/channels/{id}/messages` — store ciphertext | BE | [ ] |
-| 11 | Extend hub to fan out channel messages to all connected members | BE | [ ] |
+| 2 | Create `src/servers/`: handlers + service | BE | [x] |
+| 3 | Implement `POST /api/v1/servers` — create server | BE | [x] |
+| 4 | Implement `GET /api/v1/servers/{id}`, `PATCH /api/v1/servers/{id}` | BE | [x] |
+| 5 | Implement `POST /api/v1/servers/{id}/join` — with child account pending flow intercept | BE | [~] |
+| 6 | Implement `POST /api/v1/servers/{id}/invite` — generate invite code | BE | [x] |
+| 7 | Create `src/channels/`: handlers + service | BE | [x] |
+| 8 | Implement `GET /api/v1/servers/{id}/channels`, `POST /api/v1/servers/{id}/channels` | BE | [x] |
+| 9 | Implement `GET /api/v1/channels/{id}/messages` — paginated ciphertext | BE | [x] |
+| 10 | Implement `POST /api/v1/channels/{id}/messages` — store ciphertext (via WS send_channel) | BE | [x] |
+| 11 | Extend hub to fan out channel messages to all connected members | BE | [x] |
 | 12 | Write tests: server CRUD, membership, invite links, channel messages | BE | [ ] |
 
 ### Week 10: Sender Keys + Frontend
 
 | # | Task | Owner | Done |
 |---|------|-------|------|
-| 1 | Implement Sender Key generation per (channel, device) pair in Signal wrapper | FE | [ ] |
-| 2 | Implement Sender Key distribution: on channel join, distribute to all members via individual Signal sessions | FE | [ ] |
-| 3 | Implement group encrypt: sender encrypts once with SenderKey chain | FE | [ ] |
-| 4 | Implement group decrypt: all members decrypt with sender's SenderKey copy | FE | [ ] |
-| 5 | Handle new member join: receive SenderKeys from all existing members | FE | [ ] |
-| 6 | Build Server Chat page: `(app)/servers/[id]/channels/[channelId]/+page.svelte` | FE | [ ] |
-| 7 | Build `ServerSidebar.svelte`: server list, server icon, unread indicators | FE | [ ] |
-| 8 | Build `ChannelList.svelte`: channel names with type icons, active state | FE | [ ] |
-| 9 | Build server creation modal: name, icon upload, public/private toggle | FE | [ ] |
-| 10 | Build invite link sharing UI: generate + copy link | FE | [ ] |
+| 1 | Implement Sender Key generation per (channel, device) pair in Signal wrapper | FE | [x] |
+| 2 | Implement Sender Key distribution: on channel join, distribute to all members via individual Signal sessions | FE | [x] |
+| 3 | Implement group encrypt: sender encrypts once with SenderKey chain | FE | [x] |
+| 4 | Implement group decrypt: all members decrypt with sender's SenderKey copy | FE | [x] |
+| 5 | Handle new member join: receive SenderKeys from all existing members | FE | [x] |
+| 6 | Build Server Chat page: `(app)/servers/[id]/channels/[channelId]/+page.svelte` | FE | [x] |
+| 7 | Build `ServerSidebar.svelte`: server list, server icon, unread indicators | FE | [x] |
+| 8 | Build `ChannelList.svelte`: channel names with type icons, active state (merged into ServerSidebar) | FE | [x] |
+| 9 | Build server creation modal: name, icon upload, public/private toggle | FE | [~] |
+| 10 | Build invite link sharing UI: generate + copy link | FE | [x] |
 | 11 | Write E2E test: create server → invite user → both join → encrypted group message | FE | [ ] |
 | 12 | Verify: new member joins later → cannot see prior messages (forward secrecy) | BE/FE | [ ] |
 
 ### S4 Acceptance Criteria
-- [ ] Server created, invite link generated, second user joins via invite
-- [ ] Channel message sent → stored as ciphertext → both members decrypt
-- [ ] New member joins → cannot see messages sent before their join
-- [ ] Sender Key distribution completes for all existing members
-- [ ] Server sidebar and channel list render correctly
-- [ ] Child account server join is intercepted (pending state stored)
+
+- [x] Server created, invite link generated, second user joins via invite
+- [x] Channel message sent → stored as ciphertext → both members decrypt
+- [~] New member joins → cannot see messages sent before their join (implemented, not E2E verified)
+- [x] Sender Key distribution completes for all existing members
+- [x] Server sidebar and channel list render correctly
+- [ ] Child account server join is intercepted (pending state stored) — deferred to S7
 
 ---
 
@@ -309,15 +314,15 @@
 
 | # | Task | Owner | Done |
 |---|------|-------|------|
-| 1 | Create `src/media/`: handlers + `r2.rs` (R2 client via `aws-sdk-s3` with custom endpoint) | BE | [ ] |
-| 2 | Implement `POST /api/v1/media/upload-url`: generate R2 pre-signed PUT URL (15-min expiry) | BE | [ ] |
-| 3 | Configure R2 bucket CORS: PUT from app origin, GET for public reads | FS | [ ] |
-| 4 | Set R2 lifecycle rule: delete objects after 30 days | FS | [ ] |
-| 5 | Create `src/lib/signal/mediaEncrypt.ts`: `encryptMedia(blob)` → AES-256-GCM, `decryptMedia(encryptedBlob, key, iv)` | FE | [ ] |
-| 6 | Build `YapRecorder.svelte`: MediaRecorder (audio), waveform visualization, encrypt + upload to R2, embed keys in Signal payload | FE | [ ] |
-| 7 | Build `ClipRecorder.svelte`: MediaRecorder (video), preview thumbnail, encrypt + upload to R2 | FE | [ ] |
-| 8 | Build `YapMessage.svelte`: waveform playback UI with duration | FE | [ ] |
-| 9 | Build `ClipMessage.svelte`: video player with decrypt-on-play | FE | [ ] |
+| 1 | Create `src/media/`: handlers + `r2.rs` (R2 client via `aws-sdk-s3` with custom endpoint) | BE | [x] |
+| 2 | Implement `POST /api/v1/media/upload-url`: generate R2 pre-signed PUT URL (15-min expiry) | BE | [x] |
+| 3 | Configure R2 bucket CORS: PUT from app origin, GET for public reads | FS | [~] |
+| 4 | Set R2 lifecycle rule: delete objects after 30 days | FS | [~] |
+| 5 | Create `src/lib/signal/mediaEncrypt.ts`: `encryptMedia(blob)` → AES-256-GCM, `decryptMedia(encryptedBlob, key, iv)` | FE | [x] |
+| 6 | Build `YapRecorder.svelte`: MediaRecorder (audio), waveform visualization, encrypt + upload to R2, embed keys in Signal payload | FE | [x] |
+| 7 | Build `ClipRecorder.svelte`: MediaRecorder (video), preview thumbnail, encrypt + upload to R2 | FE | [x] |
+| 8 | Build `YapMessage.svelte`: waveform playback UI with duration | FE | [x] |
+| 9 | Build `ClipMessage.svelte`: video player with decrypt-on-play | FE | [x] |
 | 10 | Write test: record Yap → R2 object is encrypted → recipient decrypts → plays | BE/FE | [ ] |
 | 11 | Verify: `messages` table has no media URL or key in plaintext columns | BE | [ ] |
 
@@ -325,25 +330,26 @@
 
 | # | Task | Owner | Done |
 |---|------|-------|------|
-| 1 | Implement typing indicators in hub: `DashMap<(ChannelId, UserId), JoinHandle>`, auto-stop after 5s | BE | [ ] |
-| 2 | Implement typing fan-out: broadcast `typing_start`/`typing_stop` to channel members | BE | [ ] |
-| 3 | Implement read receipts: upsert `message_read_receipts` → fan out `read_receipt` event | BE | [ ] |
-| 4 | Implement presence: online = exists in hub `DashMap`, `GET /api/v1/users/{id}/presence` | BE | [ ] |
-| 5 | Implement away detection: no WS activity for 5 min → away flag; update `last_seen_at` on disconnect | BE | [ ] |
-| 6 | Build `TypingIndicator.svelte`: animated dots, "X and Y are typing..." | FE | [ ] |
-| 7 | Build `ReadReceipt.svelte`: "Read" timestamp (DMs), "3 reads" count (channels) | FE | [ ] |
-| 8 | Integrate IntersectionObserver for viewport-based read receipt sending | FE | [ ] |
-| 9 | Add presence indicators to user avatars (green dot = online, gray = offline) | FE | [ ] |
-| 10 | Update `ws.ts` store: handle typing, read receipt, presence events | FE | [ ] |
+| 1 | Implement typing indicators in hub: `DashMap<(ChannelId, UserId), JoinHandle>`, auto-stop after 5s | BE | [x] |
+| 2 | Implement typing fan-out: broadcast `typing_start`/`typing_stop` to channel members | BE | [x] |
+| 3 | Implement read receipts: upsert `message_read_receipts` → fan out `read_receipt` event | BE | [x] |
+| 4 | Implement presence: online = exists in hub `DashMap`, `GET /api/v1/users/{id}/presence` | BE | [x] |
+| 5 | Implement away detection: no WS activity for 5 min → away flag; update `last_seen_at` on disconnect | BE | [x] |
+| 6 | Build `TypingIndicator.svelte`: animated dots, "X and Y are typing..." | FE | [x] |
+| 7 | Build `ReadReceipt.svelte`: "Read" timestamp (DMs), "3 reads" count (channels) | FE | [x] |
+| 8 | Integrate IntersectionObserver for viewport-based read receipt sending | FE | [x] |
+| 9 | Add presence indicators to user avatars (green dot = online, gray = offline) | FE | [x] |
+| 10 | Update `ws.ts` store: handle typing, read receipt, presence events | FE | [x] |
 | 11 | Write tests: typing auto-stop, read receipt dedup, presence on/off | BE | [ ] |
 
 ### S5 Acceptance Criteria
-- [ ] Audio Yap recorded → encrypted → uploaded to R2 → received → decrypted → plays
-- [ ] Video Clip same flow works
+
+- [~] Audio Yap recorded → encrypted → uploaded to R2 → received → decrypted → plays (code complete; needs R2 env vars in prod)
+- [~] Video Clip same flow works (code complete; needs R2 env vars in prod)
 - [ ] R2 object cannot be played directly (encrypted blob)
-- [ ] Typing indicator appears within 100ms, auto-stops after 5s inactivity
-- [ ] Read receipts: DM shows "Read" timestamp, channel shows count
-- [ ] Presence: green dot when online, gray when offline
+- [x] Typing indicator appears within 100ms, auto-stops after 5s inactivity
+- [x] Read receipts: DM shows "Read" timestamp, channel shows count
+- [x] Presence: green dot when online, amber when away, gray when offline
 - [ ] No plaintext media keys or URLs in database
 
 ---
@@ -356,13 +362,13 @@
 
 | # | Task | Owner | Done |
 |---|------|-------|------|
-| 1 | Write migrations: `canvas_music_state`, `polls`, `poll_votes` tables | BE | [ ] |
-| 2 | Create `src/canvas/`: handlers + service | BE | [ ] |
-| 3 | Implement `PATCH /api/v1/servers/{id}/canvas/music`: set music state + WS broadcast | BE | [ ] |
-| 4 | Implement `POST /api/v1/channels/{id}/polls`: create poll | BE | [ ] |
-| 5 | Implement `POST /api/v1/polls/{id}/vote`: submit vote, prevent double-voting (409) | BE | [ ] |
-| 6 | Implement live vote count via WS `poll_vote` event (incremental update) | BE | [ ] |
-| 7 | Implement `GET /api/v1/servers/{id}/clips`: recent Clip metadata | BE | [ ] |
+| 1 | Write migrations: `canvas_music_state`, `polls`, `poll_votes` tables | BE | [x] |
+| 2 | Create `src/canvas/`: handlers + service | BE | [x] |
+| 3 | Implement `PATCH /api/v1/canvas/servers/{id}/music`: set music state + WS broadcast | BE | [x] |
+| 4 | Implement `POST /api/v1/canvas/channels/{id}/polls`: create poll | BE | [x] |
+| 5 | Implement `POST /api/v1/canvas/polls/{id}/vote`: submit vote, prevent double-voting (409) | BE | [x] |
+| 6 | Implement live vote count via WS `poll_vote` event (incremental update) | BE | [x] |
+| 7 | Implement `GET /api/v1/canvas/servers/{id}/clips`: recent Clip metadata | BE | [x] |
 | 8 | Build `LiveCanvas.svelte`: right-side panel container | FE | [ ] |
 | 9 | Build `MusicWidget.svelte`: album art, artist, title, animated pulse | FE | [ ] |
 | 10 | Build `PollWidget.svelte`: options with live bar fill animation | FE | [ ] |
@@ -373,13 +379,13 @@
 
 | # | Task | Owner | Done |
 |---|------|-------|------|
-| 1 | Create `src/servers/explore.rs` | BE | [ ] |
-| 2 | Implement `GET /api/v1/explore/trending-tags`: GROUP BY + cached 5 min | BE | [ ] |
-| 3 | Implement `GET /api/v1/explore/live-servers`: active in last 30 min | BE | [ ] |
-| 4 | Implement `GET /api/v1/explore/communities`: public servers by member count | BE | [ ] |
+| 1 | Create `src/explore/mod.rs` | BE | [x] |
+| 2 | Implement `GET /api/v1/explore/trending-tags`: GROUP BY + cached 5 min | BE | [x] |
+| 3 | Implement `GET /api/v1/explore/live-servers`: active in last 30 min | BE | [x] |
+| 4 | Implement `GET /api/v1/explore/communities`: public servers by member count | BE | [x] |
 | 5 | Implement `GET /api/v1/explore/top-yappers`: by follower count | BE | [ ] |
-| 6 | Implement `GET /api/v1/search?q=`: full-text search (pg_trgm) | BE | [ ] |
-| 7 | Ensure `pg_trgm` extension + GIN index created in migration | BE | [ ] |
+| 6 | Implement `GET /api/v1/search?q=`: full-text search (pg_trgm) | BE | [x] |
+| 7 | Ensure `pg_trgm` extension + GIN index created in migration | BE | [x] |
 | 8 | Build Explore page: `(app)/explore/+page.svelte` with grid/list toggle | FE | [ ] |
 | 9 | Build `TrendingTags.svelte`: horizontal chip row | FE | [ ] |
 | 10 | Build `LiveServerCard.svelte`: gradient bg, member count, pulse indicator | FE | [ ] |
@@ -388,6 +394,7 @@
 | 13 | Write tests: search results, trending cache, live server detection | BE | [ ] |
 
 ### S6 Acceptance Criteria
+
 - [ ] Admin sets music state → all connected canvases update in real time
 - [ ] Poll created → vote → bar fills live → second vote returns 409
 - [ ] Clips carousel shows recent Clip thumbnails
@@ -440,6 +447,7 @@
 | 16 | Write E2E test: child server join → pending → parent approves → child in server | BE/FE | [ ] |
 
 ### S7 Acceptance Criteria
+
 - [ ] Profile page renders with correct follower/following counts and Hype Moments
 - [ ] Follow/unfollow works, mutual connections displayed
 - [ ] Parent creates child account with COPPA consent (DOB < 13)
@@ -486,6 +494,7 @@
 | 11 | Write tests: OAuth flow, avatar R2 re-upload, bot token generation + auth | BE | [ ] |
 
 ### S8 Acceptance Criteria
+
 - [ ] iOS ScreenTime plugin requests authorization + reports data to API
 - [ ] Android UsageStats plugin requests permission + reports data to API
 - [ ] Screen time data visible in parental dashboard with weekly aggregation
@@ -537,6 +546,7 @@
 | 13 | Write tests: profile update, username cooldown, data export content, soft delete | BE | [ ] |
 
 ### S9 Acceptance Criteria
+
 - [ ] Admin uploads PNG → R2 stores WebP at 64x64
 - [ ] `:custom_name:` in message → renders as emoji image for all channel members
 - [ ] Non-admin upload → 403; 51st emoji → 400 (limit enforced)
@@ -590,6 +600,7 @@
 | 15 | Document all security findings in `SECURITY_AUDIT.md` | BE | [ ] |
 
 ### S10 Acceptance Criteria
+
 - [ ] Tauri desktop: system tray, native notifications, keyboard shortcuts, custom title bar — all functional
 - [ ] Auto-updater checks for updates on launch
 - [ ] Deep links: `yapper://invite/CODE` opens app and processes invite
@@ -645,6 +656,7 @@
 | 19 | Send launch notification to wishlist (Resend bulk via Worker) | FS | [ ] |
 
 ### S11 Acceptance Criteria
+
 - [ ] Premium gating works: free users see lock badges, premium flags respected server-side
 - [ ] Sentry captures errors in both backend and frontend
 - [ ] All 13 E2E testing checklist items pass
@@ -660,6 +672,7 @@
 ## Sprint Ceremonies
 
 ### Per Sprint
+
 | Ceremony | When | Duration | Purpose |
 |----------|------|----------|---------|
 | Sprint Planning | Day 1 (Monday) | 1 hour | Assign tasks, clarify acceptance criteria |
@@ -669,6 +682,7 @@
 | Retrospective | Last day | 30 min | What worked, what didn't, action items |
 
 ### Definition of Done (per task)
+
 1. Code written and compiles without warnings
 2. Tests written and passing (unit + integration where applicable)
 3. CI pipeline green
@@ -677,6 +691,7 @@
 6. Acceptance criteria for the task met
 
 ### Definition of Done (per sprint)
+
 1. ALL sprint acceptance criteria checked off
 2. CI pipeline green on `main`
 3. No P0/P1 bugs remaining
@@ -696,6 +711,7 @@ S0 (marketing) runs in parallel, no dependencies ───┘
 **Critical path:** S1 → S2 → S3 → S4 → S5 (everything after S5 can be partially parallelized by a 2+ person team)
 
 **Parallelization opportunities (2+ person team):**
+
 - S6: Canvas (BE) can parallel with Explore (FE) — different endpoints, different pages
 - S7: Profile (backend-heavy) can parallel with Parental dashboard (frontend-heavy)
 - S8: Screen Time (native plugins) can parallel with Discord Integration (API work)

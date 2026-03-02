@@ -121,7 +121,7 @@ function doConnect(): void {
 	};
 
 	ws.onmessage = (event) => {
-		let frame: { type: string; [k: string]: unknown };
+		let frame: { type: string;[k: string]: unknown };
 		try {
 			frame = JSON.parse(event.data as string);
 		} catch {
@@ -160,6 +160,10 @@ function doConnect(): void {
 
 			case 'read_receipt':
 				handlers.get('read_receipt')?.forEach((h) => h(frame));
+				break;
+
+			case 'presence':
+				handlers.get('presence')?.forEach((h) => h(frame));
 				break;
 
 			case 'pong':

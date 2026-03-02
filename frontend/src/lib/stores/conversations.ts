@@ -31,6 +31,8 @@ export interface Message {
 	/** True if decryption failed. */
 	decryptError: boolean;
 	createdAt: string;
+	/** 'text' | 'yap' | 'clip' */
+	messageType: string;
 }
 
 interface ConversationStore {
@@ -99,6 +101,7 @@ export async function loadMessages(conversationId: string, peerId: string): Prom
 			ciphertext: string;
 			ephemeral_key: string | null;
 			opk_id: number | null;
+			message_type: string;
 			created_at: string;
 		}[]
 	>(`/api/v1/conversations/${conversationId}/messages`);
@@ -118,6 +121,7 @@ export async function loadMessages(conversationId: string, peerId: string): Prom
 					text,
 					decryptError: false,
 					createdAt: m.created_at,
+					messageType: m.message_type ?? 'text',
 				};
 			} catch {
 				return {
@@ -127,6 +131,7 @@ export async function loadMessages(conversationId: string, peerId: string): Prom
 					text: null,
 					decryptError: true,
 					createdAt: m.created_at,
+					messageType: 'text',
 				};
 			}
 		})
@@ -164,6 +169,7 @@ export async function sendMessage(conversationId: string, peerId: string, text: 
 			text,
 			decryptError: false,
 			createdAt: new Date().toISOString(),
+			messageType: 'text',
 		},
 	]);
 }
@@ -208,6 +214,7 @@ export function registerDmHandler(): () => void {
 				text,
 				decryptError,
 				createdAt: new Date().toISOString(),
+				messageType: 'text',
 			},
 		]);
 

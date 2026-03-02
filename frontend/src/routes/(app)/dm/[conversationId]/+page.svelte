@@ -1,16 +1,27 @@
 <script lang="ts">
-	import { page } from '$app/stores';
-	import { onMount, afterUpdate } from 'svelte';
-	import { get } from 'svelte/store';
-	import { conversationsStore, getMessageStore, loadMessages, sendMessage } from '$stores/conversations.js';
-	import MessageList from '$lib/components/chat/MessageList.svelte';
-	import MessageInput from '$lib/components/chat/MessageInput.svelte';
+	import { page } from "$app/stores";
+	import { onMount, afterUpdate } from "svelte";
+	import { get } from "svelte/store";
+	import {
+		conversationsStore,
+		getMessageStore,
+		loadMessages,
+		sendMessage,
+	} from "$stores/conversations.js";
+	import MessageList from "$lib/components/chat/MessageList.svelte";
+	import MessageInput from "$lib/components/chat/MessageInput.svelte";
+	import UserAvatar from "$lib/components/UserAvatar.svelte";
+	import { getPresence } from "$stores/presence.js";
 
-	$: conversationId = $page.params.conversationId ?? '';
+	$: conversationId = $page.params.conversationId ?? "";
 
 	// Look up conversation metadata from the store
-	$: conversation = $conversationsStore.conversations.find((c) => c.id === conversationId);
+	$: conversation = $conversationsStore.conversations.find(
+		(c) => c.id === conversationId,
+	);
 	$: messages$ = getMessageStore(conversationId);
+	// Always a valid store; presence will stay offline if peerId is empty
+	$: peerPresence = getPresence(conversation?.peerId ?? "");
 
 	let sending = false;
 	let loadError = false;
@@ -44,32 +55,57 @@
 </script>
 
 <svelte:head>
-	<title>{conversation ? conversation.peerDisplayName || conversation.peerUsername : 'Direct Message'} — Yapper</title>
+	<title
+		>{conversation
+			? conversation.peerDisplayName || conversation.peerUsername
+			: "Direct Message"} — Yapper</title
+	>
 </svelte:head>
 
 <div class="dm-page">
 	<!-- Header -->
 	<header class="dm-header">
 		<div class="peer-info">
-			{#if conversation?.peerAvatarUrl}
-				<img
-					src={conversation.peerAvatarUrl}
-					alt={conversation.peerUsername}
-					class="avatar"
-					width="32"
-					height="32"
+			{#if conversation}
+				<UserAvatar
+					userId={conversation.peerId}
+					avatarUrl={conversation.peerAvatarUrl}
+					name={conversation.peerDisplayName ||
+						conversation.peerUsername ||
+						"?"}
+					size={32}
 				/>
 			{:else}
-				<div class="avatar-placeholder" aria-hidden="true">
-					{(conversation?.peerDisplayName || conversation?.peerUsername || '?')[0].toUpperCase()}
-				</div>
+				<div class="avatar-placeholder" aria-hidden="true">?</div>
 			{/if}
-			<span class="peer-name">
-				{conversation?.peerDisplayName || conversation?.peerUsername || 'Unknown'}
-			</span>
+			<div class="peer-meta">
+				<span class="peer-name">
+					{conversation?.peerDisplayName ||
+						conversation?.peerUsername ||
+						"Unknown"}
+				</span>
+				{#if conversation?.peerId}
+					<span
+						class="peer-status"
+						class:online={$peerPresence.online}
+					>
+						{$peerPresence.online ? "Online" : "Offline"}
+					</span>
+				{/if}
+			</div>
 		</div>
 		<span class="e2ee-badge" title="End-to-end encrypted">
-			<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+			<svg
+				width="12"
+				height="12"
+				viewBox="0 0 24 24"
+				fill="none"
+				stroke="currentColor"
+				stroke-width="2.5"
+				stroke-linecap="round"
+				stroke-linejoin="round"
+				aria-hidden="true"
+			>
 				<rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
 				<path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
 			</svg>
@@ -84,14 +120,20 @@
 		{:else if !conversation}
 			<div class="state-message">Conversation not found.</div>
 		{:else}
-			<MessageList messages={$messages$} />
+			<MessageList
+				messages={$messages$}
+				channelId={conversationId}
+				mode="dm"
+			/>
 		{/if}
 	</div>
 
 	<!-- Input -->
 	<MessageInput
 		disabled={sending || !conversation}
-		placeholder="Message {conversation?.peerDisplayName || conversation?.peerUsername || ''}…"
+		placeholder="Message {conversation?.peerDisplayName ||
+			conversation?.peerUsername ||
+			''}…"
 		on:send={handleSend}
 	/>
 </div>
@@ -120,13 +162,6 @@
 		gap: 0.625rem;
 	}
 
-	.avatar {
-		width: 32px;
-		height: 32px;
-		border-radius: 50%;
-		object-fit: cover;
-	}
-
 	.avatar-placeholder {
 		width: 32px;
 		height: 32px;
@@ -141,10 +176,26 @@
 		flex-shrink: 0;
 	}
 
+	.peer-meta {
+		display: flex;
+		flex-direction: column;
+		gap: 0.0625rem;
+	}
+
 	.peer-name {
 		font-weight: 600;
 		color: var(--color-text-primary);
 		font-size: 0.9375rem;
+		line-height: 1.2;
+	}
+
+	.peer-status {
+		font-size: 0.6875rem;
+		color: var(--color-text-muted);
+		line-height: 1.2;
+	}
+	.peer-status.online {
+		color: #22c55e;
 	}
 
 	.e2ee-badge {

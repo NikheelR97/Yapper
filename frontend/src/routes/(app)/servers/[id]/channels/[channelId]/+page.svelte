@@ -1,16 +1,21 @@
 <script lang="ts">
-	import { page } from '$app/stores';
-	import { onMount, afterUpdate } from 'svelte';
-	import { getChannelMessageStore, loadChannelMessages, sendMessage, fetchChannels } from '$stores/servers.js';
-	import type { Channel } from '$stores/servers.js';
-	import { prepareChannel } from '$signal/index.js';
-	import ServerSidebar from '$lib/components/chat/ServerSidebar.svelte';
-	import MessageList from '$lib/components/chat/MessageList.svelte';
-	import MessageInput from '$lib/components/chat/MessageInput.svelte';
-	import TypingIndicator from '$lib/components/chat/TypingIndicator.svelte';
+	import { page } from "$app/stores";
+	import { onMount, afterUpdate } from "svelte";
+	import {
+		getChannelMessageStore,
+		loadChannelMessages,
+		sendMessage,
+		fetchChannels,
+	} from "$stores/servers.js";
+	import type { Channel } from "$stores/servers.js";
+	import { prepareChannel } from "$signal/index.js";
+	import ServerSidebar from "$lib/components/chat/ServerSidebar.svelte";
+	import MessageList from "$lib/components/chat/MessageList.svelte";
+	import MessageInput from "$lib/components/chat/MessageInput.svelte";
+	import TypingIndicator from "$lib/components/chat/TypingIndicator.svelte";
 
-	$: serverId = $page.params.id ?? '';
-	$: channelId = $page.params.channelId ?? '';
+	$: serverId = $page.params.id ?? "";
+	$: channelId = $page.params.channelId ?? "";
 
 	$: messages$ = getChannelMessageStore(channelId);
 
@@ -18,7 +23,7 @@
 	let loadError = false;
 	let preparing = true;
 	let listEl: HTMLDivElement;
-	let channelName = '';
+	let channelName = "";
 
 	// Re-run prepare + load whenever the channel changes
 	$: if (channelId) {
@@ -30,10 +35,12 @@
 		loadError = false;
 		try {
 			// Resolve channel name from cache (fire-and-forget, best-effort)
-			fetchChannels(serverId).then((chs: Channel[]) => {
-				const ch = chs.find((c) => c.id === chId);
-				if (ch) channelName = ch.name;
-			}).catch(() => {});
+			fetchChannels(serverId)
+				.then((chs: Channel[]) => {
+					const ch = chs.find((c) => c.id === chId);
+					if (ch) channelName = ch.name;
+				})
+				.catch(() => {});
 
 			await prepareChannel(chId);
 			await loadChannelMessages(chId);
@@ -63,7 +70,7 @@
 </script>
 
 <svelte:head>
-	<title>#{channelName || '…'} — Yapper</title>
+	<title>#{channelName || "…"} — Yapper</title>
 </svelte:head>
 
 <div class="channel-page">
@@ -72,10 +79,21 @@
 	<div class="chat-area">
 		<!-- Header -->
 		<header class="chat-header">
-			<span class="channel-name">#{channelName || '…'}</span>
+			<span class="channel-name">#{channelName || "…"}</span>
 			<span class="e2ee-badge" title="End-to-end encrypted">
-				<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-					<rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+				<svg
+					width="12"
+					height="12"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2.5"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					aria-hidden="true"
+				>
+					<rect x="3" y="11" width="18" height="11" rx="2" ry="2"
+					></rect>
 					<path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
 				</svg>
 				E2EE
@@ -89,7 +107,7 @@
 			{:else if preparing}
 				<div class="state-msg">Setting up encryption…</div>
 			{:else}
-				<MessageList messages={$messages$} />
+				<MessageList messages={$messages$} {channelId} mode="channel" />
 			{/if}
 		</div>
 
@@ -99,8 +117,8 @@
 		<!-- Input -->
 		<MessageInput
 			disabled={sending || preparing}
-			placeholder={channelName ? `Message #${channelName}…` : 'Message…'}
-			channelId={channelId}
+			placeholder={channelName ? `Message #${channelName}…` : "Message…"}
+			{channelId}
 			on:send={handleSend}
 		/>
 	</div>
@@ -164,5 +182,7 @@
 		font-size: 0.875rem;
 	}
 
-	.state-msg.error { color: #fca5a5; }
+	.state-msg.error {
+		color: #fca5a5;
+	}
 </style>

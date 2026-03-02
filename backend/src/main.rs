@@ -36,6 +36,7 @@ mod db;
 mod discord;
 mod emojis;
 mod error;
+mod explore;
 mod hub;
 mod keys;
 mod media;
@@ -79,6 +80,14 @@ async fn main() -> anyhow::Result<()> {
 
     let db = Database::connect(&database_url).await?;
     db.run_migrations().await?;
+
+    // Initialise Cloudflare R2 client (reads R2_* env vars).
+    // Panics at startup if vars are missing — intentional fail-fast.
+    if std::env::var("R2_ACCOUNT_ID").is_ok() {
+        media::init_r2();
+    } else {
+        tracing::warn!("R2_ACCOUNT_ID not set — media upload URLs will not work");
+    }
 
     let hub = Arc::new(Hub::new());
 
@@ -147,7 +156,8 @@ fn api_router() -> Router<AppState> {
         .nest("/conversations", messages::router())
         .nest("/keys", keys::router())
         .nest("/media", media::router())
-        .nest("/canvas", canvas::router())
+        .merge(canvas::router())
+        .merge(explore::router())
         .nest("/emojis", emojis::router())
         .nest("/parental", parental::router())
         .nest("/screentime", screentime::router())

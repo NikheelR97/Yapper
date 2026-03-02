@@ -47,6 +47,10 @@ pub struct Hub {
     msg_limiters: DashMap<Uuid, MsgRateLimiter>,
     /// Typing auto-stop timers keyed by (channel_id, user_id). Aborted on new TypingStart.
     pub typing_timers: DashMap<(Uuid, Uuid), tokio::task::JoinHandle<()>>,
+    /// Away inactivity timers — fires after 5 min without a real user message.
+    away_timers: DashMap<Uuid, tokio::task::JoinHandle<()>>,
+    /// Set of users currently marked as "away" (connected but inactive).
+    away_users: DashMap<Uuid, ()>,
 }
 
 impl Hub {
@@ -55,6 +59,8 @@ impl Hub {
             connections: DashMap::new(),
             msg_limiters: DashMap::new(),
             typing_timers: DashMap::new(),
+            away_timers: DashMap::new(),
+            away_users: DashMap::new(),
         }
     }
 
@@ -86,8 +92,39 @@ impl Hub {
                 drop(user_conns);
                 self.connections.remove(user_id);
                 self.msg_limiters.remove(user_id);
+                // Clean up away state — offline broadcast supersedes away
+                if let Some((_, h)) = self.away_timers.remove(user_id) {
+                    h.abort();
+                }
+                self.away_users.remove(user_id);
             }
         }
+    }
+
+    /// Reset (or start) the 5-min away inactivity timer for a user.
+    /// If the user was previously marked away, immediately broadcasts them as active again.
+    pub fn reset_away_timer(&self, user_id: Uuid, state: AppState) {
+        // Cancel existing timer
+        if let Some((_, h)) = self.away_timers.remove(&user_id) {
+            h.abort();
+        }
+
+        // If the user was away, clear the flag and broadcast "back"
+        if self.away_users.remove(&user_id).is_some() {
+            let state_back = state.clone();
+            tokio::spawn(async move {
+                broadcast_presence(user_id, true, None, false, &state_back).await;
+            });
+        }
+
+        // Spawn new inactivity timer — fires after 5 min of silence
+        let handle = tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(5 * 60)).await;
+            // Mark as away in the shared hub (Hub is behind Arc<Hub> in AppState)
+            state.hub.away_users.insert(user_id, ());
+            broadcast_presence(user_id, true, None, true, &state).await;
+        });
+        self.away_timers.insert(user_id, handle);
     }
 
     pub fn is_online(&self, user_id: &Uuid) -> bool {
@@ -147,6 +184,9 @@ pub enum WsOutbound {
     Typing { channel_id: Uuid, user_id: Uuid },
     TypingStop { channel_id: Uuid, user_id: Uuid },
     ReadReceipt { message_id: Uuid, user_id: Uuid },
+    /// Real-time presence notification. `online=false` means disconnected;
+    /// `online=true, away=true` means connected but inactive for 5+ min.
+    Presence { user_id: Uuid, online: bool, away: bool, last_seen_at: Option<String> },
     ReAuthRequired,
     CanvasUpdate { payload: serde_json::Value },
     ParentNotification { payload: serde_json::Value },
@@ -200,10 +240,22 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     deliver_offline_messages(&user_id, &state, &tx).await;
     deliver_pending_key_dists(&user_id, &state, &tx).await;
 
+    // Notify peers this user just came online
+    broadcast_presence(user_id, true, None, false, &state).await;
+    // Start the away inactivity timer (5 min of silence → away)
+    state.hub.reset_away_timer(user_id, state.clone());
+
     run_receive_loop(&mut receiver, &mut send_task, user_id, &state, &tx).await;
 
+    // unregister() cancels the away timer and clears away_users
     state.hub.unregister(&user_id, &conn_id);
     update_last_seen(user_id, &state);
+
+    // Only broadcast offline if the user has no remaining connections
+    if !state.hub.is_online(&user_id) {
+        let last_seen = chrono::Utc::now().to_rfc3339();
+        broadcast_presence(user_id, false, Some(last_seen), false, &state).await;
+    }
 }
 
 async fn run_receive_loop(
@@ -238,6 +290,69 @@ fn update_last_seen(user_id: Uuid, state: &AppState) {
             .execute(&pool)
             .await;
     });
+}
+
+// ─── Presence broadcast ──────────────────────────────────────────────────────
+
+/// Fan out a Presence event to all users who share a DM or server with `user_id`.
+/// This covers everyone who might display an avatar with a presence dot.
+async fn broadcast_presence(user_id: Uuid, online: bool, last_seen_at: Option<String>, away: bool, state: &AppState) {
+    debug_assert!(user_id != Uuid::nil());
+
+    // Collect unique peer IDs from:
+    //  1. DM conversations
+    //  2. Server memberships (all co-members)
+    let peer_ids: Vec<Uuid> = {
+        let dm_rows = sqlx::query(
+            "SELECT user_id FROM dm_participants \
+             WHERE conversation_id IN (\
+               SELECT conversation_id FROM dm_participants WHERE user_id = $1\
+             ) AND user_id != $1",
+        )
+        .bind(user_id)
+        .fetch_all(state.db.pool())
+        .await
+        .unwrap_or_default();
+
+        let server_rows = sqlx::query(
+            "SELECT user_id FROM server_memberships \
+             WHERE server_id IN (\
+               SELECT server_id FROM server_memberships WHERE user_id = $1\
+             ) AND user_id != $1 \
+             LIMIT $2",
+        )
+        .bind(user_id)
+        .bind(MAX_FANOUT_MEMBERS)
+        .fetch_all(state.db.pool())
+        .await
+        .unwrap_or_default();
+
+        let mut ids: Vec<Uuid> = dm_rows
+            .iter()
+            .filter_map(|r| r.try_get::<Uuid, _>("user_id").ok())
+            .chain(
+                server_rows
+                    .iter()
+                    .filter_map(|r| r.try_get::<Uuid, _>("user_id").ok()),
+            )
+            .collect();
+        ids.sort();
+        ids.dedup();
+        ids
+    };
+
+    if peer_ids.is_empty() {
+        return;
+    }
+
+    let msg = WsOutbound::Presence {
+        user_id,
+        online,
+        away,
+        last_seen_at: last_seen_at.clone(),
+    };
+
+    state.hub.broadcast(&peer_ids, msg);
 }
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
@@ -360,6 +475,12 @@ async fn handle_inbound(text: String, user_id: Uuid, state: &AppState, tx: &Conn
         Ok(m) => m,
         Err(_) => { send_ws_error(tx, 4000, "Invalid message format"); return; }
     };
+
+    // Reset the away timer on any real user activity. Pings and auth frames are
+    // automatic/background — only deliberate actions count as "presence".
+    if !matches!(msg, WsInbound::Ping | WsInbound::Auth { .. } | WsInbound::Reauth { .. }) {
+        state.hub.reset_away_timer(user_id, state.clone());
+    }
 
     match msg {
         WsInbound::Ping => { let _ = tx.send(WsOutbound::Pong); }

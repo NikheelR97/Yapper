@@ -131,6 +131,7 @@ export async function loadChannelMessages(channelId: string): Promise<void> {
 			sender_id: string;
 			ciphertext: string | null;
 			plaintext: string | null;
+			message_type: string;
 			msg_num: number | null;
 			created_at: string;
 		}[]
@@ -147,6 +148,7 @@ export async function loadChannelMessages(channelId: string): Promise<void> {
 					text: m.plaintext,
 					decryptError: false,
 					createdAt: m.created_at,
+					messageType: m.message_type ?? 'text',
 				};
 			}
 			if (!m.ciphertext) {
@@ -157,6 +159,7 @@ export async function loadChannelMessages(channelId: string): Promise<void> {
 					text: null,
 					decryptError: true,
 					createdAt: m.created_at,
+					messageType: 'text',
 				};
 			}
 			try {
@@ -171,6 +174,7 @@ export async function loadChannelMessages(channelId: string): Promise<void> {
 					text,
 					decryptError: false,
 					createdAt: m.created_at,
+					messageType: m.message_type ?? 'text',
 				};
 			} catch {
 				return {
@@ -180,6 +184,7 @@ export async function loadChannelMessages(channelId: string): Promise<void> {
 					text: null,
 					decryptError: true,
 					createdAt: m.created_at,
+					messageType: 'text',
 				};
 			}
 		})
@@ -210,6 +215,7 @@ export async function sendMessage(channelId: string, text: string): Promise<void
 			text,
 			decryptError: false,
 			createdAt: new Date().toISOString(),
+			messageType: 'text',
 		},
 	]);
 }
@@ -252,6 +258,7 @@ export function registerChannelHandler(): () => void {
 				text,
 				decryptError,
 				createdAt: new Date().toISOString(),
+				messageType: 'text',
 			},
 		]);
 	});
