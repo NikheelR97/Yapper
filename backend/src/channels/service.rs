@@ -474,6 +474,9 @@ async fn fanout_to_members(
     msg_num: Option<i32>,
     state: &AppState,
 ) -> AppResult<()> {
+    debug_assert!(sender_id != Uuid::nil());
+    debug_assert!(server_id != Uuid::nil());
+
     let member_rows = sqlx::query(
         "SELECT user_id FROM server_memberships WHERE server_id = $1 LIMIT $2",
     )
@@ -483,6 +486,7 @@ async fn fanout_to_members(
     .await?;
 
     let ws_payload = serde_json::json!({
+        "type": "channel",
         "id": msg_id,
         "channel_id": channel_id,
         "server_id": server_id,

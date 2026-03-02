@@ -351,13 +351,15 @@ export async function joinChannel(channelId: string): Promise<void> {
 		iteration: senderKey.iteration,
 	};
 
+	// Resolve own user_id once — used to skip self in the distribution loop
+	const me = await api.get<{ user_id: string }>('/api/v1/users/me');
+	const myUserId = me.user_id;
+
 	// Encrypt for each member (except ourselves) using ECIES
 	const distributions: Array<{ to_user_id: string; ciphertext: string; ek_public: string }> = [];
 
 	for (const member of members) {
-		// Skip self — we already have our own key
-		const myBundle = await api.get<{ user_id: string } & Record<string, unknown>>('/api/v1/users/me').catch(() => null);
-		if (myBundle && member.user_id === myBundle.user_id) continue;
+		if (member.user_id === myUserId) continue;
 
 		// Fetch recipient's DH public key
 		let recipientBundle: KeyBundle;
