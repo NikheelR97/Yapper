@@ -3,6 +3,8 @@ use axum::{
     http::StatusCode,
     Json,
 };
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -121,6 +123,75 @@ pub(super) async fn get_messages(
         })
         .collect();
     Ok(Json(resp))
+}
+
+// ─── Channel members ──────────────────────────────────────────────────────────
+
+pub async fn list_members(
+    auth: AuthUser,
+    State(state): State<AppState>,
+    Path(channel_id): Path<Uuid>,
+) -> AppResult<Json<Vec<service::ChannelMember>>> {
+    let members = service::list_channel_members(auth.user_id, channel_id, &state).await?;
+    Ok(Json(members))
+}
+
+// ─── Sender Key distributions ─────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct KeyDistItem {
+    to_user_id: Uuid,
+    /// Base64-encoded ECIES ciphertext.
+    ciphertext: String,
+    /// Base64-encoded X25519 ephemeral public key.
+    ek_public: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct PostKeyDistsReq {
+    distributions: Vec<KeyDistItem>,
+}
+
+pub(super) async fn post_key_dists(
+    auth: AuthUser,
+    State(state): State<AppState>,
+    Path(channel_id): Path<Uuid>,
+    Json(req): Json<PostKeyDistsReq>,
+) -> AppResult<Json<serde_json::Value>> {
+    if req.distributions.is_empty() || req.distributions.len() > 500 {
+        return Err(AppError::BadRequest("Provide 1–500 distributions".into()));
+    }
+
+    let items = req
+        .distributions
+        .into_iter()
+        .map(|d| {
+            let ciphertext = BASE64
+                .decode(&d.ciphertext)
+                .map_err(|_| AppError::BadRequest("Invalid ciphertext encoding".into()))?;
+            let ek_public = BASE64
+                .decode(&d.ek_public)
+                .map_err(|_| AppError::BadRequest("Invalid ek_public encoding".into()))?;
+            if ek_public.len() != 32 {
+                return Err(AppError::BadRequest("ek_public must be 32 bytes".into()));
+            }
+            Ok(service::KeyDistItem { to_user: d.to_user_id, ciphertext, ek_public })
+        })
+        .collect::<AppResult<Vec<_>>>()?;
+
+    service::store_key_distributions(auth.user_id, channel_id, items, &state).await?;
+    Ok(Json(serde_json::json!({ "status": "ok" })))
+}
+
+pub(super) async fn get_key_dists(
+    auth: AuthUser,
+    State(state): State<AppState>,
+    Path(channel_id): Path<Uuid>,
+) -> AppResult<Json<Vec<service::KeyDistRecord>>> {
+    let dists = service::fetch_key_distributions(auth.user_id, channel_id, &state).await?;
+    Ok(Json(dists))
 }
 
 pub(super) async fn send_message(

@@ -67,3 +67,45 @@ export interface EncryptedMessage {
 	opkId?: number;
 	msgNum: number;
 }
+
+// ─── Sender Keys (group E2EE) ─────────────────────────────────────────────────
+
+/** Our own SenderKey for a channel — includes the private signing key. */
+export interface SenderKey {
+	channelId: string;
+	/** HMAC-SHA256 ratchet chain key (32 bytes). */
+	chainKey: Uint8Array;
+	/** Ed25519 public key — shared with members so they can verify our messages. */
+	signingPubKey: Uint8Array;
+	/** Ed25519 private key — never leaves the device. */
+	signingPrivKey: Uint8Array;
+	/** How many messages we've sent on this key (ratchet step). */
+	iteration: number;
+}
+
+/** A received SenderKey from another member — no private signing key. */
+export interface SenderKeyRecord {
+	channelId: string;
+	senderId: string;
+	chainKey: Uint8Array;
+	signingPubKey: Uint8Array;
+	iteration: number;
+}
+
+/** What gets ECIES-encrypted and sent to each recipient during key distribution. */
+export interface SenderKeyDistPayload {
+	channelId: string;
+	chainKey: string;      // base64
+	signingPubKey: string; // base64
+	iteration: number;
+}
+
+/** Result of encrypting a channel message. */
+export interface EncryptedChannelMessage {
+	/** Base64-encoded: iv(12) || aes_gcm_ciphertext */
+	ciphertext: string;
+	/** Ed25519 signature over (channelId || iteration_bytes || ciphertext_bytes) — base64. */
+	signature: string;
+	/** Ratchet iteration — receiver needs this to sync their chain key. */
+	iteration: number;
+}

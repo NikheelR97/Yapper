@@ -195,6 +195,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     state.hub.register(user_id, conn_id.clone(), tx.clone());
     let _ = tx.send(WsOutbound::Ready { user_id });
     deliver_offline_messages(&user_id, &state, &tx).await;
+    deliver_pending_key_dists(&user_id, &state, &tx).await;
 
     run_receive_loop(&mut receiver, &mut send_task, user_id, &state, &tx).await;
 
@@ -307,6 +308,40 @@ async fn deliver_offline_messages(user_id: &Uuid, state: &AppState, tx: &ConnTx)
             .bind(&delivered_ids)
             .execute(state.db.pool())
             .await;
+    }
+}
+
+// ─── Offline sender key distributions ────────────────────────────────────────
+
+async fn deliver_pending_key_dists(user_id: &Uuid, state: &AppState, tx: &ConnTx) {
+    debug_assert!(*user_id != Uuid::nil());
+
+    let rows = sqlx::query(
+        "UPDATE sender_key_distributions \
+         SET delivered = TRUE \
+         WHERE to_user = $1 AND delivered = FALSE \
+         RETURNING channel_id, from_user, ciphertext, ek_public",
+    )
+    .bind(user_id)
+    .fetch_all(state.db.pool())
+    .await;
+
+    let Ok(rows) = rows else { return };
+
+    for row in &rows {
+        let Ok(channel_id) = row.try_get::<uuid::Uuid, _>("channel_id") else { continue };
+        let Ok(from_user) = row.try_get::<uuid::Uuid, _>("from_user") else { continue };
+        let Ok(ct) = row.try_get::<Vec<u8>, _>("ciphertext") else { continue };
+        let Ok(ek) = row.try_get::<Vec<u8>, _>("ek_public") else { continue };
+
+        let payload = serde_json::json!({
+            "type": "key_dist",
+            "channel_id": channel_id,
+            "from_user": from_user,
+            "ciphertext": BASE64.encode(&ct),
+            "ek_public":  BASE64.encode(&ek),
+        });
+        let _ = tx.send(WsOutbound::Message { payload });
     }
 }
 

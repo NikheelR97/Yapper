@@ -1,4 +1,5 @@
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use serde::Serialize;
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -236,6 +237,159 @@ pub async fn get_messages(
 
     msgs.reverse(); // Return in chronological order
     Ok(msgs)
+}
+
+// ─── Channel members ──────────────────────────────────────────────────────────
+
+#[derive(Serialize)]
+pub struct ChannelMember {
+    pub user_id: Uuid,
+    pub username: String,
+}
+
+pub async fn list_channel_members(
+    user_id: Uuid,
+    channel_id: Uuid,
+    state: &AppState,
+) -> AppResult<Vec<ChannelMember>> {
+    debug_assert!(user_id != Uuid::nil());
+    debug_assert!(channel_id != Uuid::nil());
+
+    let server_id = channel_server_id(state, channel_id).await?;
+    require_member(state, user_id, server_id).await?;
+
+    let rows = sqlx::query(
+        "SELECT u.id AS user_id, u.username \
+         FROM server_memberships sm \
+         JOIN users u ON u.id = sm.user_id \
+         WHERE sm.server_id = $1 AND u.deleted_at IS NULL \
+         ORDER BY sm.joined_at ASC \
+         LIMIT 500",
+    )
+    .bind(server_id)
+    .fetch_all(state.db.pool())
+    .await?;
+
+    rows.iter()
+        .map(|r| Ok(ChannelMember { user_id: r.try_get("user_id")?, username: r.try_get("username")? }))
+        .collect::<Result<Vec<_>, sqlx::Error>>()
+        .map_err(AppError::from)
+}
+
+// ─── Sender Key distributions ─────────────────────────────────────────────────
+
+pub struct KeyDistItem {
+    pub to_user: Uuid,
+    pub ciphertext: Vec<u8>,
+    pub ek_public: Vec<u8>,
+}
+
+#[derive(Serialize)]
+pub struct KeyDistRecord {
+    pub from_user: Uuid,
+    pub ciphertext: String, // base64
+    pub ek_public: String,  // base64
+}
+
+/// Upsert sender key distributions for a channel. Pushes to online recipients immediately.
+pub async fn store_key_distributions(
+    from_user: Uuid,
+    channel_id: Uuid,
+    items: Vec<KeyDistItem>,
+    state: &AppState,
+) -> AppResult<()> {
+    debug_assert!(from_user != Uuid::nil());
+    debug_assert!(channel_id != Uuid::nil());
+
+    let server_id = channel_server_id(state, channel_id).await?;
+    require_member(state, from_user, server_id).await?;
+
+    for item in &items {
+        sqlx::query(
+            "INSERT INTO sender_key_distributions \
+                 (channel_id, from_user, to_user, ciphertext, ek_public, delivered) \
+             VALUES ($1, $2, $3, $4, $5, FALSE) \
+             ON CONFLICT (channel_id, from_user, to_user) DO UPDATE \
+                 SET ciphertext = EXCLUDED.ciphertext, \
+                     ek_public  = EXCLUDED.ek_public, \
+                     delivered  = FALSE, \
+                     created_at = NOW()",
+        )
+        .bind(channel_id)
+        .bind(from_user)
+        .bind(item.to_user)
+        .bind(&item.ciphertext)
+        .bind(&item.ek_public)
+        .execute(state.db.pool())
+        .await?;
+
+        // Push immediately to online recipient
+        if state.hub.is_online(&item.to_user) {
+            state.hub.send_to_user(
+                &item.to_user,
+                crate::hub::WsOutbound::Message {
+                    payload: serde_json::json!({
+                        "type": "key_dist",
+                        "channel_id": channel_id,
+                        "from_user": from_user,
+                        "ciphertext": BASE64.encode(&item.ciphertext),
+                        "ek_public":  BASE64.encode(&item.ek_public),
+                    }),
+                },
+            );
+
+            sqlx::query(
+                "UPDATE sender_key_distributions \
+                 SET delivered = TRUE \
+                 WHERE channel_id = $1 AND from_user = $2 AND to_user = $3",
+            )
+            .bind(channel_id)
+            .bind(from_user)
+            .bind(item.to_user)
+            .execute(state.db.pool())
+            .await?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Fetch pending sender key distributions for the current user in a channel.
+/// Marks them delivered as they are returned.
+pub async fn fetch_key_distributions(
+    user_id: Uuid,
+    channel_id: Uuid,
+    state: &AppState,
+) -> AppResult<Vec<KeyDistRecord>> {
+    debug_assert!(user_id != Uuid::nil());
+    debug_assert!(channel_id != Uuid::nil());
+
+    let server_id = channel_server_id(state, channel_id).await?;
+    require_member(state, user_id, server_id).await?;
+
+    let rows = sqlx::query(
+        "UPDATE sender_key_distributions \
+         SET delivered = TRUE \
+         WHERE to_user = $1 AND channel_id = $2 \
+         RETURNING from_user, ciphertext, ek_public",
+    )
+    .bind(user_id)
+    .bind(channel_id)
+    .fetch_all(state.db.pool())
+    .await?;
+
+    rows.iter()
+        .map(|r| {
+            let ct: Vec<u8> = r.try_get("ciphertext")?;
+            let ek: Vec<u8> = r.try_get("ek_public")?;
+            Ok(KeyDistRecord {
+                from_user: r.try_get("from_user")?,
+                ciphertext: BASE64.encode(&ct),
+                ek_public: BASE64.encode(&ek),
+            })
+        })
+        .collect::<Result<Vec<_>, sqlx::Error>>()
+        .map_err(AppError::from)
 }
 
 #[allow(clippy::too_many_arguments)]

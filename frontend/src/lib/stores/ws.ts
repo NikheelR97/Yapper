@@ -10,6 +10,7 @@
 
 import { get, writable } from 'svelte/store';
 import { authStore } from '$stores/auth.js';
+import { receiveSenderKeyDist } from '$lib/signal/index.js';
 
 const WS_URL = (import.meta.env.VITE_API_URL ?? 'http://localhost:8080').replace(
 	/^http/,
@@ -33,6 +34,13 @@ let stopped = false;
 
 const handlers = new Map<string, Set<MessageHandler>>();
 
+// Always-on handler: decrypt and store incoming SenderKey distributions.
+onWsMessage('key_dist', (payload) => {
+	receiveSenderKeyDist(
+		payload as { channel_id: string; from_user: string; ciphertext: string; ek_public: string }
+	).catch((err) => console.error('[signal] Failed to process key_dist:', err));
+});
+
 /** Register a handler for a specific message type inside `payload.type`. */
 export function onWsMessage(type: string, handler: MessageHandler): () => void {
 	if (!handlers.has(type)) handlers.set(type, new Set());
@@ -47,6 +55,22 @@ export function wsSend(msg: Record<string, unknown>): boolean {
 		return true;
 	}
 	return false;
+}
+
+/** Send a channel message via WebSocket. ciphertext must be base64(sig_64 || aes_ct). */
+export function sendChannelMessage(
+	channelId: string,
+	wireCiphertext: string,
+	iteration: number,
+	messageType = 'text'
+): boolean {
+	return wsSend({
+		type: 'send_channel',
+		channel_id: channelId,
+		ciphertext: wireCiphertext,
+		message_type: messageType,
+		msg_num: iteration,
+	});
 }
 
 /** Send a DM message via WebSocket. */

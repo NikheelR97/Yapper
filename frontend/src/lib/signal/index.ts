@@ -9,7 +9,9 @@
  *   2. generateSignedPreKey(id)    — on setup + rotate weekly
  *   3. generateOneTimePreKeys(100) — on setup + refill when low
  *   4. uploadKeysToServer()        — after generating
- *   5. encryptDm() / decryptDm()   — for each message
+ *   5. encryptDm() / decryptDm()   — for each DM message
+ *   6. joinChannel(channelId)      — on first join (generates + distributes SenderKey)
+ *   7. encryptChannel() / decryptChannel() — for channel messages
  */
 
 import { x25519, ed25519 } from '@noble/curves/ed25519.js';
@@ -17,6 +19,15 @@ import { api } from '$api/client.js';
 import * as ks from './keystore.js';
 import { x3dhInitiate, x3dhRespond } from './x3dh.js';
 import { encryptRatchet, decryptRatchet } from './ratchet.js';
+import {
+	generateSenderKey,
+	encryptWithSenderKey,
+	decryptWithSenderKey,
+	encryptSenderKeyDist,
+	decryptSenderKeyDist,
+	packChannelMessage,
+	unpackChannelMessage,
+} from './sender_keys.js';
 import type {
 	IdentityKeyPair,
 	KeyBundle,
@@ -24,9 +35,16 @@ import type {
 	SignedPreKey,
 	Session,
 	EncryptedMessage,
+	SenderKey,
+	SenderKeyRecord,
+	SenderKeyDistPayload,
+	EncryptedChannelMessage,
 } from './types.js';
 
-export type { IdentityKeyPair, KeyBundle, PreKeyPair, SignedPreKey, Session, EncryptedMessage };
+export type {
+	IdentityKeyPair, KeyBundle, PreKeyPair, SignedPreKey, Session, EncryptedMessage,
+	SenderKey, SenderKeyRecord, EncryptedChannelMessage,
+};
 export { backupKeys, restoreKeys } from './backup.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -70,7 +88,7 @@ export async function generateSignedPreKey(
 
 /**
  * Generate a batch of one-time prekeys.
- * @param count  — number of keys (default 100)
+ * @param count   — number of keys (default 100)
  * @param startId — first key id in the batch
  */
 export async function generateOneTimePreKeys(
@@ -265,4 +283,175 @@ export async function decryptDm(
 	await ks.storeSession(updatedSession);
 
 	return new TextDecoder().decode(plaintext);
+}
+
+// ─── Channel (group) E2EE ─────────────────────────────────────────────────────
+
+/**
+ * Encrypt a message for a channel using the Sender Key ratchet.
+ * Returns the packed wire ciphertext (sig || ct, base64) and the ratchet iteration.
+ * Throws if no SenderKey exists for this channel — call joinChannel() first.
+ */
+export async function encryptChannel(
+	channelId: string,
+	plaintext: string
+): Promise<{ wireCiphertext: string; iteration: number }> {
+	const key = await ks.loadSenderKey(channelId);
+	if (!key) throw new Error(`No SenderKey for channel ${channelId} — call joinChannel() first`);
+
+	const plainBytes = new TextEncoder().encode(plaintext);
+	const { encrypted, updatedKey } = await encryptWithSenderKey(key, plainBytes);
+	await ks.storeSenderKey(updatedKey);
+	return { wireCiphertext: packChannelMessage(encrypted), iteration: encrypted.iteration };
+}
+
+/**
+ * Decrypt a received channel message from the wire format.
+ * The ciphertext field must be base64(sig_64_bytes || aes_ct_bytes) as packed by encryptChannel.
+ * Throws if no SenderKeyRecord exists for (channelId, senderId).
+ */
+export async function decryptChannel(
+	channelId: string,
+	senderId: string,
+	msg: { ciphertext: string; msg_num: number | null }
+): Promise<string> {
+	const record = await ks.loadReceiverKey(channelId, senderId);
+	if (!record) throw new Error(`No SenderKey for sender ${senderId} in channel ${channelId}`);
+
+	const encrypted = unpackChannelMessage(msg.ciphertext, msg.msg_num ?? 0);
+	const { plaintext, updatedRecord } = await decryptWithSenderKey(record, encrypted);
+	await ks.storeReceiverKey(updatedRecord);
+	return new TextDecoder().decode(plaintext);
+}
+
+/**
+ * Join a channel: generate a SenderKey, distribute it to all existing members,
+ * and fetch any pending SenderKey distributions from other members.
+ *
+ * Call this once when the user first joins (or after a server restart wipes local keys).
+ */
+export async function joinChannel(channelId: string): Promise<void> {
+	const identity = await ks.loadIdentityKeyPair();
+	if (!identity) throw new Error('No identity key — call setupKeys() first');
+
+	// Generate and persist our SenderKey for this channel
+	const senderKey = generateSenderKey(channelId);
+	await ks.storeSenderKey(senderKey);
+
+	// Fetch all channel members
+	const members = await api.get<Array<{ user_id: string; username: string }>>(
+		`/api/v1/channels/${channelId}/members`
+	);
+
+	// Build the distribution payload
+	const distPayload: SenderKeyDistPayload = {
+		channelId,
+		chainKey: bytesToB64(senderKey.chainKey),
+		signingPubKey: bytesToB64(senderKey.signingPubKey),
+		iteration: senderKey.iteration,
+	};
+
+	// Encrypt for each member (except ourselves) using ECIES
+	const distributions: Array<{ to_user_id: string; ciphertext: string; ek_public: string }> = [];
+
+	for (const member of members) {
+		// Skip self — we already have our own key
+		const myBundle = await api.get<{ user_id: string } & Record<string, unknown>>('/api/v1/users/me').catch(() => null);
+		if (myBundle && member.user_id === myBundle.user_id) continue;
+
+		// Fetch recipient's DH public key
+		let recipientBundle: KeyBundle;
+		try {
+			recipientBundle = await api.get<KeyBundle>(`/api/v1/keys/${member.user_id}`);
+		} catch {
+			console.warn(`[Signal] Could not fetch key bundle for ${member.user_id} — skipping`);
+			continue;
+		}
+
+		const recipientDhPub = b64ToBytes(recipientBundle.identity_dh_key);
+		const { ciphertext, ephemeralKey } = await encryptSenderKeyDist(distPayload, recipientDhPub);
+
+		distributions.push({
+			to_user_id: member.user_id,
+			ciphertext: bytesToB64(ciphertext),
+			ek_public: bytesToB64(ephemeralKey),
+		});
+	}
+
+	if (distributions.length > 0) {
+		await api.post(`/api/v1/channels/${channelId}/sender-key-dist`, { distributions });
+	}
+
+	// Fetch pending distributions addressed to us (from members who joined before us)
+	await fetchAndStorePendingDists(channelId, identity);
+}
+
+/**
+ * Fetch any pending SenderKey distributions for this channel and persist them.
+ * Call on channel open to catch distributions delivered while offline.
+ */
+export async function fetchPendingKeyDists(channelId: string): Promise<void> {
+	const identity = await ks.loadIdentityKeyPair();
+	if (!identity) return;
+	await fetchAndStorePendingDists(channelId, identity);
+}
+
+async function fetchAndStorePendingDists(
+	channelId: string,
+	identity: IdentityKeyPair
+): Promise<void> {
+	const dists = await api
+		.get<Array<{ from_user: string; ciphertext: string; ek_public: string }>>(
+			`/api/v1/channels/${channelId}/sender-key-dist`
+		)
+		.catch(() => [] as Array<{ from_user: string; ciphertext: string; ek_public: string }>);
+
+	for (const dist of dists) {
+		try {
+			const ct = b64ToBytes(dist.ciphertext);
+			const ek = b64ToBytes(dist.ek_public);
+			const payload = await decryptSenderKeyDist(ct, ek, identity.dhPrivateKey, identity.dhPublicKey);
+			const record: SenderKeyRecord = {
+				channelId: payload.channelId,
+				senderId: dist.from_user,
+				chainKey: b64ToBytes(payload.chainKey),
+				signingPubKey: b64ToBytes(payload.signingPubKey),
+				iteration: payload.iteration,
+			};
+			await ks.storeReceiverKey(record);
+		} catch (e) {
+			console.warn(`[Signal] Failed to decrypt SenderKey dist from ${dist.from_user}:`, e);
+		}
+	}
+}
+
+/**
+ * Handle a real-time key_dist WS event.
+ * Decrypts the SenderKey distribution and stores it immediately.
+ */
+export async function receiveSenderKeyDist(event: {
+	channel_id: string;
+	from_user: string;
+	ciphertext: string;
+	ek_public: string;
+}): Promise<void> {
+	const identity = await ks.loadIdentityKeyPair();
+	if (!identity) return;
+
+	try {
+		const ct = b64ToBytes(event.ciphertext);
+		const ek = b64ToBytes(event.ek_public);
+		const payload = await decryptSenderKeyDist(ct, ek, identity.dhPrivateKey, identity.dhPublicKey);
+		const record: SenderKeyRecord = {
+			channelId: payload.channelId,
+			senderId: event.from_user,
+			chainKey: b64ToBytes(payload.chainKey),
+			signingPubKey: b64ToBytes(payload.signingPubKey),
+			iteration: payload.iteration,
+		};
+		await ks.storeReceiverKey(record);
+		console.debug(`[Signal] Received SenderKey from ${event.from_user} for channel ${event.channel_id}`);
+	} catch (e) {
+		console.warn(`[Signal] Failed to process key_dist from ${event.from_user}:`, e);
+	}
 }
