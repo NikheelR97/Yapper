@@ -9,9 +9,11 @@
 	import { setupKeys, replenishPreKeysIfNeeded } from '$signal/index.js';
 	import { wsConnect, wsDisconnect } from '$stores/ws.js';
 	import { registerDmHandler, fetchConversations } from '$stores/conversations.js';
+	import { registerChannelHandler, fetchServers } from '$stores/servers.js';
 
 	let ready = false;
 	let unregisterDmHandler: (() => void) | null = null;
+	let unregisterChannelHandler: (() => void) | null = null;
 
 	onMount(async () => {
 		const state = get(authStore);
@@ -36,16 +38,19 @@
 			console.warn('[Signal] Key setup failed:', e);
 		}
 
-		// WebSocket + DM handler
+		// WebSocket + message handlers
 		wsConnect();
 		unregisterDmHandler = registerDmHandler();
+		unregisterChannelHandler = registerChannelHandler();
 		fetchConversations().catch(() => {});
+		fetchServers().catch(() => {});
 
 		ready = true;
 	});
 
 	onDestroy(() => {
 		unregisterDmHandler?.();
+		unregisterChannelHandler?.();
 		wsDisconnect();
 	});
 </script>

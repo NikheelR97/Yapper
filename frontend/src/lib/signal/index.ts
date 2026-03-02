@@ -428,6 +428,21 @@ async function fetchAndStorePendingDists(
 }
 
 /**
+ * Prepare a channel for messaging (idempotent).
+ * - Generates and distributes a SenderKey if none exists locally yet.
+ * - Fetches any pending SenderKey distributions from other members regardless.
+ * Safe to call on every channel open — will not regenerate if key already exists.
+ */
+export async function prepareChannel(channelId: string): Promise<void> {
+	const existing = await ks.loadSenderKey(channelId);
+	if (!existing) {
+		await joinChannel(channelId);
+	} else {
+		await fetchPendingKeyDists(channelId);
+	}
+}
+
+/**
  * Handle a real-time key_dist WS event.
  * Decrypts the SenderKey distribution and stores it immediately.
  */
