@@ -29,7 +29,7 @@ static R2_BUCKET: OnceLock<String> = OnceLock::new();
 ///   - `R2_ACCESS_KEY_ID`
 ///   - `R2_SECRET_ACCESS_KEY`
 ///   - `R2_BUCKET_NAME`
-pub fn init_r2() {
+pub async fn init_r2() {
     let account_id =
         std::env::var("R2_ACCOUNT_ID").expect("R2_ACCOUNT_ID must be set");
     let access_key =
@@ -47,11 +47,8 @@ pub fn init_r2() {
         .region(Region::new("auto"))
         .credentials_provider(creds)
         .endpoint_url(endpoint)
-        .load();
-
-    // Block briefly to init — acceptable at startup before serving traffic.
-    let rt = tokio::runtime::Handle::current();
-    let config = rt.block_on(config);
+        .load()
+        .await;
     let client = Client::new(&config);
 
     R2_CLIENT.set(client).ok();

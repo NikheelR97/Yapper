@@ -84,7 +84,7 @@ async fn main() -> anyhow::Result<()> {
     // Initialise Cloudflare R2 client (reads R2_* env vars).
     // Panics at startup if vars are missing — intentional fail-fast.
     if std::env::var("R2_ACCOUNT_ID").is_ok() {
-        media::init_r2();
+        media::init_r2().await;
     } else {
         tracing::warn!("R2_ACCOUNT_ID not set — media upload URLs will not work");
     }
