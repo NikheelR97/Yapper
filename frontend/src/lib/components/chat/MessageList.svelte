@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from "svelte";
 	import type { Message } from "$stores/conversations.js";
+	import type { ServerEmoji } from "$stores/servers.js";
 	import { authStore } from "$stores/auth.js";
 	import { get } from "svelte/store";
 	import { sendMarkRead } from "$stores/ws.js";
@@ -13,8 +14,33 @@
 	export let channelId: string;
 	/** 'dm' | 'channel' — controls ReadReceipt display mode. */
 	export let mode: "dm" | "channel" = "channel";
+	/** Custom server emojis for :shortcode: rendering. */
+	export let serverEmojis: ServerEmoji[] = [];
 
 	const myId = get(authStore).user?.id ?? "";
+
+	// ── Emoji shortcode rendering ─────────────────────────────────────────────
+
+	const SHORTCODE_RE = /:[a-z0-9_]{2,32}:/g;
+
+	$: emojiMap = new Map(serverEmojis.map((e) => [e.name, e.imageUrl]));
+
+	function renderText(text: string): string {
+		// HTML-escape first to prevent XSS
+		const escaped = text
+			.replace(/&/g, "&amp;")
+			.replace(/</g, "&lt;")
+			.replace(/>/g, "&gt;")
+			.replace(/"/g, "&quot;");
+
+		// Replace :name: shortcodes with <img> only when we have a matching emoji
+		return escaped.replace(SHORTCODE_RE, (match) => {
+			const name = match.slice(1, -1);
+			const url = emojiMap.get(name);
+			if (!url) return match;
+			return `<img src="${url}" alt=":${name}:" title=":${name}:" class="inline-emoji" loading="lazy" />`;
+		});
+	}
 
 	function formatTime(iso: string): string {
 		return new Date(iso).toLocaleTimeString([], {
@@ -99,7 +125,8 @@
 			{:else if msg.text === null}
 				<span class="bubble loading">…</span>
 			{:else}
-				<span class="bubble">{msg.text}</span>
+				<!-- svelte-ignore security-anchor-rel-noreferrer -->
+				<span class="bubble">{@html renderText(msg.text)}</span>
 			{/if}
 
 			<div class="meta">
@@ -163,6 +190,14 @@
 
 	.bubble.loading {
 		color: var(--color-text-muted);
+	}
+
+	:global(.inline-emoji) {
+		width: 20px;
+		height: 20px;
+		vertical-align: -0.35em;
+		object-fit: contain;
+		border-radius: 2px;
 	}
 
 	.meta {

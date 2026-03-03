@@ -36,5 +36,5 @@ export function setAuth(user: User, accessToken: string, csrfToken?: string | nu
 }
 
 export function clearAuth() {
-	authStore.set({ user: null, accessToken: null, loading: false });
+	authStore.set({ user: null, accessToken: null, csrfToken: null, loading: false });
 }

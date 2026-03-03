@@ -33,7 +33,7 @@
 		error = '';
 		loading = true;
 		try {
-			const res = await api.post<{ access_token: string; user: User }>(
+			const res = await api.post<{ access_token: string; user: User; csrf_token?: string }>(
 				'/api/v1/auth/register',
 				{ username, email, password, display_name: displayName || undefined }
 			);

@@ -61,6 +61,8 @@ pub fn router() -> Router<AppState> {
         .route("/me", get(get_me).patch(update_profile))
         .route("/me/username", patch(change_username))
         .route("/me/privacy", get(get_privacy).patch(update_privacy))
+        .route("/me/appearance", get(get_appearance).patch(update_appearance))
+        .route("/me/notifications", get(get_notifications).patch(update_notifications))
         .route("/me/feed", get(get_feed))
         .route("/me/hype-moments", post(pin_hype_moment))
         .route("/:id/presence", get(get_presence))
@@ -163,6 +165,7 @@ async fn get_profile(
     .ok_or_else(|| AppError::NotFound(format!("User @{username} not found")))?;
 
     let profile_id: Uuid = row.try_get("id")?;
+    let is_self = profile_id == auth.user_id;
 
     // Follower / following counts
     let counts = sqlx::query(
@@ -187,6 +190,54 @@ async fn get_profile(
     .await?
     .is_some();
 
+    // Are they friends?
+    let (uid1, uid2) = if auth.user_id < profile_id {
+        (auth.user_id, profile_id)
+    } else {
+        (profile_id, auth.user_id)
+    };
+    let is_friend: bool = sqlx::query(
+        "SELECT 1 FROM friendships WHERE user_id_1 = $1 AND user_id_2 = $2 AND status = 'accepted'",
+    )
+    .bind(uid1)
+    .bind(uid2)
+    .fetch_optional(state.db.pool())
+    .await?
+    .is_some();
+
+    // Hype moment count + recent moments
+    let hype_moment_count: i64 = sqlx::query(
+        "SELECT COUNT(*) FROM hype_moments WHERE user_id = $1",
+    )
+    .bind(profile_id)
+    .fetch_one(state.db.pool())
+    .await
+    .map(|r| r.try_get::<i64, _>(0).unwrap_or(0))
+    .unwrap_or(0);
+
+    let hype_rows = sqlx::query(
+        "SELECT id, message_id, type, pinned_at FROM hype_moments
+         WHERE user_id = $1 ORDER BY pinned_at DESC LIMIT 9",
+    )
+    .bind(profile_id)
+    .fetch_all(state.db.pool())
+    .await?;
+
+    let hype_moments: Vec<serde_json::Value> = hype_rows
+        .iter()
+        .map(|r| serde_json::json!({
+            "id":         r.try_get::<Uuid, _>("id").ok(),
+            "messageId":  r.try_get::<Uuid, _>("message_id").ok(),
+            "type":       r.try_get::<String, _>("type").unwrap_or_default(),
+            "createdAt":  r.try_get::<chrono::DateTime<chrono::Utc>, _>("pinned_at")
+                            .ok().map(|t| t.to_rfc3339()),
+            "content":    null,
+            "mediaUrl":   null,
+            "gradientStart": null,
+            "gradientEnd":   null,
+        }))
+        .collect();
+
     // Mutual followers (people who follow both the viewer and the profile)
     let mutual_rows = sqlx::query(
         "SELECT u.id, u.username, u.display_name, u.avatar_url
@@ -204,19 +255,20 @@ async fn get_profile(
     .fetch_all(state.db.pool())
     .await?;
 
-    let mutuals: Vec<serde_json::Value> = mutual_rows
+    let mutual_friends: Vec<serde_json::Value> = mutual_rows
         .iter()
         .map(|r| serde_json::json!({
-            "id":           r.try_get::<Uuid, _>("id").ok(),
-            "username":     r.try_get::<String, _>("username").unwrap_or_default(),
-            "display_name": r.try_get::<Option<String>, _>("display_name").ok().flatten(),
-            "avatar_url":   r.try_get::<Option<String>, _>("avatar_url").ok().flatten(),
+            "id":          r.try_get::<Uuid, _>("id").ok(),
+            "username":    r.try_get::<String, _>("username").unwrap_or_default(),
+            "displayName": r.try_get::<Option<String>, _>("display_name").ok().flatten(),
+            "avatarUrl":   r.try_get::<Option<String>, _>("avatar_url").ok().flatten(),
+            "mutualCount": 0,
         }))
         .collect();
 
     // Top public servers this user is in
     let server_rows = sqlx::query(
-        "SELECT s.id, s.name, s.slug, s.icon_url, s.tags,
+        "SELECT s.id, s.name, s.slug, s.icon_url,
                 COUNT(sm2.user_id) AS member_count
          FROM server_memberships sm
          JOIN servers s ON s.id = sm.server_id
@@ -233,33 +285,32 @@ async fn get_profile(
     let top_communities: Vec<serde_json::Value> = server_rows
         .iter()
         .map(|r| serde_json::json!({
-            "id":           r.try_get::<Uuid, _>("id").ok(),
-            "name":         r.try_get::<String, _>("name").unwrap_or_default(),
-            "slug":         r.try_get::<String, _>("slug").unwrap_or_default(),
-            "icon_url":     r.try_get::<Option<String>, _>("icon_url").ok().flatten(),
-            "tags":         r.try_get::<Vec<String>, _>("tags").unwrap_or_default(),
-            "member_count": r.try_get::<i64, _>("member_count").unwrap_or(0),
+            "id":          r.try_get::<Uuid, _>("id").ok(),
+            "name":        r.try_get::<String, _>("name").unwrap_or_default(),
+            "iconUrl":     r.try_get::<Option<String>, _>("icon_url").ok().flatten(),
+            "memberCount": r.try_get::<i64, _>("member_count").unwrap_or(0),
         }))
         .collect();
 
     Ok(Json(serde_json::json!({
-        "id":                  profile_id,
-        "username":            row.try_get::<String, _>("username").unwrap_or_default(),
-        "display_name":        row.try_get::<String, _>("display_name").unwrap_or_default(),
-        "avatar_url":          row.try_get::<Option<String>, _>("avatar_url").ok().flatten(),
-        "banner_url":          row.try_get::<Option<String>, _>("banner_url").ok().flatten(),
-        "about_me":            row.try_get::<Option<String>, _>("about_me").ok().flatten(),
-        "location":            row.try_get::<Option<String>, _>("location").ok().flatten(),
-        "profile_theme_color": row.try_get::<Option<String>, _>("profile_theme_color").ok().flatten(),
-        "account_type":        row.try_get::<String, _>("account_type").unwrap_or_default(),
-        "is_premium":          row.try_get::<bool, _>("is_premium").unwrap_or(false),
-        "follower_count":      follower_count,
-        "following_count":     following_count,
-        "is_following":        is_following,
-        "mutual_followers":    mutuals,
-        "top_communities":     top_communities,
-        "created_at":          row.try_get::<chrono::DateTime<chrono::Utc>, _>("created_at")
-                                  .ok().map(|t| t.to_rfc3339()),
+        "id":              profile_id,
+        "username":        row.try_get::<String, _>("username").unwrap_or_default(),
+        "displayName":     row.try_get::<String, _>("display_name").unwrap_or_default(),
+        "avatarUrl":       row.try_get::<Option<String>, _>("avatar_url").ok().flatten(),
+        "bannerUrl":       row.try_get::<Option<String>, _>("banner_url").ok().flatten(),
+        "bannerColor":     row.try_get::<Option<String>, _>("profile_theme_color").ok().flatten(),
+        "bio":             row.try_get::<Option<String>, _>("about_me").ok().flatten(),
+        "tags":            serde_json::Value::Array(vec![]),
+        "isPremium":       row.try_get::<bool, _>("is_premium").unwrap_or(false),
+        "followerCount":   follower_count,
+        "followingCount":  following_count,
+        "hypeMomentCount": hype_moment_count,
+        "isFollowing":     is_following,
+        "isFriend":        is_friend,
+        "isSelf":          is_self,
+        "topCommunities":  top_communities,
+        "mutualFriends":   mutual_friends,
+        "hypeMoments":     hype_moments,
     })))
 }
 
@@ -742,6 +793,197 @@ async fn update_privacy(
     .bind(body.friend_request_permission.as_deref())
     .bind(body.search_visible)
     .bind(body.show_last_seen)
+    .execute(state.db.pool())
+    .await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ─── Settings: Appearance ─────────────────────────────────────────────────────
+
+/// GET /api/v1/users/me/appearance
+async fn get_appearance(
+    auth: AuthUser,
+    State(state): State<AppState>,
+) -> AppResult<impl IntoResponse> {
+    let row = sqlx::query(
+        "SELECT theme, font_size, density, reduce_motion
+         FROM user_appearance_settings WHERE user_id = $1",
+    )
+    .bind(auth.user_id)
+    .fetch_optional(state.db.pool())
+    .await?;
+
+    let settings = match row {
+        Some(r) => serde_json::json!({
+            "theme":        r.try_get::<String, _>("theme").unwrap_or_else(|_| "dark".into()),
+            "fontSize":     r.try_get::<i32, _>("font_size").unwrap_or(14),
+            "density":      r.try_get::<String, _>("density").unwrap_or_else(|_| "comfortable".into()),
+            "reduceMotion": r.try_get::<bool, _>("reduce_motion").unwrap_or(false),
+        }),
+        None => serde_json::json!({
+            "theme":        "dark",
+            "fontSize":     14,
+            "density":      "comfortable",
+            "reduceMotion": false,
+        }),
+    };
+
+    Ok(Json(settings))
+}
+
+#[derive(serde::Deserialize)]
+struct UpdateAppearanceInput {
+    theme: Option<String>,
+    #[serde(rename = "fontSize")]
+    font_size: Option<i32>,
+    density: Option<String>,
+    #[serde(rename = "reduceMotion")]
+    reduce_motion: Option<bool>,
+}
+
+/// PATCH /api/v1/users/me/appearance
+async fn update_appearance(
+    auth: AuthUser,
+    State(state): State<AppState>,
+    Json(body): Json<UpdateAppearanceInput>,
+) -> AppResult<impl IntoResponse> {
+    if let Some(ref t) = body.theme {
+        if !matches!(t.as_str(), "dark" | "oled" | "light") {
+            return Err(AppError::BadRequest(
+                "theme must be one of: dark, oled, light".into(),
+            ));
+        }
+    }
+    if let Some(fs) = body.font_size {
+        if !(12..=18).contains(&fs) {
+            return Err(AppError::BadRequest("fontSize must be between 12 and 18".into()));
+        }
+    }
+    if let Some(ref d) = body.density {
+        if !matches!(d.as_str(), "comfortable" | "compact") {
+            return Err(AppError::BadRequest(
+                "density must be one of: comfortable, compact".into(),
+            ));
+        }
+    }
+
+    sqlx::query(
+        "INSERT INTO user_appearance_settings
+             (user_id, theme, font_size, density, reduce_motion, updated_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())
+         ON CONFLICT (user_id) DO UPDATE SET
+             theme         = COALESCE($2, user_appearance_settings.theme),
+             font_size     = COALESCE($3, user_appearance_settings.font_size),
+             density       = COALESCE($4, user_appearance_settings.density),
+             reduce_motion = COALESCE($5, user_appearance_settings.reduce_motion),
+             updated_at    = NOW()",
+    )
+    .bind(auth.user_id)
+    .bind(body.theme.as_deref())
+    .bind(body.font_size)
+    .bind(body.density.as_deref())
+    .bind(body.reduce_motion)
+    .execute(state.db.pool())
+    .await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ─── Settings: Notifications ──────────────────────────────────────────────────
+
+/// GET /api/v1/users/me/notifications
+async fn get_notifications(
+    auth: AuthUser,
+    State(state): State<AppState>,
+) -> AppResult<impl IntoResponse> {
+    let row = sqlx::query(
+        "SELECT push_enabled, notify_dms, notify_mentions, notify_friend_requests,
+                notify_server_activity, notify_yap_recordings,
+                dnd_enabled, dnd_start::text, dnd_end::text
+         FROM user_notification_settings WHERE user_id = $1",
+    )
+    .bind(auth.user_id)
+    .fetch_optional(state.db.pool())
+    .await?;
+
+    let settings = match row {
+        Some(r) => serde_json::json!({
+            "pushEnabled":           r.try_get::<bool, _>("push_enabled").unwrap_or(true),
+            "notifyDMs":             r.try_get::<bool, _>("notify_dms").unwrap_or(true),
+            "notifyMentions":        r.try_get::<bool, _>("notify_mentions").unwrap_or(true),
+            "notifyFriendRequests":  r.try_get::<bool, _>("notify_friend_requests").unwrap_or(true),
+            "notifyServerActivity":  r.try_get::<bool, _>("notify_server_activity").unwrap_or(false),
+            "notifyYapRecordings":   r.try_get::<bool, _>("notify_yap_recordings").unwrap_or(true),
+            "dndEnabled":            r.try_get::<bool, _>("dnd_enabled").unwrap_or(false),
+            "dndStart":              r.try_get::<Option<String>, _>("dnd_start").ok().flatten(),
+            "dndEnd":                r.try_get::<Option<String>, _>("dnd_end").ok().flatten(),
+        }),
+        None => serde_json::json!({
+            "pushEnabled":          true,
+            "notifyDMs":            true,
+            "notifyMentions":       true,
+            "notifyFriendRequests": true,
+            "notifyServerActivity": false,
+            "notifyYapRecordings":  true,
+            "dndEnabled":           false,
+            "dndStart":             null,
+            "dndEnd":               null,
+        }),
+    };
+
+    Ok(Json(settings))
+}
+
+/// PATCH /api/v1/users/me/notifications
+async fn update_notifications(
+    auth: AuthUser,
+    State(state): State<AppState>,
+    Json(body): Json<serde_json::Value>,
+) -> AppResult<impl IntoResponse> {
+    // Parse all fields manually to handle the camelCase mapping cleanly
+    let push_enabled        = body.get("pushEnabled").and_then(|v| v.as_bool());
+    let notify_dms          = body.get("notifyDMs").and_then(|v| v.as_bool());
+    let notify_mentions     = body.get("notifyMentions").and_then(|v| v.as_bool());
+    let notify_fr           = body.get("notifyFriendRequests").and_then(|v| v.as_bool());
+    let notify_srv          = body.get("notifyServerActivity").and_then(|v| v.as_bool());
+    let notify_yap          = body.get("notifyYapRecordings").and_then(|v| v.as_bool());
+    let dnd_enabled         = body.get("dndEnabled").and_then(|v| v.as_bool());
+    // dndStart / dndEnd are either a "HH:MM" string or null (to clear)
+    let dnd_start: Option<Option<&str>> = body.get("dndStart").map(|v| v.as_str());
+    let dnd_end: Option<Option<&str>>   = body.get("dndEnd").map(|v| v.as_str());
+
+    sqlx::query(
+        "INSERT INTO user_notification_settings
+             (user_id, push_enabled, notify_dms, notify_mentions, notify_friend_requests,
+              notify_server_activity, notify_yap_recordings, dnd_enabled, dnd_start, dnd_end, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::time, $10::time, NOW())
+         ON CONFLICT (user_id) DO UPDATE SET
+             push_enabled           = COALESCE($2,  user_notification_settings.push_enabled),
+             notify_dms             = COALESCE($3,  user_notification_settings.notify_dms),
+             notify_mentions        = COALESCE($4,  user_notification_settings.notify_mentions),
+             notify_friend_requests = COALESCE($5,  user_notification_settings.notify_friend_requests),
+             notify_server_activity = COALESCE($6,  user_notification_settings.notify_server_activity),
+             notify_yap_recordings  = COALESCE($7,  user_notification_settings.notify_yap_recordings),
+             dnd_enabled            = COALESCE($8,  user_notification_settings.dnd_enabled),
+             dnd_start              = CASE WHEN $9::time IS NOT NULL THEN $9::time
+                                          WHEN $8 IS NOT NULL THEN NULL
+                                          ELSE user_notification_settings.dnd_start END,
+             dnd_end                = CASE WHEN $10::time IS NOT NULL THEN $10::time
+                                          WHEN $8 IS NOT NULL THEN NULL
+                                          ELSE user_notification_settings.dnd_end END,
+             updated_at             = NOW()",
+    )
+    .bind(auth.user_id)
+    .bind(push_enabled)
+    .bind(notify_dms)
+    .bind(notify_mentions)
+    .bind(notify_fr)
+    .bind(notify_srv)
+    .bind(notify_yap)
+    .bind(dnd_enabled)
+    .bind(dnd_start.flatten())
+    .bind(dnd_end.flatten())
     .execute(state.db.pool())
     .await?;
 

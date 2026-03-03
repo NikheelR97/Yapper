@@ -8,6 +8,9 @@
 
 	// Step 1
 	let displayName = '';
+	let username = '';
+	let email = '';
+	let password = '';
 	let selectedVibe = 0;
 
 	// Step 2
@@ -48,9 +51,15 @@
 	$: { dobYear; dobMonth; dobDay; checkCoppa(); }
 
 	function nextStep() {
-		if (step === 1 && !displayName.trim()) {
-			toast.error('Please enter a display name.');
-			return;
+		if (step === 1) {
+			if (!displayName.trim()) { toast.error('Please enter a display name.'); return; }
+			if (!username.trim()) { toast.error('Please enter a username.'); return; }
+			if (!/^[a-z0-9_]{3,32}$/.test(username.trim())) {
+				toast.error('Username must be 3–32 characters: lowercase letters, numbers, underscores only.');
+				return;
+			}
+			if (!email.trim() || !email.includes('@')) { toast.error('Please enter a valid email.'); return; }
+			if (password.length < 8) { toast.error('Password must be at least 8 characters.'); return; }
 		}
 		if (step === 2 && (!dobDay || !dobMonth || !dobYear)) {
 			toast.error('Please enter a valid date of birth.');
@@ -86,7 +95,14 @@
 		};
 
 		try {
-			await createChild({ displayName: displayName.trim(), dateOfBirth: dobStr, settings });
+			await createChild({
+				username: username.trim(),
+				displayName: displayName.trim(),
+				email: email.trim(),
+				password,
+				dateOfBirth: dobStr,
+				settings,
+			});
 			toast.success('Child account created!');
 			await goto('/parent/dashboard');
 		} catch (e: any) {
@@ -125,6 +141,41 @@
 						placeholder="e.g. Alex"
 						bind:value={displayName}
 						maxlength={32}
+					/>
+				</div>
+
+				<div class="field">
+					<label class="field-label" for="username">Username</label>
+					<input
+						id="username"
+						type="text"
+						class="field-input"
+						placeholder="e.g. alex_gamer (letters, numbers, _)"
+						bind:value={username}
+						maxlength={32}
+					/>
+				</div>
+
+				<div class="field">
+					<label class="field-label" for="email">Email Address</label>
+					<input
+						id="email"
+						type="email"
+						class="field-input"
+						placeholder="e.g. alex@example.com"
+						bind:value={email}
+					/>
+				</div>
+
+				<div class="field">
+					<label class="field-label" for="password">Password</label>
+					<input
+						id="password"
+						type="password"
+						class="field-input"
+						placeholder="At least 8 characters"
+						bind:value={password}
+						minlength={8}
 					/>
 				</div>
 

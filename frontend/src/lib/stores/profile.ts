@@ -75,8 +75,8 @@ export async function loadProfile(username: string) {
 	}
 }
 
-export async function followUser(userId: string) {
-	await api.post(`/api/v1/users/${userId}/follow`);
+export async function followUser(username: string) {
+	await api.post(`/api/v1/users/by/${username}/follow`);
 	profileStore.update((s) => {
 		if (!s.profile) return s;
 		return {
@@ -90,8 +90,8 @@ export async function followUser(userId: string) {
 	});
 }
 
-export async function unfollowUser(userId: string) {
-	await api.delete(`/api/v1/users/${userId}/follow`);
+export async function unfollowUser(username: string) {
+	await api.delete(`/api/v1/users/by/${username}/follow`);
 	profileStore.update((s) => {
 		if (!s.profile) return s;
 		return {
@@ -105,6 +105,6 @@ export async function unfollowUser(userId: string) {
 	});
 }
 
-export async function sendFriendRequest(userId: string) {
-	await api.post(`/api/v1/users/${userId}/friend-request`);
+export async function sendFriendRequest(username: string) {
+	await api.post(`/api/v1/users/by/${username}/friend-request`);
 }

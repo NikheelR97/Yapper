@@ -18,8 +18,8 @@
 | **S5** | W11–W12 | Phase 5 + Phase 6 | Media Messages + Real-Time Features | ✅ Complete |
 | **S6** | W13–W14 | Phase 7 + Phase 8 | Live Canvas + Explore Page | ✅ Complete |
 | **S7** | W15–W16 | Phase 9 + Phase 10 | Profiles + Parental Controls | ✅ Complete (BE + FE) |
-| **S8** | W17–W18 | Phase 11 + Phase 12 | Screen Time + Discord Integration | Screen Time ✅ — Discord BE Pending |
-| **S9** | W19–W20 | Phase 13 + Phase 14 | Emojis + Settings | Emojis BE Pending — Settings BE ✅ FE ✅ |
+| **S8** | W17–W18 | Phase 11 + Phase 12 | Screen Time + Discord Integration | Screen Time FE ✅ — BE Pending; Discord FE ✅ — BE Pending |
+| **S9** | W19–W20 | Phase 13 + Phase 14 | Emojis + Settings | ✅ Emojis end-to-end; Settings Appearance+Notifications ✅; GDPR export + avatar upload pending |
 | **S10** | W21–W22 | Phase 15 + Phase 16 | Desktop Polish + Security Audit | FE Partial — BE Pending |
 | **S11** | W23–W24 | Phase 17 + Phase 18 | Premium Prep + Launch | FE Partial — BE Pending |
 

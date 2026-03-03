@@ -71,14 +71,14 @@
 							on:click={() => handleSelectChild(child.id)}
 						>
 							<div class="child-avatar">
-								{#if child.avatarUrl}
-									<img src={child.avatarUrl} alt={child.displayName} />
+								{#if child.avatar_url}
+									<img src={child.avatar_url} alt={child.display_name} />
 								{:else}
-									<div class="avatar-placeholder">{child.displayName[0]}</div>
+									<div class="avatar-placeholder">{child.display_name[0]}</div>
 								{/if}
-								<span class="status-dot" class:online={child.isOnline}></span>
+								<span class="status-dot"></span>
 							</div>
-							<span class="child-name">{child.displayName}</span>
+							<span class="child-name">{child.display_name}</span>
 						</button>
 					{/each}
 

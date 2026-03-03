@@ -8,7 +8,7 @@
 	let error = false;
 
 	onMount(async () => {
-		const serverId = get(page).params.id;
+		const serverId = get(page).params.id ?? '';
 		try {
 			const channels = await fetchChannels(serverId);
 			const first = channels.sort((a, b) => a.position - b.position)[0];

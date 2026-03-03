@@ -16,6 +16,12 @@ export type { Message };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+export interface ServerEmoji {
+	id: string;
+	name: string;
+	imageUrl: string;
+}
+
 export interface Server {
 	id: string;
 	name: string;
@@ -23,6 +29,7 @@ export interface Server {
 	iconUrl: string | null;
 	isOwner: boolean;
 	memberCount: number;
+	customEmojis?: ServerEmoji[];
 }
 
 export interface Channel {
@@ -305,4 +312,30 @@ export async function createInvite(serverId: string): Promise<string> {
 export async function joinByInvite(code: string): Promise<void> {
 	await api.post(`/api/v1/servers/join/${code}`, {});
 	await fetchServers();
+}
+
+// ─── Server Emojis ────────────────────────────────────────────────────────────
+
+/** Load custom emojis for a server and cache them in the store. */
+export async function fetchServerEmojis(serverId: string): Promise<void> {
+	try {
+		const res = await api.get<{
+			emojis: { id: string; name: string; image_url: string }[];
+		}>(`/api/v1/servers/${serverId}/emojis`);
+
+		const emojis: ServerEmoji[] = (res.emojis ?? []).map((e) => ({
+			id: e.id,
+			name: e.name,
+			imageUrl: e.image_url,
+		}));
+
+		serversStore.update((s) => ({
+			...s,
+			servers: s.servers.map((srv) =>
+				srv.id === serverId ? { ...srv, customEmojis: emojis } : srv,
+			),
+		}));
+	} catch {
+		// Non-fatal — emoji picker will just show no custom emojis
+	}
 }

@@ -15,7 +15,7 @@
 		<p>Select a child from the sidebar to view their screen time.</p>
 	</div>
 {:else}
-	<ScreenTimeDashboard childId={selectedId} childName={selectedChild.displayName} />
+	<ScreenTimeDashboard childId={selectedId} childName={selectedChild.display_name} />
 {/if}
 
 <style>

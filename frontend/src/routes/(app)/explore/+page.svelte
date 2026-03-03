@@ -7,7 +7,7 @@
 		loadLiveServers,
 		loadCommunities,
 		search,
-		joinServerBySlug,
+		joinServer,
 	} from '$stores/explore.js';
 	import TrendingTags from '$lib/components/explore/TrendingTags.svelte';
 	import LiveServerCard from '$lib/components/explore/LiveServerCard.svelte';
@@ -19,7 +19,7 @@
 	let activeTag: string | null = null;
 	let viewMode: 'grid' | 'list' = 'grid';
 	let joinError = '';
-	let joiningSlug = '';
+	let joiningId = '';
 
 	$: state = $exploreStore;
 	$: isSearching = searchInput.trim().length > 0;
@@ -51,25 +51,23 @@
 		searchInput = '';
 	}
 
-	async function handleJoin(slug: string) {
+	async function handleJoin(id: string) {
 		joinError = '';
-		joiningSlug = slug;
+		joiningId = id;
 		try {
-			const serverId = await joinServerBySlug(slug);
+			await joinServer(id);
 			await fetchServers();
-			goto(`/servers/${serverId}/channels`);
+			goto(`/servers/${id}/channels`);
 		} catch (e) {
 			const err = e as { status?: number };
 			if (err.status === 409) {
-				// Already a member — just navigate to first channel
-				const found = state.communities.find((c) => c.slug === slug)
-					?? state.liveServers.find((s) => s.slug === slug);
-				if (found) goto(`/servers/${found.id}/channels`);
+				// Already a member — navigate directly since we have the id
+				goto(`/servers/${id}/channels`);
 			} else {
 				joinError = 'Could not join server. Try again.';
 			}
 		} finally {
-			joiningSlug = '';
+			joiningId = '';
 		}
 	}
 </script>

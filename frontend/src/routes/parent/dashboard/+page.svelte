@@ -37,7 +37,7 @@
 		{alerts}
 		{feed}
 		{activity}
-		childName={selectedChild.displayName}
+		childName={selectedChild.display_name}
 	/>
 {/if}
 

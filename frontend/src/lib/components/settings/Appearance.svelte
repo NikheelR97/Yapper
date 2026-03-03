@@ -1,17 +1,59 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import { api } from '$api/client.js';
 	import { toast } from '$stores/toast.js';
 
 	let theme: 'dark' | 'oled' | 'light' = 'dark';
 	let fontSize = 14;
 	let density: 'comfortable' | 'compact' = 'comfortable';
 	let reduceMotion = false;
+	let saving = false;
 
-	function save() {
-		// Apply to document
+	onMount(async () => {
+		try {
+			const res = await api.get<{
+				theme: 'dark' | 'oled' | 'light';
+				fontSize: number;
+				density: 'comfortable' | 'compact';
+				reduceMotion: boolean;
+			}>('/api/v1/users/me/appearance');
+			theme = res.theme;
+			fontSize = res.fontSize;
+			density = res.density;
+			reduceMotion = res.reduceMotion;
+			applyToDocument();
+		} catch {
+			// Use defaults — non-fatal
+		}
+	});
+
+	function applyToDocument() {
 		document.documentElement.style.setProperty('--font-size-base', `${fontSize}px`);
 		document.documentElement.dataset.theme = theme;
 		document.documentElement.dataset.density = density;
-		toast.success('Appearance saved!');
+		if (reduceMotion) {
+			document.documentElement.dataset.reduceMotion = 'true';
+		} else {
+			delete document.documentElement.dataset.reduceMotion;
+		}
+	}
+
+	async function save() {
+		saving = true;
+		try {
+			await api.patch('/api/v1/users/me/appearance', {
+				theme,
+				fontSize,
+				density,
+				reduceMotion,
+			});
+			applyToDocument();
+			toast.success('Appearance saved!');
+		} catch (e: any) {
+			toast.error(e.message ?? 'Failed to save');
+		} finally {
+			saving = false;
+		}
 	}
 
 	const themeOptions = [
@@ -93,7 +135,9 @@
 		</div>
 	</div>
 
-	<button class="save-btn" on:click={save}>Save Appearance</button>
+	<button class="save-btn" on:click={save} disabled={saving}>
+		{saving ? 'Saving…' : 'Save Appearance'}
+	</button>
 </div>
 
 <style>
@@ -343,7 +387,12 @@
 		transition: opacity 150ms;
 	}
 
-	.save-btn:hover {
+	.save-btn:hover:not(:disabled) {
 		opacity: 0.85;
+	}
+
+	.save-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
 	}
 </style>

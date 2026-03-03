@@ -16,7 +16,7 @@
 	}
 
 	function handleJoin() {
-		dispatch('join', server.slug);
+		dispatch('join', server.id);
 	}
 </script>
 

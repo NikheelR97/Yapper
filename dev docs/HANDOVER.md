@@ -1,7 +1,7 @@
 # YAPPER — Developer Handover Document
 
-**Last updated:** 2026-03-03
-**Project status:** Active development — S0–S7 fully complete (BE + FE); S8–S11 frontend complete, backends pending
+**Last updated:** 2026-03-03 (rev 2)
+**Project status:** Active development — S0–S9 largely complete; Emojis + Settings fully wired end-to-end; S10–S11 frontend built, desktop/security/launch pending
 **Full implementation plan:** `C:\Users\rajma\.claude\plans\quizzical-yawning-starfish.md`
 
 ---
@@ -447,11 +447,11 @@ Mitigations for Neon cold starts (500ms–2s):
 | 7 | Live Canvas | ✅ Complete | Music state, polls (live bar animation), clips carousel |
 | 8 | Explore Page | ✅ Complete | Search (pg_trgm), trending tags (5-min cache), live servers |
 | 9 | User Profiles | ✅ Complete (BE + FE) | Public profiles, follow/unfollow, Hype Moments, BioCard, top communities |
-| 10 | Parental Controls | ✅ Complete (BE + FE) | Child accounts (COPPA DOB), approval workflows, SafetyDashboard, 3-step setup wizard |
+| 10 | Parental Controls | ✅ Complete (BE + FE) | Child accounts (COPPA DOB), approval workflows, SafetyDashboard, 3-step setup wizard (wizard now collects username/email/password for full `CreateChildInput` payload) |
 | 11 | Screen Time | FE ✅ — BE Pending | `ScreenTimeDashboard.svelte` built; iOS/Android plugins + BE ingestion API pending |
 | 12 | Discord Integration | FE ✅ — BE Pending | `DiscordImport.svelte` + bot migration tool UI built; BE importer + bots/ module pending |
-| 13 | Custom Emojis | FE ✅ — BE Pending | `EmojiPicker`, `EmojiUploader`, `CustomEmojiManager` built; BE emojis/ (WebP, R2) pending |
-| 14 | User Settings | FE ✅ — BE Pending | 8-section settings page built (profile, privacy, appearance, voice, notifications, premium, discord, developer); BE save endpoints pending |
+| 13 | Custom Emojis | ✅ Complete (BE + FE) | `EmojiPicker`, `EmojiUploader`, `CustomEmojiManager` built; BE emojis/ complete; emoji rendering in MessageList (XSS-safe `:shortcode:` → `<img>`), emoji picker in MessageInput wired end-to-end |
+| 14 | User Settings | ✅ Complete (Appearance + Notifications) — Partial | Appearance + Notifications: DB tables created, `GET/PATCH /api/v1/users/me/appearance|notifications` implemented, FE loads/saves live. Still pending: GDPR data export, profile avatar/banner upload, soft-delete |
 | 15 | Tauri Polish | FE Partial | `TitleBar.svelte` + `KeyboardShortcutsModal.svelte` done; system tray, auto-updater, deep links pending |
 | 16 | Security Audit | Pending | Pre-launch hardening, GDPR/COPPA compliance verification, `SECURITY_AUDIT.md` |
 | 17 | Premium Placeholder | FE ✅ — BE Pending | `Premium.svelte`, `GoproLock.svelte`, settings GoPro promo card built; BE `is_premium` flag pending |
@@ -630,14 +630,19 @@ For any developer picking up this project:
 - [x] Review the security standards in Section 4 — these are non-negotiable
 - [ ] Check the current phase status and pick up where it left off
 
-### Where to Pick Up Next (as of 2026-03-03)
+### Where to Pick Up Next (as of 2026-03-03, rev 2)
 
-**All frontend UI is built.** The next work is entirely backend:
+**All frontend UI is built. Most of S9 is now done.** Priority order:
 
-1. **S8 — Screen Time BE** (`backend/src/screentime/`): `POST /api/v1/screentime/report`, `GET /api/v1/parental/children/{id}/screentime`; then wire Capacitor native plugins (iOS `ScreenTimePlugin.swift`, Android `ScreenTimePlugin.kt`)
-2. **S8 — Discord BE** (`backend/src/discord/`): Discord profile importer (OAuth2 → avatar re-upload to R2); `backend/src/bots/` module (bot auth, `POST /api/v1/bots/import-discord`)
-3. **S9 — Emojis BE** (`backend/src/emojis/`): `POST/GET/DELETE /api/v1/servers/{id}/emojis`; PNG→WebP conversion (`image` crate), R2 upload, WS `emoji_added`/`emoji_removed` events; 50/100 limit enforcement
-4. **S9 — Settings BE**: user settings columns migration, profile update endpoints (avatar/banner/display name/about me/theme), privacy settings, GDPR data export ZIP, 30-day soft delete
-5. **S10 — Tauri Polish**: system tray plugin, native notifications, Stronghold key storage, auto-updater, deep links, installer configs (NSIS/DMG/AppImage)
-6. **S10 — Security Audit**: rate limit audit, CORS/CSP/HSTS review, GDPR/COPPA verification, `cargo audit`, `npm audit`, `SECURITY_AUDIT.md`
-7. **S11 — Launch**: Sentry integration, full Playwright E2E test suite, production deploy, app store submissions
+1. **S9 — Settings BE (remaining)**: profile avatar/banner upload endpoint, GDPR data export ZIP (`GET /api/v1/users/me/export`), 30-day soft-delete (`DELETE /api/v1/account`)
+2. **S8 — Screen Time BE** (`backend/src/screentime/`): `POST /api/v1/screentime/report`, `GET /api/v1/parental/children/{id}/screentime`; then wire Capacitor native plugins (iOS `ScreenTimePlugin.swift`, Android `ScreenTimePlugin.kt`)
+3. **S8 — Discord BE** (`backend/src/discord/`): Discord profile importer (OAuth2 → avatar re-upload to R2); `backend/src/bots/` module (bot auth, `POST /api/v1/bots/import-discord`)
+4. **S10 — Tauri Polish**: system tray plugin, native notifications, Stronghold key storage, auto-updater, deep links, installer configs (NSIS/DMG/AppImage)
+5. **S10 — Security Audit**: rate limit audit, CORS/CSP/HSTS review, GDPR/COPPA verification, `cargo audit`, `npm audit`, `SECURITY_AUDIT.md`
+6. **S11 — Launch**: Sentry integration, full Playwright E2E test suite, production deploy, app store submissions
+
+**Completed since last handover (2026-03-03 rev 1 → rev 2):**
+- Emoji system wired end-to-end: `fetchServerEmojis()` in servers store, `:shortcode:` rendering in MessageList (XSS-safe), EmojiPicker integrated into MessageInput with cursor-position insert
+- Settings appearance + notifications endpoints: DB tables (`user_appearance_settings`, `user_notification_settings`), `GET/PATCH /api/v1/users/me/appearance`, `GET/PATCH /api/v1/users/me/notifications`, Postgres `TIME` → `HH:MM` trimming for `<input type="time">`
+- Child setup wizard: Step 1 now collects `username`, `email`, `password` (required by `CreateChildInput`); `createChild()` in parental store maps camelCase → snake_case correctly
+- Bug fixes: `clearAuth()` missing `csrfToken`, register page response type, `child.displayName` → `child.display_name` in parent pages, explore page server-join flow, `[] as Vec<String>` invalid in `json!()` macro

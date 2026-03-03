@@ -11,10 +11,10 @@
 	async function handleFollow() {
 		try {
 			if (profile.isFollowing) {
-				await unfollowUser(profile.id);
+				await unfollowUser(profile.username);
 				toast.success('Unfollowed');
 			} else {
-				await followUser(profile.id);
+				await followUser(profile.username);
 				toast.success('Following!');
 			}
 		} catch (e: any) {
@@ -29,7 +29,7 @@
 
 	async function handleFriendRequest() {
 		try {
-			await sendFriendRequest(profile.id);
+			await sendFriendRequest(profile.username);
 			toast.success('Friend request sent!');
 		} catch (e: any) {
 			toast.error(e.message ?? 'Failed');

@@ -6,6 +6,8 @@
 		loadChannelMessages,
 		sendMessage,
 		fetchChannels,
+		fetchServerEmojis,
+		serversStore,
 	} from "$stores/servers.js";
 	import type { Channel } from "$stores/servers.js";
 	import { prepareChannel } from "$signal/index.js";
@@ -19,6 +21,10 @@
 
 	$: serverId = $page.params.id ?? "";
 	$: channelId = $page.params.channelId ?? "";
+
+	// Load server emojis when entering a server (cached in store after first load)
+	$: if (serverId) fetchServerEmojis(serverId);
+	$: serverEmojis = $serversStore.servers.find((s) => s.id === serverId)?.customEmojis ?? [];
 
 	$: messages$ = getChannelMessageStore(channelId);
 
@@ -139,7 +145,7 @@
 			{:else if preparing}
 				<div class="state-msg">Setting up encryption…</div>
 			{:else}
-				<MessageList messages={$messages$} {channelId} mode="channel" />
+				<MessageList messages={$messages$} {channelId} mode="channel" {serverEmojis} />
 			{/if}
 		</div>
 
@@ -151,6 +157,7 @@
 			disabled={sending || preparing}
 			placeholder={channelName ? `Message #${channelName}…` : "Message…"}
 			{channelId}
+			{serverId}
 			on:send={handleSend}
 		/>
 	</div>

@@ -15,7 +15,7 @@
 
 	async function handleApprove(alert: PendingAlert) {
 		try {
-			await approveAlert(alert.id);
+			await approveAlert(alert.id, alert.type as 'friend_request' | 'server_join');
 			toast.success('Approved');
 		} catch (e: any) {
 			toast.error(e.message ?? 'Failed to approve');
@@ -24,7 +24,7 @@
 
 	async function handleDecline(alert: PendingAlert) {
 		try {
-			await declineAlert(alert.id);
+			await declineAlert(alert.id, alert.type as 'friend_request' | 'server_join');
 			toast.info('Declined');
 		} catch (e: any) {
 			toast.error(e.message ?? 'Failed to decline');

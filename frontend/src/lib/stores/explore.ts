@@ -147,8 +147,7 @@ export async function search(q: string): Promise<void> {
 	}
 }
 
-/** Join a public server by slug — returns the joined server's id. */
-export async function joinServerBySlug(slug: string): Promise<string> {
-	const res = await api.post<{ server_id: string }>(`/api/v1/servers/join/${slug}`);
-	return res.server_id;
+/** Join a public server by id. */
+export async function joinServer(id: string): Promise<void> {
+	await api.post<{ status: string }>(`/api/v1/servers/${id}/join`);
 }

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { api } from '$api/client.js';
 	import { toast } from '$stores/toast.js';
 
@@ -14,6 +15,34 @@
 	let dndEnd = '07:00';
 
 	let saving = false;
+
+	onMount(async () => {
+		try {
+			const res = await api.get<{
+				pushEnabled: boolean;
+				notifyDMs: boolean;
+				notifyMentions: boolean;
+				notifyFriendRequests: boolean;
+				notifyServerActivity: boolean;
+				notifyYapRecordings: boolean;
+				dndEnabled: boolean;
+				dndStart: string | null;
+				dndEnd: string | null;
+			}>('/api/v1/users/me/notifications');
+			pushEnabled = res.pushEnabled;
+			notifyDMs = res.notifyDMs;
+			notifyMentions = res.notifyMentions;
+			notifyFriendRequests = res.notifyFriendRequests;
+			notifyServerActivity = res.notifyServerActivity;
+			notifyYapRecordings = res.notifyYapRecordings;
+			dndEnabled = res.dndEnabled;
+			// Postgres TIME is "HH:MM:SS" — trim to "HH:MM" for <input type="time">
+			if (res.dndStart) dndStart = res.dndStart.slice(0, 5);
+			if (res.dndEnd) dndEnd = res.dndEnd.slice(0, 5);
+		} catch {
+			// Non-fatal — defaults remain
+		}
+	});
 
 	async function save() {
 		saving = true;

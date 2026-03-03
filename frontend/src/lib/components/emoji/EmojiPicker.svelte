@@ -244,7 +244,7 @@
 						on:click={() => select(`:${emoji.name}:`)}
 					>
 						<img
-							src={emoji.url}
+							src={emoji.imageUrl}
 							alt={emoji.name}
 							class="custom-emoji-img"
 						/>

@@ -7,6 +7,7 @@
 	} from "$stores/ws.js";
 	import YapRecorder from "./YapRecorder.svelte";
 	import ClipRecorder from "./ClipRecorder.svelte";
+	import EmojiPicker from "$lib/components/emoji/EmojiPicker.svelte";
 	import { encryptChannel, encryptDm } from "$lib/signal/index.js";
 
 	export let disabled = false;
@@ -17,12 +18,16 @@
 	export let conversationId: string | undefined = undefined;
 	/** Recipient user ID — required for DMs to build the Signal session. */
 	export let recipientId: string | undefined = undefined;
+	/** Server ID — used by EmojiPicker to show custom server emojis. */
+	export let serverId: string | undefined = undefined;
 
 	type ActiveRecorder = "yap" | "clip" | null;
 
 	let text = "";
 	let typingThrottle: ReturnType<typeof setTimeout> | null = null;
 	let activeRecorder: ActiveRecorder = null;
+	let showEmojiPicker = false;
+	let textareaEl: HTMLTextAreaElement;
 	const dispatch = createEventDispatcher<{ send: string }>();
 
 	function handleInput() {
@@ -46,6 +51,24 @@
 			e.preventDefault();
 			handleSubmit();
 		}
+	}
+
+	// ── Emoji picker ─────────────────────────────────────────────────────────
+
+	function handleEmojiSelect(e: CustomEvent<string>) {
+		const emoji = e.detail;
+		const start = textareaEl?.selectionStart ?? text.length;
+		const end = textareaEl?.selectionEnd ?? text.length;
+		text = text.slice(0, start) + emoji + text.slice(end);
+		showEmojiPicker = false;
+		// Restore focus + move cursor after the inserted emoji
+		setTimeout(() => {
+			if (textareaEl) {
+				textareaEl.focus();
+				const pos = start + emoji.length;
+				textareaEl.selectionStart = textareaEl.selectionEnd = pos;
+			}
+		}, 0);
 	}
 
 	// ── Media send helpers ────────────────────────────────────────────────────
@@ -93,6 +116,13 @@
 		}
 	}
 </script>
+
+<!-- Emoji picker popup — shown above the input bar -->
+{#if showEmojiPicker}
+	<div class="emoji-popup">
+		<EmojiPicker {serverId} on:select={handleEmojiSelect} />
+	</div>
+{/if}
 
 <!-- Recorder overlays — shown inline above the input bar -->
 {#if activeRecorder === "yap"}
@@ -174,8 +204,22 @@
 		</svg>
 	</button>
 
+	<!-- Emoji button -->
+	<button
+		type="button"
+		class="media-btn"
+		class:active={showEmojiPicker}
+		on:click={() => (showEmojiPicker = !showEmojiPicker)}
+		{disabled}
+		aria-label="Emoji picker"
+		title="Emoji picker"
+	>
+		😊
+	</button>
+
 	<textarea
 		bind:value={text}
+		bind:this={textareaEl}
 		on:input={handleInput}
 		on:keydown={handleKeydown}
 		{placeholder}
@@ -210,6 +254,13 @@
 </form>
 
 <style>
+	.emoji-popup {
+		position: absolute;
+		bottom: calc(100% + 4px);
+		left: 0.75rem;
+		z-index: 200;
+	}
+
 	.recorder-tray {
 		padding: 0.5rem 1rem;
 		border-top: 1px solid var(--color-border);
@@ -217,6 +268,7 @@
 	}
 
 	.input-bar {
+		position: relative;
 		display: flex;
 		align-items: flex-end;
 		gap: 0.5rem;
