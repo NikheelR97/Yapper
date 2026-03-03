@@ -27,17 +27,12 @@ pub async fn csrf_check(req: Request, next: Next) -> Result<Response, StatusCode
         return Ok(next.run(req).await);
     }
 
-    // Exempt routes that issue or refresh the CSRF cookie — they cannot require a token
-    // they haven't set yet.  Using starts_with to avoid matching unrelated paths.
-    const CSRF_EXEMPT: &[&str] = &[
-        // OAuth redirect/callback — protected by OAuth state token + SameSite=Strict + CORS
-        "/auth/oauth/discord",
-        "/auth/oauth/google",
-        "/auth/oauth/discord/callback",
-        "/auth/oauth/google/callback",
-        // API auth routes — login/register/refresh/logout/verify all issue the CSRF cookie
-        "/api/v1/auth/",
-    ];
+    // Exempt auth routes — they issue the CSRF cookie and cannot require one they haven't set yet.
+    // NOTE: Axum strips the /api/v1 prefix before this middleware sees the path, so the path
+    // here is e.g. "/auth/refresh", not "/api/v1/auth/refresh".
+    // OAuth routes (/auth/oauth/*) are mounted at the top level outside api_router() so this
+    // middleware never runs for them — no need to list them here.
+    const CSRF_EXEMPT: &[&str] = &["/auth/"];
     let path = req.uri().path();
     if CSRF_EXEMPT.iter().any(|p| path.starts_with(p)) {
         return Ok(next.run(req).await);
@@ -71,12 +66,13 @@ pub async fn csrf_check(req: Request, next: Next) -> Result<Response, StatusCode
 /// Build a `Set-Cookie` header value for the CSRF token.
 /// NOT HttpOnly — JS must be able to read it to include in the X-CSRF-Token header.
 pub fn csrf_cookie_header(token: &str) -> String {
-    format!(
-        "csrf_token={token}; Secure; SameSite=Strict; Path=/; Max-Age=86400"
-    )
+    // No Secure flag — this cookie is intentionally readable by JS (not HttpOnly) and
+    // carries no sensitive data; SameSite=Strict provides the CSRF protection.
+    // Omitting Secure allows it to be stored in HTTP-only dev environments (Tauri/Capacitor).
+    format!("csrf_token={token}; SameSite=Strict; Path=/; Max-Age=86400")
 }
 
 /// Clears the CSRF cookie on logout.
 pub fn clear_csrf_cookie() -> String {
-    "csrf_token=; Secure; SameSite=Strict; Path=/; Max-Age=0".to_string()
+    "csrf_token=; SameSite=Strict; Path=/; Max-Age=0".to_string()
 }
