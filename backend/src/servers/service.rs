@@ -360,7 +360,7 @@ pub async fn join_by_invite(
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
-pub(super) async fn do_join(
+pub(crate) async fn do_join(
     user_id: Uuid,
     server_id: Uuid,
     invite_code: Option<String>,

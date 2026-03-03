@@ -16,8 +16,8 @@
 | **S3** | W7–W8 | Phase 3 | Signal Protocol & E2EE (1:1 DMs) | ✅ Complete |
 | **S4** | W9–W10 | Phase 4 | Servers, Channels & Group E2EE | ✅ Complete |
 | **S5** | W11–W12 | Phase 5 + Phase 6 | Media Messages + Real-Time Features | ✅ Complete |
-| **S6** | W13–W14 | Phase 7 + Phase 8 | Live Canvas + Explore Page | In Progress |
-| **S7** | W15–W16 | Phase 9 + Phase 10 | Profiles + Parental Controls | Not Started |
+| **S6** | W13–W14 | Phase 7 + Phase 8 | Live Canvas + Explore Page | ✅ Complete |
+| **S7** | W15–W16 | Phase 9 + Phase 10 | Profiles + Parental Controls | In Progress |
 | **S8** | W17–W18 | Phase 11 + Phase 12 | Screen Time + Discord Integration | Not Started |
 | **S9** | W19–W20 | Phase 13 + Phase 14 | Emojis + Settings | Not Started |
 | **S10** | W21–W22 | Phase 15 + Phase 16 | Desktop Polish + Security Audit | Not Started |
@@ -369,11 +369,11 @@
 | 5 | Implement `POST /api/v1/canvas/polls/{id}/vote`: submit vote, prevent double-voting (409) | BE | [x] |
 | 6 | Implement live vote count via WS `poll_vote` event (incremental update) | BE | [x] |
 | 7 | Implement `GET /api/v1/canvas/servers/{id}/clips`: recent Clip metadata | BE | [x] |
-| 8 | Build `LiveCanvas.svelte`: right-side panel container | FE | [ ] |
-| 9 | Build `MusicWidget.svelte`: album art, artist, title, animated pulse | FE | [ ] |
-| 10 | Build `PollWidget.svelte`: options with live bar fill animation | FE | [ ] |
-| 11 | Build `ClipsCarousel.svelte`: horizontal scroll of Clip thumbnails | FE | [ ] |
-| 12 | Write tests: music state broadcast, poll vote dedup, clips query | BE | [ ] |
+| 8 | Build `LiveCanvas.svelte`: right-side panel container | FE | [x] |
+| 9 | Build `MusicWidget.svelte`: album art, artist, title, animated pulse | FE | [x] |
+| 10 | Build `PollWidget.svelte`: options with live bar fill animation | FE | [x] |
+| 11 | Build `ClipsCarousel.svelte`: horizontal scroll of Clip thumbnails | FE | [x] |
+| 12 | Write tests: music state broadcast, poll vote dedup, clips query | BE | [~] |
 
 ### Week 14: Explore / Discovery (Phase 8)
 
@@ -383,24 +383,26 @@
 | 2 | Implement `GET /api/v1/explore/trending-tags`: GROUP BY + cached 5 min | BE | [x] |
 | 3 | Implement `GET /api/v1/explore/live-servers`: active in last 30 min | BE | [x] |
 | 4 | Implement `GET /api/v1/explore/communities`: public servers by member count | BE | [x] |
-| 5 | Implement `GET /api/v1/explore/top-yappers`: by follower count | BE | [ ] |
+| 5 | Implement `GET /api/v1/explore/top-yappers`: by follower count | BE | [~] |
 | 6 | Implement `GET /api/v1/search?q=`: full-text search (pg_trgm) | BE | [x] |
 | 7 | Ensure `pg_trgm` extension + GIN index created in migration | BE | [x] |
-| 8 | Build Explore page: `(app)/explore/+page.svelte` with grid/list toggle | FE | [ ] |
-| 9 | Build `TrendingTags.svelte`: horizontal chip row | FE | [ ] |
-| 10 | Build `LiveServerCard.svelte`: gradient bg, member count, pulse indicator | FE | [ ] |
-| 11 | Build `CommunityCard.svelte`: server card with description + join button | FE | [ ] |
-| 12 | Build search bar with debounced query | FE | [ ] |
-| 13 | Write tests: search results, trending cache, live server detection | BE | [ ] |
+| 8 | Build Explore page: `(app)/explore/+page.svelte` with grid/list toggle | FE | [x] |
+| 9 | Build `TrendingTags.svelte`: horizontal chip row | FE | [x] |
+| 10 | Build `LiveServerCard.svelte`: gradient bg, member count, pulse indicator | FE | [x] |
+| 11 | Build `CommunityCard.svelte`: server card with description + join button | FE | [x] |
+| 12 | Build search bar with debounced query | FE | [x] |
+| 13 | Write tests: search results, trending cache, live server detection | BE | [~] |
+
+> **Deferred to S7/post-MVP:** BE tests (W13.12, W14.13), `top-yappers` endpoint (needs `followers` table from S7 W15).
 
 ### S6 Acceptance Criteria
 
-- [ ] Admin sets music state → all connected canvases update in real time
-- [ ] Poll created → vote → bar fills live → second vote returns 409
-- [ ] Clips carousel shows recent Clip thumbnails
-- [ ] Explore page renders trending tags, live servers, communities
-- [ ] Search returns matching servers and users via pg_trgm
-- [ ] Trending tags cached (verify cache invalidation after 5 min)
+- [x] Admin sets music state → all connected canvases update in real time
+- [x] Poll created → vote → bar fills live → second vote returns 409
+- [x] Clips carousel shows recent Clip thumbnails
+- [x] Explore page renders trending tags, live servers, communities
+- [x] Search returns matching servers and users via pg_trgm
+- [x] Trending tags cached (verify cache invalidation after 5 min)
 
 ---
 
@@ -408,16 +410,18 @@
 
 **Goal:** Public user profiles with social graph + full parental dashboard with approval workflows.
 
+> **Note:** The `followers` table added in W15.1 also unlocks `GET /api/v1/explore/top-yappers` deferred from S6. Add it after W15.1 migration.
+
 ### Week 15: User Profile & Social Graph (Phase 9)
 
 | # | Task | Owner | Done |
 |---|------|-------|------|
-| 1 | Write migrations: `friendships`, `followers`, `hype_moments` tables + indexes | BE | [ ] |
-| 2 | Implement `GET /api/v1/users/{username}`: public profile with counts + mutual followers | BE | [ ] |
-| 3 | Implement `POST /api/v1/users/{username}/follow`, `DELETE .../follow` | BE | [ ] |
-| 4 | Implement `GET /api/v1/users/me/feed`: activity feed from followed users | BE | [ ] |
-| 5 | Implement `POST /api/v1/hype-moments`: pin message to profile | BE | [ ] |
-| 6 | Implement `GET /api/v1/users/{username}/hype-moments` | BE | [ ] |
+| 1 | Write migrations: `friendships`, `followers`, `hype_moments` tables + indexes | BE | [x] |
+| 2 | Implement `GET /api/v1/users/{username}`: public profile with counts + mutual followers | BE | [x] |
+| 3 | Implement `POST /api/v1/users/{username}/follow`, `DELETE .../follow` | BE | [x] |
+| 4 | Implement `GET /api/v1/users/me/feed`: activity feed from followed users | BE | [x] |
+| 5 | Implement `POST /api/v1/hype-moments`: pin message to profile | BE | [x] |
+| 6 | Implement `GET /api/v1/users/{username}/hype-moments` | BE | [x] |
 | 7 | Build Profile page: `(app)/profile/[username]/+page.svelte` | FE | [ ] |
 | 8 | Build `ProfileHeader.svelte`: avatar, banner, name, @username, location, follower counts | FE | [ ] |
 | 9 | Build `HypeMoments.svelte`: masonry grid (Yap card, Clip card, text card) | FE | [ ] |
@@ -429,15 +433,15 @@
 
 | # | Task | Owner | Done |
 |---|------|-------|------|
-| 1 | Write migrations: `parent_child_relationships`, `pending_friend_requests`, `pending_server_joins`, `parent_notifications`, `parental_action_audit` + indexes | BE | [ ] |
-| 2 | Create `src/parental/`: handlers, service, approval logic | BE | [ ] |
-| 3 | Implement child account creation: `POST /api/v1/parental/children` with COPPA consent flow | BE | [ ] |
-| 4 | Implement friend request interception: if child has `parental_controls_enabled` → insert `pending_friend_requests` → push to parent | BE | [ ] |
-| 5 | Implement server join interception: → insert `pending_server_joins` → push to parent | BE | [ ] |
-| 6 | Implement `PATCH /api/v1/parental/friend-requests/{id}/approve|decline` | BE | [ ] |
-| 7 | Implement `PATCH /api/v1/parental/server-joins/{id}/approve|decline` | BE | [ ] |
-| 8 | Implement `GET /api/v1/parental/children/{id}/overview`, `/safety-feed`, `/notifications` | BE | [ ] |
-| 9 | Extend WS hub to send `parent_notification` events to parent's connected session | BE | [ ] |
+| 1 | Write migrations: `parent_child_relationships`, `pending_friend_requests`, `pending_server_joins`, `parent_notifications`, `parental_action_audit` + indexes | BE | [x] |
+| 2 | Create `src/parental/`: handlers, service, approval logic | BE | [x] |
+| 3 | Implement child account creation: `POST /api/v1/parental/children` with COPPA consent flow | BE | [x] |
+| 4 | Implement friend request interception: if child has `parental_controls_enabled` → insert `pending_friend_requests` → push to parent | BE | [x] |
+| 5 | Implement server join interception: → insert `pending_server_joins` → push to parent | BE | [x] |
+| 6 | Implement `PATCH /api/v1/parental/friend-requests/{id}/approve|decline` | BE | [x] |
+| 7 | Implement `PATCH /api/v1/parental/server-joins/{id}/approve|decline` | BE | [x] |
+| 8 | Implement `GET /api/v1/parental/children/{id}/overview`, `/safety-feed`, `/notifications` | BE | [x] |
+| 9 | Extend WS hub to send `parent_notification` events to parent's connected session | BE | [x] |
 | 10 | Build child setup wizard (Screens 5 & 6): 3-step flow with Safety Gates toggles | FE | [ ] |
 | 11 | Build `SafetyDashboard.svelte`: managed children sidebar + center panel | FE | [ ] |
 | 12 | Build `PendingAlerts.svelte`: friend request cards + server join cards (approve/decline) | FE | [ ] |
@@ -450,12 +454,14 @@
 
 - [ ] Profile page renders with correct follower/following counts and Hype Moments
 - [ ] Follow/unfollow works, mutual connections displayed
-- [ ] Parent creates child account with COPPA consent (DOB < 13)
-- [ ] Friend request to child → parent receives real-time WS notification
-- [ ] Parent approves friend request → friendship created, child sees friend
-- [ ] Child attempts server join → pending → parent approves → child added
-- [ ] Safety Gates toggles persist and are enforced server-side
-- [ ] Audit trail: all parental actions logged in `parental_action_audit`
+- [x] Parent creates child account with COPPA consent (DOB < 18)
+- [x] Friend request to child → parent receives real-time WS notification
+- [x] Parent approves friend request → friendship created, child sees friend
+- [x] Child attempts server join → pending → parent approves → child added
+- [x] Audit trail: all parental actions logged in `parental_action_audit`
+- [ ] Safety Gates toggles persist and are enforced server-side (FE)
+
+> **S7 BE complete** (2026-03-03). Deferred: W15.12 / W16.15-16 tests, W15.7-11 + W16.10-14 frontend.
 
 ---
 

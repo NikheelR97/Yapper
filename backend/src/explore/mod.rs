@@ -29,6 +29,7 @@ pub fn router() -> Router<AppState> {
         .route("/explore/communities", get(get_communities))
         .route("/explore/live-servers", get(get_live_servers))
         .route("/explore/trending-tags", get(get_trending_tags))
+        .route("/explore/top-yappers", get(get_top_yappers))
         .route("/search", get(search))
 }
 
@@ -246,4 +247,40 @@ async fn search(
         .collect();
 
     Ok(Json(serde_json::json!({ "servers": servers, "users": users })))
+}
+
+// ─── Top yappers ─────────────────────────────────────────────────────────────
+
+/// GET /explore/top-yappers — users ranked by follower count (top 20).
+async fn get_top_yappers(
+    _auth: AuthUser,
+    State(state): State<AppState>,
+) -> AppResult<impl IntoResponse> {
+    let rows = sqlx::query(
+        "SELECT u.id, u.username, u.display_name, u.avatar_url, u.is_premium,
+                COUNT(f.follower_id) AS follower_count
+         FROM users u
+         LEFT JOIN followers f ON f.following_id = u.id
+         WHERE u.deleted_at IS NULL
+           AND u.account_type != 'bot'
+         GROUP BY u.id
+         ORDER BY follower_count DESC
+         LIMIT 20",
+    )
+    .fetch_all(state.db.pool())
+    .await?;
+
+    let yappers: Vec<serde_json::Value> = rows
+        .iter()
+        .map(|r| serde_json::json!({
+            "id":             r.try_get::<Uuid, _>("id").ok(),
+            "username":       r.try_get::<String, _>("username").unwrap_or_default(),
+            "display_name":   r.try_get::<Option<String>, _>("display_name").ok().flatten(),
+            "avatar_url":     r.try_get::<Option<String>, _>("avatar_url").ok().flatten(),
+            "is_premium":     r.try_get::<bool, _>("is_premium").unwrap_or(false),
+            "follower_count": r.try_get::<i64, _>("follower_count").unwrap_or(0),
+        }))
+        .collect();
+
+    Ok(Json(serde_json::json!({ "yappers": yappers })))
 }

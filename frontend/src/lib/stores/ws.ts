@@ -166,6 +166,10 @@ function doConnect(): void {
 				handlers.get('presence')?.forEach((h) => h(frame));
 				break;
 
+			case 'canvas_update':
+				handlers.get('canvas_update')?.forEach((h) => h(frame));
+				break;
+
 			case 'pong':
 				break;
 

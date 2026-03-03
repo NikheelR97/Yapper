@@ -13,6 +13,9 @@
 	import MessageList from "$lib/components/chat/MessageList.svelte";
 	import MessageInput from "$lib/components/chat/MessageInput.svelte";
 	import TypingIndicator from "$lib/components/chat/TypingIndicator.svelte";
+	import LiveCanvas from "$lib/components/canvas/LiveCanvas.svelte";
+
+	let showCanvas = true;
 
 	$: serverId = $page.params.id ?? "";
 	$: channelId = $page.params.channelId ?? "";
@@ -76,10 +79,21 @@
 <div class="channel-page">
 	<ServerSidebar activeServerId={serverId} activeChannelId={channelId} />
 
-	<div class="chat-area">
+	<div class="chat-area" class:canvas-open={showCanvas}>
 		<!-- Header -->
 		<header class="chat-header">
 			<span class="channel-name">#{channelName || "…"}</span>
+			<button
+				class="canvas-toggle"
+				on:click={() => (showCanvas = !showCanvas)}
+				title={showCanvas ? 'Hide Canvas' : 'Show Canvas'}
+				aria-pressed={showCanvas}
+			>
+				<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+					<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+					<rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+				</svg>
+			</button>
 			<span class="e2ee-badge" title="End-to-end encrypted">
 				<svg
 					width="12"
@@ -122,6 +136,10 @@
 			on:send={handleSend}
 		/>
 	</div>
+
+	{#if showCanvas && serverId}
+		<LiveCanvas {serverId} />
+	{/if}
 </div>
 
 <style>
@@ -142,7 +160,7 @@
 	.chat-header {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
+		gap: 0.5rem;
 		padding: 0.75rem 1rem;
 		border-bottom: 1px solid var(--color-border);
 		background: var(--color-bg-elevated);
@@ -153,6 +171,25 @@
 		font-weight: 600;
 		color: var(--color-text-primary);
 		font-size: 0.9375rem;
+		flex: 1;
+	}
+
+	.canvas-toggle {
+		padding: 0.3rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-sm);
+		background: transparent;
+		color: var(--color-text-muted);
+		cursor: pointer;
+		display: flex;
+		align-items: center;
+		transition: border-color var(--transition-fast), color var(--transition-fast);
+	}
+
+	.canvas-toggle:hover,
+	.canvas-toggle[aria-pressed='true'] {
+		border-color: var(--color-brand);
+		color: var(--color-brand-light);
 	}
 
 	.e2ee-badge {

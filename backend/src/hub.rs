@@ -134,6 +134,10 @@ impl Hub {
             .unwrap_or(false)
     }
 
+    pub fn is_away(&self, user_id: &Uuid) -> bool {
+        self.away_users.contains_key(user_id)
+    }
+
     /// Send a message to all connections of a specific user.
     pub fn send_to_user(&self, user_id: &Uuid, msg: WsOutbound) {
         if let Some(user_conns) = self.connections.get(user_id) {

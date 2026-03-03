@@ -14,11 +14,13 @@
 	} from "$stores/conversations.js";
 	import { registerChannelHandler, fetchServers } from "$stores/servers.js";
 	import { registerPresenceHandler } from "$stores/presence.js";
+	import { registerCanvasHandler } from "$stores/canvas.js";
 
 	let ready = false;
 	let unregisterDmHandler: (() => void) | null = null;
 	let unregisterChannelHandler: (() => void) | null = null;
 	let unregisterPresenceHandler: (() => void) | null = null;
+	let unregisterCanvasHandler: (() => void) | null = null;
 
 	onMount(async () => {
 		const state = get(authStore);
@@ -50,6 +52,7 @@
 		unregisterDmHandler = registerDmHandler();
 		unregisterChannelHandler = registerChannelHandler();
 		unregisterPresenceHandler = registerPresenceHandler();
+		unregisterCanvasHandler = registerCanvasHandler();
 		fetchConversations().catch(() => {});
 		fetchServers().catch(() => {});
 
@@ -60,6 +63,7 @@
 		unregisterDmHandler?.();
 		unregisterChannelHandler?.();
 		unregisterPresenceHandler?.();
+		unregisterCanvasHandler?.();
 		wsDisconnect();
 	});
 </script>
