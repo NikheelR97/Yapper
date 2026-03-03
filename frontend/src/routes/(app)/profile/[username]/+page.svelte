@@ -1,19 +1,19 @@
 <script lang="ts">
-	import { page } from '$app/stores';
-	import { onMount } from 'svelte';
-	import { profileStore, loadProfile } from '$stores/profile.js';
-	import ProfileHeader from '$components/profile/ProfileHeader.svelte';
-	import BioCard from '$components/profile/BioCard.svelte';
-	import HypeMoments from '$components/profile/HypeMoments.svelte';
-	import TopCommunitiesCard from '$components/profile/TopCommunitiesCard.svelte';
-	import MutualConnectionsCard from '$components/profile/MutualConnectionsCard.svelte';
-	import Skeleton from '$components/Skeleton.svelte';
+	import { page } from "$app/stores";
+	import { onMount } from "svelte";
+	import { profileStore, loadProfile } from "$stores/profile.js";
+	import ProfileHeader from "$components/profile/ProfileHeader.svelte";
+	import BioCard from "$components/profile/BioCard.svelte";
+	import HypeMoments from "$components/profile/HypeMoments.svelte";
+	import TopCommunitiesCard from "$components/profile/TopCommunitiesCard.svelte";
+	import MutualConnectionsCard from "$components/profile/MutualConnectionsCard.svelte";
+	import Skeleton from "$components/Skeleton.svelte";
 
 	$: username = $page.params.username;
 	$: ({ profile, loading, error } = $profileStore);
 
 	onMount(async () => {
-		await loadProfile(username);
+		if (username) await loadProfile(username);
 	});
 
 	// Reload when username param changes
@@ -21,7 +21,11 @@
 </script>
 
 <svelte:head>
-	<title>{profile ? `${profile.displayName} (@${profile.username}) — Yapper` : 'Profile — Yapper'}</title>
+	<title
+		>{profile
+			? `${profile.displayName} (@${profile.username}) — Yapper`
+			: "Profile — Yapper"}</title
+	>
 </svelte:head>
 
 <div class="profile-page">
@@ -52,15 +56,23 @@
 			<div class="profile-body">
 				<div class="main-col">
 					<BioCard {profile} />
-					<HypeMoments moments={profile.hypeMoments} loading={false} />
+					<HypeMoments
+						moments={profile.hypeMoments}
+						loading={false}
+					/>
 				</div>
 
 				<aside class="side-col">
 					{#if profile.topCommunities && profile.topCommunities.length > 0}
-						<TopCommunitiesCard communities={profile.topCommunities} />
+						<TopCommunitiesCard
+							communities={profile.topCommunities}
+						/>
 					{/if}
 					{#if profile.mutualFriends && profile.mutualFriends.length > 0}
-						<MutualConnectionsCard mutuals={profile.mutualFriends} profileUsername={profile.username} />
+						<MutualConnectionsCard
+							mutuals={profile.mutualFriends}
+							profileUsername={profile.username}
+						/>
 					{/if}
 				</aside>
 			</div>

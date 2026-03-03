@@ -217,6 +217,14 @@ async fn create_poll(
     if body.options.len() < 2 || body.options.len() > 10 {
         return Err(AppError::BadRequest("Poll must have 2–10 options".into()));
     }
+    if body.question.len() > 500 {
+        return Err(AppError::BadRequest("Poll question too long".into()));
+    }
+    for opt in &body.options {
+        if opt.len() > 500 {
+            return Err(AppError::BadRequest("Poll option too long".into()));
+        }
+    }
 
     let options: Vec<serde_json::Value> = body
         .options

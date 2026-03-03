@@ -65,7 +65,7 @@ async fn create_child(
     .await?
     .ok_or_else(|| AppError::NotFound("User not found".into()))?;
 
-    let account_type: String = caller_row.try_get("account_type").unwrap_or_default();
+    let account_type: String = caller_row.try_get("account_type")?;
     if account_type == "child" || account_type == "bot" {
         return Err(AppError::Forbidden);
     }
@@ -309,14 +309,17 @@ async fn get_notifications(
         .collect();
 
     // Mark as read
-    let _ = sqlx::query(
+    if let Err(e) = sqlx::query(
         "UPDATE parent_notifications SET read = TRUE
          WHERE parent_user_id = $1 AND child_user_id = $2 AND read = FALSE",
     )
     .bind(auth.user_id)
     .bind(child_id)
     .execute(state.db.pool())
-    .await;
+    .await
+    {
+        tracing::warn!("Failed to mark notifications read: {e}");
+    }
 
     Ok(Json(serde_json::json!({
         "friend_requests": friend_requests,

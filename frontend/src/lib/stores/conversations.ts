@@ -38,6 +38,7 @@ export interface Message {
 interface ConversationStore {
 	conversations: Conversation[];
 	loading: boolean;
+	loadError: boolean;
 }
 
 // ─── Stores ───────────────────────────────────────────────────────────────────
@@ -45,6 +46,7 @@ interface ConversationStore {
 export const conversationsStore = writable<ConversationStore>({
 	conversations: [],
 	loading: false,
+	loadError: false,
 });
 
 // Per-conversation message lists
@@ -83,9 +85,10 @@ export async function fetchConversations(): Promise<void> {
 				lastMessageAt: c.last_message_at,
 			})),
 			loading: false,
+			loadError: false,
 		});
 	} catch {
-		conversationsStore.update((s) => ({ ...s, loading: false }));
+		conversationsStore.update((s) => ({ ...s, loading: false, loadError: true }));
 	}
 }
 

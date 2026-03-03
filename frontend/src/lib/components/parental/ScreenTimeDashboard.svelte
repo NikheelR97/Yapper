@@ -48,7 +48,7 @@
 				weeklyData: WeeklyData[];
 				bedtimeStart: string | null;
 				bedtimeEnd: string | null;
-			}>(`/api/v1/parental/children/${childId}/screen-time?period=${period}`);
+			}>(`/api/v1/parental/children/${childId}/screentime?period=${period}`);
 
 			totalMinutesToday = data.totalMinutesToday;
 			limitMinutes = data.limitMinutes;
@@ -83,7 +83,7 @@
 	async function saveSettings() {
 		saving = true;
 		try {
-			await api.patch(`/api/v1/parental/children/${childId}/screen-time`, {
+			await api.patch(`/api/v1/parental/children/${childId}/screentime`, {
 				limitMinutes,
 				bedtimeStart,
 				bedtimeEnd,

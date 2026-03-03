@@ -56,6 +56,13 @@
 			toast.error('Please enter a valid date of birth.');
 			return;
 		}
+		if (step === 2) {
+			const d = new Date(parseInt(dobYear), parseInt(dobMonth) - 1, parseInt(dobDay));
+			if (d.getDate() !== parseInt(dobDay)) {
+				toast.error('Invalid date — please check day and month.');
+				return;
+			}
+		}
 		step = Math.min(step + 1, totalSteps);
 	}
 

@@ -27,24 +27,30 @@ const DB_NAME = 'yapper-signal';
 const DB_VERSION = 2;
 
 let _db: IDBPDatabase | null = null;
+let _dbPromise: Promise<IDBPDatabase> | null = null;
 
 async function getDB(): Promise<IDBPDatabase> {
 	if (_db) return _db;
-	_db = await openDB(DB_NAME, DB_VERSION, {
-		upgrade(db, oldVersion) {
-			// v1 stores (always create if missing on fresh install)
-			if (!db.objectStoreNames.contains('identity'))       db.createObjectStore('identity');
-			if (!db.objectStoreNames.contains('prekeys'))        db.createObjectStore('prekeys', { keyPath: 'keyId' });
-			if (!db.objectStoreNames.contains('signed_prekeys')) db.createObjectStore('signed_prekeys', { keyPath: 'keyId' });
-			if (!db.objectStoreNames.contains('sessions'))       db.createObjectStore('sessions', { keyPath: 'conversationId' });
-			// v2 — Sender Keys for group E2EE
-			if (oldVersion < 2) {
-				db.createObjectStore('sender_keys', { keyPath: 'channelId' });
-				db.createObjectStore('receiver_keys'); // keyed externally as `${channelId}:${senderId}`
-			}
-		},
-	});
-	return _db;
+	if (!_dbPromise) {
+		_dbPromise = openDB(DB_NAME, DB_VERSION, {
+			upgrade(db, oldVersion) {
+				// v1 stores (always create if missing on fresh install)
+				if (!db.objectStoreNames.contains('identity'))       db.createObjectStore('identity');
+				if (!db.objectStoreNames.contains('prekeys'))        db.createObjectStore('prekeys', { keyPath: 'keyId' });
+				if (!db.objectStoreNames.contains('signed_prekeys')) db.createObjectStore('signed_prekeys', { keyPath: 'keyId' });
+				if (!db.objectStoreNames.contains('sessions'))       db.createObjectStore('sessions', { keyPath: 'conversationId' });
+				// v2 — Sender Keys for group E2EE
+				if (oldVersion < 2) {
+					db.createObjectStore('sender_keys', { keyPath: 'channelId' });
+					db.createObjectStore('receiver_keys'); // keyed externally as `${channelId}:${senderId}`
+				}
+			},
+		}).then((db) => {
+			_db = db;
+			return db;
+		});
+	}
+	return _dbPromise;
 }
 
 // ─── Identity Key ─────────────────────────────────────────────────────────────

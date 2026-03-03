@@ -43,12 +43,22 @@
       "mobile": [
         {
           "host": "yapperhq.com",
-          "pathPrefix": ["/invite"]
+          "pathPrefix": [
+            "/invite"
+          ]
         }
       ],
       "desktop": {
-        "schemes": ["yapper"]
+        "schemes": [
+          "yapper"
+        ]
       }
+    },
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZDMEY5OUUzMUFBRkJGRkIKUlVsKzhmK3B2KzkvT3pITkE3TjR4VUVnSTh5Skc3WEZlNWozNUp5S29NSC8K",
+      "endpoints": [
+        "https://github.com/YapperHQ/yapper/releases/latest/download/latest.json"
+      ]
     }
   }
 }

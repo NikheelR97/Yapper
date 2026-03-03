@@ -1,31 +1,32 @@
 <script lang="ts">
-	import { page } from '$app/stores';
+	import { page } from "$app/stores";
 
 	// Only show in Tauri
-	const isTauri = typeof window !== 'undefined' && !!(window as any).__TAURI__;
+	const isTauri =
+		typeof window !== "undefined" && !!(window as any).__TAURI__;
 
-	$: channelName = $page.url.pathname.includes('/channels/')
-		? '#' + ($page.url.pathname.split('/').pop() ?? 'general')
+	$: channelName = $page.url.pathname.includes("/channels/")
+		? "#" + ($page.url.pathname.split("/").pop() ?? "general")
 		: null;
 
 	async function minimize() {
 		if (isTauri) {
-			const { appWindow } = await import('@tauri-apps/api/window');
-			appWindow.minimize();
+			const { getCurrentWindow } = await import("@tauri-apps/api/window");
+			getCurrentWindow().minimize();
 		}
 	}
 
 	async function toggleMaximize() {
 		if (isTauri) {
-			const { appWindow } = await import('@tauri-apps/api/window');
-			appWindow.toggleMaximize();
+			const { getCurrentWindow } = await import("@tauri-apps/api/window");
+			getCurrentWindow().toggleMaximize();
 		}
 	}
 
 	async function close() {
 		if (isTauri) {
-			const { appWindow } = await import('@tauri-apps/api/window');
-			appWindow.close();
+			const { getCurrentWindow } = await import("@tauri-apps/api/window");
+			getCurrentWindow().close();
 		}
 	}
 </script>
@@ -36,14 +37,31 @@
 			<div class="app-icon" data-tauri-drag-region></div>
 			<span class="app-name" data-tauri-drag-region>Yapper</span>
 			{#if channelName}
-				<span class="location" data-tauri-drag-region>· {channelName}</span>
+				<span class="location" data-tauri-drag-region
+					>· {channelName}</span
+				>
 			{/if}
 		</div>
 
 		<div class="window-controls">
-			<button class="wc-btn" on:click={minimize} title="Minimize" aria-label="Minimize">─</button>
-			<button class="wc-btn" on:click={toggleMaximize} title="Maximize" aria-label="Maximize">□</button>
-			<button class="wc-btn close" on:click={close} title="Close" aria-label="Close">✕</button>
+			<button
+				class="wc-btn"
+				on:click={minimize}
+				title="Minimize"
+				aria-label="Minimize">─</button
+			>
+			<button
+				class="wc-btn"
+				on:click={toggleMaximize}
+				title="Maximize"
+				aria-label="Maximize">□</button
+			>
+			<button
+				class="wc-btn close"
+				on:click={close}
+				title="Close"
+				aria-label="Close">✕</button
+			>
 		</div>
 	</div>
 {/if}
@@ -73,7 +91,12 @@
 		width: 16px;
 		height: 16px;
 		border-radius: 50%;
-		background: radial-gradient(circle at 35% 35%, #c4b5fd, #7c3aed 45%, #2e1065);
+		background: radial-gradient(
+			circle at 35% 35%,
+			#c4b5fd,
+			#7c3aed 45%,
+			#2e1065
+		);
 		flex-shrink: 0;
 	}
 
@@ -105,7 +128,9 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		transition: background 100ms, color 100ms;
+		transition:
+			background 100ms,
+			color 100ms;
 	}
 
 	.wc-btn:hover {

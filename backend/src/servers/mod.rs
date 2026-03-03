@@ -22,4 +22,6 @@ pub fn router() -> Router<AppState> {
             get(crate::channels::handlers::list_channels)
                 .post(crate::channels::handlers::create_channel),
         )
+        // Custom emoji CRUD nested under server (/:id/emojis)
+        .nest("/:id/emojis", crate::emojis::server_emoji_router())
 }

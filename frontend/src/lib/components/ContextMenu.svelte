@@ -1,10 +1,4 @@
-<script lang="ts">
-	import { createEventDispatcher, onMount, onDestroy } from 'svelte';
-
-	export let x: number = 0;
-	export let y: number = 0;
-	export let items: ContextMenuItem[] = [];
-
+<script context="module" lang="ts">
 	export interface ContextMenuItem {
 		label: string;
 		icon?: string;
@@ -12,11 +6,19 @@
 		destructive?: boolean;
 		divider?: boolean; // renders a divider BEFORE this item
 	}
+</script>
+
+<script lang="ts">
+	import { createEventDispatcher, onMount, onDestroy } from "svelte";
+
+	export let x: number = 0;
+	export let y: number = 0;
+	export let items: ContextMenuItem[] = [];
 
 	const dispatch = createEventDispatcher<{ close: void }>();
 
 	function close() {
-		dispatch('close');
+		dispatch("close");
 	}
 
 	function handleItem(item: ContextMenuItem) {
@@ -25,7 +27,7 @@
 	}
 
 	function handleKeydown(e: KeyboardEvent) {
-		if (e.key === 'Escape') close();
+		if (e.key === "Escape") close();
 	}
 
 	function handleOutsideClick(e: MouseEvent) {
@@ -41,13 +43,14 @@
 		if (menuEl) {
 			const rect = menuEl.getBoundingClientRect();
 			adjustedX = x + rect.width > window.innerWidth ? x - rect.width : x;
-			adjustedY = y + rect.height > window.innerHeight ? y - rect.height : y;
+			adjustedY =
+				y + rect.height > window.innerHeight ? y - rect.height : y;
 		}
-		window.addEventListener('keydown', handleKeydown);
+		window.addEventListener("keydown", handleKeydown);
 	});
 
 	onDestroy(() => {
-		window.removeEventListener('keydown', handleKeydown);
+		window.removeEventListener("keydown", handleKeydown);
 	});
 </script>
 
@@ -105,7 +108,9 @@
 		font-family: inherit;
 		cursor: pointer;
 		text-align: left;
-		transition: background 100ms, color 100ms;
+		transition:
+			background 100ms,
+			color 100ms;
 	}
 
 	.menu-item:hover {

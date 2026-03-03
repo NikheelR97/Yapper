@@ -10,6 +10,7 @@ use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 
+
 /// Max pre-signed URL validity: 15 minutes.
 const PRESIGN_TTL_SECS: u64 = 15 * 60;
 
@@ -63,6 +64,15 @@ fn r2_client() -> &'static Client {
 
 fn r2_bucket() -> &'static str {
     R2_BUCKET.get().expect("R2 bucket not initialised — call init_r2() at startup")
+}
+
+/// Option-returning variants — used by modules that gracefully handle missing R2 config.
+pub fn r2_client_opt() -> Option<&'static Client> {
+    R2_CLIENT.get()
+}
+
+pub fn r2_bucket_opt() -> Option<&'static str> {
+    R2_BUCKET.get().map(|s| s.as_str())
 }
 
 // ─── Upload URL generation ────────────────────────────────────────────────────

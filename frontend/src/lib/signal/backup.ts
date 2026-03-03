@@ -19,7 +19,7 @@ import { openDB } from 'idb';
 import { api } from '$lib/api/client.js';
 
 const DB_NAME = 'yapper-signal';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const PBKDF2_ITERS = 600_000;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -62,17 +62,19 @@ async function deriveKey(pin: string, salt: Uint8Array): Promise<CryptoKey> {
 
 async function exportKeystore(): Promise<string> {
 	const db = await openDB(DB_NAME, DB_VERSION);
-	const [identity, prekeys, signedPrekeys, sessions] = await Promise.all([
+	const [identity, prekeys, signedPrekeys, sessions, senderKeys, receiverKeys] = await Promise.all([
 		db.getAll('identity'),
 		db.getAll('prekeys'),
 		db.getAll('signed_prekeys'),
-		db.getAll('sessions')
+		db.getAll('sessions'),
+		db.getAll('sender_keys'),
+		db.getAll('receiver_keys')
 	]);
 
 	const identityKey = await db.get('identity', 'own');
 
 	return JSON.stringify(
-		{ identityKey, prekeys, signedPrekeys, sessions },
+		{ identityKey, prekeys, signedPrekeys, sessions, senderKeys, receiverKeys },
 		jsonReplacer
 	);
 }
@@ -83,16 +85,23 @@ async function importKeystore(snapshot: string): Promise<void> {
 		prekeys: unknown[];
 		signedPrekeys: unknown[];
 		sessions: unknown[];
+		senderKeys: unknown[];
+		receiverKeys: unknown[];
 	};
 
 	const db = await openDB(DB_NAME, DB_VERSION);
 
-	const tx = db.transaction(['identity', 'prekeys', 'signed_prekeys', 'sessions'], 'readwrite');
+	const tx = db.transaction(
+		['identity', 'prekeys', 'signed_prekeys', 'sessions', 'sender_keys', 'receiver_keys'],
+		'readwrite'
+	);
 
 	if (data.identityKey) await tx.objectStore('identity').put(data.identityKey, 'own');
 	for (const pk of data.prekeys) await tx.objectStore('prekeys').put(pk);
 	for (const spk of data.signedPrekeys) await tx.objectStore('signed_prekeys').put(spk);
 	for (const s of data.sessions) await tx.objectStore('sessions').put(s);
+	for (const sk of (data.senderKeys ?? [])) await tx.objectStore('sender_keys').put(sk);
+	for (const rk of (data.receiverKeys ?? [])) await tx.objectStore('receiver_keys').put(rk);
 
 	await tx.done;
 }

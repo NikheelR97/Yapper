@@ -311,7 +311,7 @@ async fn broadcast_presence(user_id: Uuid, online: bool, last_seen_at: Option<St
             "SELECT user_id FROM dm_participants \
              WHERE conversation_id IN (\
                SELECT conversation_id FROM dm_participants WHERE user_id = $1\
-             ) AND user_id != $1",
+             ) AND user_id != $1 LIMIT 500",
         )
         .bind(user_id)
         .fetch_all(state.db.pool())
@@ -426,10 +426,13 @@ async fn deliver_offline_messages(user_id: &Uuid, state: &AppState, tx: &ConnTx)
     }
 
     if !delivered_ids.is_empty() {
-        let _ = sqlx::query("UPDATE messages SET delivered = TRUE WHERE id = ANY($1)")
+        if let Err(e) = sqlx::query("UPDATE messages SET delivered = TRUE WHERE id = ANY($1)")
             .bind(&delivered_ids)
             .execute(state.db.pool())
-            .await;
+            .await
+        {
+            tracing::warn!("Failed to mark messages delivered: {e}");
+        }
     }
 }
 
@@ -463,7 +466,9 @@ async fn deliver_pending_key_dists(user_id: &Uuid, state: &AppState, tx: &ConnTx
             "ciphertext": BASE64.encode(&ct),
             "ek_public":  BASE64.encode(&ek),
         });
-        let _ = tx.send(WsOutbound::Message { payload });
+        if tx.send(WsOutbound::Message { payload }).is_err() {
+            tracing::debug!("Recipient disconnected during key dist delivery");
+        }
     }
 }
 

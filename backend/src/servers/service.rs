@@ -366,28 +366,35 @@ pub(crate) async fn do_join(
     invite_code: Option<String>,
     state: &AppState,
 ) -> AppResult<serde_json::Value> {
-    debug_assert!(user_id != Uuid::nil());
-    debug_assert!(server_id != Uuid::nil());
+    if user_id == Uuid::nil() || server_id == Uuid::nil() {
+        return Err(AppError::BadRequest("Invalid IDs".into()));
+    }
+
+    let mut tx = state.db.pool().begin().await?;
 
     let already = sqlx::query(
         "SELECT 1 FROM server_memberships WHERE user_id = $1 AND server_id = $2",
     )
     .bind(user_id)
     .bind(server_id)
-    .fetch_optional(state.db.pool())
+    .fetch_optional(&mut *tx)
     .await?;
 
     if already.is_some() {
+        tx.rollback().await.ok();
         return Ok(serde_json::json!({ "status": "already_member" }));
     }
 
-    let user_row = sqlx::query("SELECT parental_controls_enabled FROM users WHERE id = $1")
-        .bind(user_id)
-        .fetch_one(state.db.pool())
-        .await?;
+    let user_row = sqlx::query(
+        "SELECT parental_controls_enabled FROM users WHERE id = $1 FOR UPDATE",
+    )
+    .bind(user_id)
+    .fetch_one(&mut *tx)
+    .await?;
 
     let parental_controls: bool = user_row.try_get("parental_controls_enabled")?;
     if parental_controls {
+        tx.rollback().await.ok();
         return handle_parental_intercept(user_id, server_id, invite_code, state).await;
     }
 
@@ -397,8 +404,10 @@ pub(crate) async fn do_join(
     )
     .bind(user_id)
     .bind(server_id)
-    .execute(state.db.pool())
+    .execute(&mut *tx)
     .await?;
+
+    tx.commit().await?;
 
     Ok(serde_json::json!({ "status": "joined" }))
 }

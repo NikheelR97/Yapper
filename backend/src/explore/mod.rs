@@ -22,7 +22,7 @@ use std::{
 };
 use uuid::Uuid;
 
-use crate::{auth::AuthUser, error::AppResult, AppState};
+use crate::{auth::AuthUser, error::{AppError, AppResult}, AppState};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -190,6 +190,9 @@ async fn search(
     let q = params.q.trim().to_string();
     if q.is_empty() {
         return Ok(Json(serde_json::json!({ "servers": [], "users": [] })));
+    }
+    if q.len() > 255 {
+        return Err(AppError::BadRequest("Search query too long".into()));
     }
 
     // Servers — similarity search on name + description

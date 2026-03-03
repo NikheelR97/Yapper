@@ -1,21 +1,138 @@
 <script lang="ts">
-	import { createEventDispatcher, onMount } from 'svelte';
-	import { serversStore } from '$stores/servers.js';
+	import { createEventDispatcher, onMount } from "svelte";
+	import { serversStore } from "$stores/servers.js";
 
 	export let serverId: string | null = null;
 
 	const dispatch = createEventDispatcher<{ select: string }>();
 
-	let search = '';
-	let activeTab: 'recent' | 'server' | string = 'recent';
+	let search = "";
+	let activeTab: "recent" | "server" | string = "recent";
 	let recentEmojis: string[] = [];
 
 	// Standard emoji categories (subset for MVP)
 	const standardEmojis: Record<string, string[]> = {
-		'😀 Smileys': ['😀','😂','🥹','😊','😇','🥰','😍','😘','🤩','😎','🤔','🤭','🫠','😑','😒','😞','😢','😤','😡','🤯','😱','😨','🤗','🫡','🤫','🫤','😐','😶','🙄','😬','😮'],
-		'👍 Gestures': ['👍','👎','👋','🤙','✌','🤞','🫰','🤟','🤘','👌','🤌','🫵','🫶','❤','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','💯','✨','⚡','🔥','🎉','🎊','🚀','⭐'],
-		'🐶 Animals': ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐸','🐵','🐔','🐧','🐦','🦆','🦅','🦋','🐛','🐝','🪲','🐢','🦎','🐍'],
-		'🍕 Food': ['🍕','🍔','🍟','🌭','🍿','🧆','🌮','🌯','🫔','🥙','🧇','🥞','🧈','🍳','🥚','🧀','🥗','🥘','🫕','🍜','🍝','🍛','🍣','🍱'],
+		"😀 Smileys": [
+			"😀",
+			"😂",
+			"🥹",
+			"😊",
+			"😇",
+			"🥰",
+			"😍",
+			"😘",
+			"🤩",
+			"😎",
+			"🤔",
+			"🤭",
+			"🫠",
+			"😑",
+			"😒",
+			"😞",
+			"😢",
+			"😤",
+			"😡",
+			"🤯",
+			"😱",
+			"😨",
+			"🤗",
+			"🫡",
+			"🤫",
+			"🫤",
+			"😐",
+			"😶",
+			"🙄",
+			"😬",
+			"😮",
+		],
+		"👍 Gestures": [
+			"👍",
+			"👎",
+			"👋",
+			"🤙",
+			"✌",
+			"🤞",
+			"🫰",
+			"🤟",
+			"🤘",
+			"👌",
+			"🤌",
+			"🫵",
+			"🫶",
+			"❤",
+			"🧡",
+			"💛",
+			"💚",
+			"💙",
+			"💜",
+			"🖤",
+			"🤍",
+			"🤎",
+			"💔",
+			"💯",
+			"✨",
+			"⚡",
+			"🔥",
+			"🎉",
+			"🎊",
+			"🚀",
+			"⭐",
+		],
+		"🐶 Animals": [
+			"🐶",
+			"🐱",
+			"🐭",
+			"🐹",
+			"🐰",
+			"🦊",
+			"🐻",
+			"🐼",
+			"🐨",
+			"🐯",
+			"🦁",
+			"🐮",
+			"🐷",
+			"🐸",
+			"🐵",
+			"🐔",
+			"🐧",
+			"🐦",
+			"🦆",
+			"🦅",
+			"🦋",
+			"🐛",
+			"🐝",
+			"🪲",
+			"🐢",
+			"🦎",
+			"🐍",
+		],
+		"🍕 Food": [
+			"🍕",
+			"🍔",
+			"🍟",
+			"🌭",
+			"🍿",
+			"🧆",
+			"🌮",
+			"🌯",
+			"🫔",
+			"🥙",
+			"🧇",
+			"🥞",
+			"🧈",
+			"🍳",
+			"🥚",
+			"🧀",
+			"🥗",
+			"🥘",
+			"🫕",
+			"🍜",
+			"🍝",
+			"🍛",
+			"🍣",
+			"🍱",
+		],
 	};
 
 	// Custom server emojis
@@ -23,26 +140,34 @@
 	$: customEmojis = (serverData as any)?.customEmojis ?? [];
 
 	$: filteredStandard = search
-		? Object.fromEntries(
-				Object.entries(standardEmojis).map(([cat, emojis]) => [
-					cat,
-					emojis.filter((e) => e.includes(search)),
-				]).filter(([, arr]) => (arr as string[]).length > 0)
-			)
+		? (Object.fromEntries(
+				Object.entries(standardEmojis)
+					.map(([cat, emojis]) => [
+						cat,
+						emojis.filter((e) => e.includes(search)),
+					])
+					.filter(([, arr]) => (arr as string[]).length > 0),
+			) as Record<string, string[]>)
 		: standardEmojis;
 
 	function select(emoji: string) {
-		dispatch('select', emoji);
+		dispatch("select", emoji);
 		// Add to recent
-		recentEmojis = [emoji, ...recentEmojis.filter((e) => e !== emoji)].slice(0, 24);
+		recentEmojis = [
+			emoji,
+			...recentEmojis.filter((e) => e !== emoji),
+		].slice(0, 24);
 		try {
-			localStorage.setItem('yapper_recent_emojis', JSON.stringify(recentEmojis));
+			localStorage.setItem(
+				"yapper_recent_emojis",
+				JSON.stringify(recentEmojis),
+			);
 		} catch {}
 	}
 
 	onMount(() => {
 		try {
-			const saved = localStorage.getItem('yapper_recent_emojis');
+			const saved = localStorage.getItem("yapper_recent_emojis");
 			if (saved) recentEmojis = JSON.parse(saved);
 		} catch {}
 	});
@@ -65,18 +190,18 @@
 	<div class="tabs" role="tablist">
 		<button
 			class="tab"
-			class:active={activeTab === 'recent'}
+			class:active={activeTab === "recent"}
 			role="tab"
-			on:click={() => (activeTab = 'recent')}
-		>🕐</button>
+			on:click={() => (activeTab = "recent")}>🕐</button
+		>
 
 		{#if customEmojis.length > 0}
 			<button
 				class="tab"
-				class:active={activeTab === 'server'}
+				class:active={activeTab === "server"}
 				role="tab"
-				on:click={() => (activeTab = 'server')}
-			>🌐</button>
+				on:click={() => (activeTab = "server")}>🌐</button
+			>
 		{/if}
 
 		{#each Object.keys(standardEmojis) as cat}
@@ -85,28 +210,31 @@
 				class:active={activeTab === cat}
 				role="tab"
 				title={cat}
-				on:click={() => (activeTab = cat)}
-			>{cat.split(' ')[0]}</button>
+				on:click={() => (activeTab = cat)}>{cat.split(" ")[0]}</button
+			>
 		{/each}
 	</div>
 
 	<!-- Emoji grid -->
 	<div class="emoji-scroll">
-		{#if activeTab === 'recent'}
+		{#if activeTab === "recent"}
 			{#if recentEmojis.length === 0}
 				<div class="empty-tab">No recent emojis yet.</div>
 			{:else}
 				<div class="category-label">Recently Used</div>
 				<div class="emoji-grid">
 					{#each recentEmojis as emoji}
-						<button class="emoji-btn" title={emoji} on:click={() => select(emoji)}>
+						<button
+							class="emoji-btn"
+							title={emoji}
+							on:click={() => select(emoji)}
+						>
 							{emoji}
 						</button>
 					{/each}
 				</div>
 			{/if}
-
-		{:else if activeTab === 'server'}
+		{:else if activeTab === "server"}
 			<div class="category-label">Server Emojis</div>
 			<div class="emoji-grid custom-grid">
 				{#each customEmojis as emoji}
@@ -115,42 +243,51 @@
 						title=":{emoji.name}:"
 						on:click={() => select(`:${emoji.name}:`)}
 					>
-						<img src={emoji.url} alt={emoji.name} class="custom-emoji-img" />
+						<img
+							src={emoji.url}
+							alt={emoji.name}
+							class="custom-emoji-img"
+						/>
 					</button>
 				{/each}
 			</div>
-
-		{:else}
-			{#if search}
-				{#each Object.entries(filteredStandard) as [cat, emojis]}
-					<div class="category-label">{cat}</div>
-					<div class="emoji-grid">
-						{#each emojis as emoji}
-							<button class="emoji-btn" title={emoji} on:click={() => select(emoji)}>
-								{emoji}
-							</button>
-						{/each}
-					</div>
-				{/each}
-				{#if Object.keys(filteredStandard).length === 0}
-					<div class="empty-tab">No results for "{search}"</div>
-				{/if}
-			{:else}
-				{#each Object.entries(standardEmojis) as [cat, emojis]}
-					{#if activeTab === cat || (!Object.keys(standardEmojis).includes(activeTab))}
-						{#if activeTab === cat}
-							<div class="category-label">{cat}</div>
-							<div class="emoji-grid">
-								{#each emojis as emoji}
-									<button class="emoji-btn" title={emoji} on:click={() => select(emoji)}>
-										{emoji}
-									</button>
-								{/each}
-							</div>
-						{/if}
-					{/if}
-				{/each}
+		{:else if search}
+			{#each Object.entries(filteredStandard) as [cat, emojis]}
+				<div class="category-label">{cat}</div>
+				<div class="emoji-grid">
+					{#each emojis as emoji}
+						<button
+							class="emoji-btn"
+							title={emoji}
+							on:click={() => select(emoji)}
+						>
+							{emoji}
+						</button>
+					{/each}
+				</div>
+			{/each}
+			{#if Object.keys(filteredStandard).length === 0}
+				<div class="empty-tab">No results for "{search}"</div>
 			{/if}
+		{:else}
+			{#each Object.entries(standardEmojis) as [cat, emojis]}
+				{#if activeTab === cat || !Object.keys(standardEmojis).includes(activeTab)}
+					{#if activeTab === cat}
+						<div class="category-label">{cat}</div>
+						<div class="emoji-grid">
+							{#each emojis as emoji}
+								<button
+									class="emoji-btn"
+									title={emoji}
+									on:click={() => select(emoji)}
+								>
+									{emoji}
+								</button>
+							{/each}
+						</div>
+					{/if}
+				{/if}
+			{/each}
 		{/if}
 	</div>
 </div>
@@ -266,7 +403,9 @@
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		transition: background 100ms, transform 80ms;
+		transition:
+			background 100ms,
+			transform 80ms;
 	}
 
 	.emoji-btn:hover {

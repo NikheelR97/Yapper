@@ -339,6 +339,78 @@ Approve a pending server join → inserts `server_memberships`.
 
 ---
 
+## Screen Time — `/api/v1/screentime/*` + parental read/update
+
+### `POST /api/v1/screentime/report`
+Child device usage ingestion (metadata only). Typically called by authenticated child clients.
+```json
+// Request
+{
+  "recordedDate": "2026-03-03",
+  "platform": "ios",
+  "apps": [
+    { "appName": "Yapper", "durationSeconds": 3600 },
+    { "appName": "YouTube", "durationSeconds": 1200 }
+  ]
+}
+
+// Response 201
+{
+  "status": "ok",
+  "recordedDate": "2026-03-03",
+  "itemsUpserted": 2,
+  "platform": "ios"
+}
+```
+
+Validation:
+- `platform` must be one of `ios | android | web | desktop`
+- `apps` max length `64`
+- `durationSeconds` range `0..86400`
+
+### `GET /api/v1/parental/children/:child_id/screentime?period=today|week|month`
+Parent-only route (must manage the child account).
+```json
+{
+  "period": "week",
+  "rangeStart": "2026-02-26",
+  "rangeEnd": "2026-03-03",
+  "totalMinutesToday": 154,
+  "limitMinutes": 180,
+  "appBreakdown": [
+    { "appName": "Yapper", "icon": "🟣", "minutes": 72 },
+    { "appName": "YouTube", "icon": "🔴", "minutes": 30 }
+  ],
+  "weeklyData": [
+    { "day": "Mon", "yapperMinutes": 60, "otherMinutes": 40 }
+  ],
+  "bedtimeStart": "22:00",
+  "bedtimeEnd": "07:00"
+}
+```
+
+### `PATCH /api/v1/parental/children/:child_id/screentime`
+Parent-only route to update daily limit and bedtime window.
+```json
+// Request
+{
+  "limitMinutes": 180,
+  "bedtimeStart": "22:00",
+  "bedtimeEnd": "07:00"
+}
+
+// Response 200
+{
+  "status": "ok",
+  "childId": "uuid",
+  "limitMinutes": 180,
+  "bedtimeStart": "22:00",
+  "bedtimeEnd": "07:00"
+}
+```
+
+---
+
 ## Media — `/api/v1/media/*`
 
 ### `POST /api/v1/media/upload-url`

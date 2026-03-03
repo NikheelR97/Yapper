@@ -185,7 +185,7 @@ function doConnect(): void {
 
 	ws.onclose = (event) => {
 		clearInterval(pingTimer ?? undefined);
-		wsStore.set({ connected: false, error: null });
+		wsStore.set({ connected: false, error: event.code !== 1000 ? 'disconnected' : null });
 		socket = null;
 
 		if (!stopped && event.code !== 1000) {

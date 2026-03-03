@@ -151,6 +151,7 @@ fn api_router() -> Router<AppState> {
     Router::new()
         .nest("/auth", auth::router())
         .nest("/users", users::router())
+        .nest("/account", users::account_router())
         .nest("/servers", servers::router())
         .nest("/channels", channels::router())
         .nest("/conversations", messages::router())
@@ -160,7 +161,7 @@ fn api_router() -> Router<AppState> {
         .merge(explore::router())
         .nest("/emojis", emojis::router())
         .nest("/parental", parental::router())
-        .nest("/screentime", screentime::router())
+        .merge(screentime::router())
         .nest("/bots", bots::router())
         .nest("/discord", discord::router())
         .nest("/notifications", notifications::router())
@@ -213,7 +214,6 @@ async fn health_handler(State(state): State<AppState>) -> impl IntoResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::http::StatusCode;
 
     #[test]
     fn test_app_state_is_clone() {

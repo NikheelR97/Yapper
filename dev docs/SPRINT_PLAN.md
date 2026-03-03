@@ -18,7 +18,7 @@
 | **S5** | W11–W12 | Phase 5 + Phase 6 | Media Messages + Real-Time Features | ✅ Complete |
 | **S6** | W13–W14 | Phase 7 + Phase 8 | Live Canvas + Explore Page | ✅ Complete |
 | **S7** | W15–W16 | Phase 9 + Phase 10 | Profiles + Parental Controls | ✅ Complete (BE + FE) |
-| **S8** | W17–W18 | Phase 11 + Phase 12 | Screen Time + Discord Integration | FE ✅ — BE Pending |
+| **S8** | W17–W18 | Phase 11 + Phase 12 | Screen Time + Discord Integration | Screen Time ✅ — Discord BE Pending |
 | **S9** | W19–W20 | Phase 13 + Phase 14 | Emojis + Settings | FE ✅ — BE Pending |
 | **S10** | W21–W22 | Phase 15 + Phase 16 | Desktop Polish + Security Audit | FE Partial — BE Pending |
 | **S11** | W23–W24 | Phase 17 + Phase 18 | Premium Prep + Launch | FE Partial — BE Pending |
@@ -489,15 +489,16 @@ These prerequisite UI components were built across S7–S11 FE work and wired in
 
 | # | Task | Owner | Done |
 |---|------|-------|------|
-| 1 | Write migration: `screen_time_records` table | BE | [ ] |
-| 2 | Implement `POST /api/v1/screentime/report`: accept batched records | BE | [ ] |
-| 3 | Implement `GET /api/v1/parental/children/{id}/screentime?period=week`: aggregated data | BE | [ ] |
-| 4 | Create `frontend/ios/App/App/plugins/ScreenTimePlugin.swift`: FamilyControls + DeviceActivityMonitor | FE | [ ] |
-| 5 | Create `frontend/android/app/src/main/java/plugins/ScreenTimePlugin.kt`: UsageStatsManager | FE | [ ] |
-| 6 | Create `frontend/src/lib/plugins/screentime.ts`: Capacitor plugin JS bridge | FE | [ ] |
-| 7 | Implement in-app session tracking: `session_start` on foreground, `session_end` on blur | FE | [ ] |
+| 1 | Write migration: `screen_time_settings` + `screen_time_daily_summaries` tables | BE | [x] |
+| 2 | Implement `POST /api/v1/screentime/report`: accept batched records with validation | BE | [x] |
+| 3 | Implement `GET /api/v1/parental/children/{id}/screentime?period=week`: aggregated data + weekly chart | BE | [x] |
+| 3b | Implement `PATCH /api/v1/parental/children/{id}/screentime`: update limit/bedtime settings | BE | [x] |
+| 4 | Create `frontend/ios/App/App/ScreenTimePlugin.swift`: stub (FamilyControls pending Apple entitlement) | FE | [x] |
+| 5 | Create `frontend/android/.../ScreenTimePlugin.kt`: stub (UsageStatsManager pending) | FE | [x] |
+| 6 | Create `frontend/src/lib/plugins/screentime.ts` + `screentime.web.ts`: Capacitor plugin JS bridge with web fallback | FE | [x] |
+| 7 | Implement in-app Yapper usage tracker: visibility-based 30s tick + localStorage accumulator | FE | [x] |
 | 8 | Build `ScreenTimeDashboard.svelte`: period tabs, per-app bars, SVG chart, limit slider | FE | [x] |
-| 9 | Write tests: report ingestion, aggregation query, permission flow | BE | [ ] |
+| 9 | Write tests: report ingestion, aggregation query, permission flow | BE | [x] |
 
 ### Week 18: Discord Integration (Phase 12)
 
@@ -517,16 +518,18 @@ These prerequisite UI components were built across S7–S11 FE work and wired in
 
 ### S8 Acceptance Criteria
 
-- [ ] iOS ScreenTime plugin requests authorization + reports data to API (BE + native plugin pending)
-- [ ] Android UsageStats plugin requests permission + reports data to API (BE + native plugin pending)
+- [~] iOS ScreenTime plugin stub created; real FamilyControls collection pending Apple entitlement
+- [~] Android ScreenTime plugin stub created (Kotlin); real UsageStatsManager collection pending
 - [x] Screen time dashboard UI built with period tabs, per-app breakdown, SVG weekly chart, limit slider
+- [x] Screen time BE API: report ingestion, parent read/update, daily summary refresh, backend tests
+- [x] Capacitor JS bridge + web fallback + in-app Yapper usage tracker wired into app layout
 - [ ] Discord OAuth → profile pre-filled correctly, avatar stored in R2 (BE importer pending)
 - [x] Discord import UI in settings (DiscordImport.svelte: Connect/Unlink per account)
 - [x] Bot migration tool UI: Discord token input → step 2 Yapper token display + migration guide
 - [ ] Bot token authenticates and can POST message to test channel (BE bots/ module pending)
-- [ ] In-app session time tracked even without OS-level permission
+- [x] In-app session time tracked even without OS-level permission (web fallback via localStorage)
 
-> **S8 FE complete** (2026-03-03). Deferred: BE screen time API, iOS/Android native plugins, Discord BE importer, bots/ module.
+> **S8 Screen Time complete** (BE + FE + plugin bridge, 2026-03-03). Native iOS/Android collection stubs present; real OS-level usage requires Apple FamilyControls entitlement + Android UsageStatsManager impl. **Deferred:** Discord BE importer, bots/ module. Android stubs converted from Java → Kotlin (2026-03-03).
 
 ---
 
