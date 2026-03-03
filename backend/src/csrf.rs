@@ -27,14 +27,16 @@ pub async fn csrf_check(req: Request, next: Next) -> Result<Response, StatusCode
         return Ok(next.run(req).await);
     }
 
-    // Only the OAuth redirect/callback routes are exempt — they have no CSRF cookie
-    // yet and are protected by the OAuth state token + SameSite=Strict + CORS.
-    // All other auth endpoints (refresh, logout) ARE state-changing and must be protected.
+    // Exempt routes that issue or refresh the CSRF cookie — they cannot require a token
+    // they haven't set yet.  Using starts_with to avoid matching unrelated paths.
     const CSRF_EXEMPT: &[&str] = &[
+        // OAuth redirect/callback — protected by OAuth state token + SameSite=Strict + CORS
         "/auth/oauth/discord",
         "/auth/oauth/google",
         "/auth/oauth/discord/callback",
         "/auth/oauth/google/callback",
+        // API auth routes — login/register/refresh/logout/verify all issue the CSRF cookie
+        "/api/v1/auth/",
     ];
     let path = req.uri().path();
     if CSRF_EXEMPT.iter().any(|p| path.starts_with(p)) {
