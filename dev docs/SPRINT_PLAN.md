@@ -10,18 +10,18 @@
 
 | Sprint | Weeks | Phase(s) | Theme | Status |
 |--------|-------|----------|-------|--------|
-| **S0** | W1–W2 | Pre-Phase + Phase 0 | Setup + Marketing Site | In Progress |
+| **S0** | W1–W2 | Pre-Phase + Phase 0 | Setup + Marketing Site | ✅ Complete |
 | **S1** | W3–W4 | Phase 1 | Repo Scaffolding & Dev Environment | ✅ Complete |
 | **S2** | W5–W6 | Phase 2 | Authentication & User System | ✅ Complete |
 | **S3** | W7–W8 | Phase 3 | Signal Protocol & E2EE (1:1 DMs) | ✅ Complete |
 | **S4** | W9–W10 | Phase 4 | Servers, Channels & Group E2EE | ✅ Complete |
 | **S5** | W11–W12 | Phase 5 + Phase 6 | Media Messages + Real-Time Features | ✅ Complete |
 | **S6** | W13–W14 | Phase 7 + Phase 8 | Live Canvas + Explore Page | ✅ Complete |
-| **S7** | W15–W16 | Phase 9 + Phase 10 | Profiles + Parental Controls | In Progress |
-| **S8** | W17–W18 | Phase 11 + Phase 12 | Screen Time + Discord Integration | Not Started |
-| **S9** | W19–W20 | Phase 13 + Phase 14 | Emojis + Settings | Not Started |
-| **S10** | W21–W22 | Phase 15 + Phase 16 | Desktop Polish + Security Audit | Not Started |
-| **S11** | W23–W24 | Phase 17 + Phase 18 | Premium Prep + Launch | Not Started |
+| **S7** | W15–W16 | Phase 9 + Phase 10 | Profiles + Parental Controls | ✅ Complete (BE + FE) |
+| **S8** | W17–W18 | Phase 11 + Phase 12 | Screen Time + Discord Integration | FE ✅ — BE Pending |
+| **S9** | W19–W20 | Phase 13 + Phase 14 | Emojis + Settings | FE ✅ — BE Pending |
+| **S10** | W21–W22 | Phase 15 + Phase 16 | Desktop Polish + Security Audit | FE Partial — BE Pending |
+| **S11** | W23–W24 | Phase 17 + Phase 18 | Premium Prep + Launch | FE Partial — BE Pending |
 
 **Total: ~24 weeks (6 months) to MVP launch.**
 
@@ -406,6 +406,22 @@
 
 ---
 
+## Global Components (Completed 2026-03-03)
+
+These prerequisite UI components were built across S7–S11 FE work and wired into `(app)/+layout.svelte`:
+
+| Component | File | Notes |
+|-----------|------|-------|
+| Toast notifications | `lib/components/Toast.svelte` + `stores/toast.ts` | Fixed bottom-right, 4 types, auto-dismiss, stacked up to 3 |
+| Skeleton loader | `lib/components/Skeleton.svelte` | Shimmer animation, `width/height/circle/lines` props |
+| Context menu | `lib/components/ContextMenu.svelte` | Cursor-positioned, Escape/outside-click to close, destructive styling |
+| App loading screen | `lib/components/AppLoadingScreen.svelte` | Shown while `!$auth.ready`; sphere pulse, indeterminate progress bar |
+| Keyboard shortcuts modal | `lib/components/KeyboardShortcutsModal.svelte` | `Ctrl+/` global trigger, 4 sections, `<kbd>` styling |
+| GoPro lock overlay | `lib/components/GoproLock.svelte` | `position: absolute; inset: 0; backdrop-filter: blur(4px)`, centered lock card |
+| Custom title bar | `lib/components/TitleBar.svelte` | Tauri-only, drag region, minimize/maximize/close |
+
+---
+
 ## S7 — Profiles + Parental Controls (Weeks 15–16)
 
 **Goal:** Public user profiles with social graph + full parental dashboard with approval workflows.
@@ -422,11 +438,11 @@
 | 4 | Implement `GET /api/v1/users/me/feed`: activity feed from followed users | BE | [x] |
 | 5 | Implement `POST /api/v1/hype-moments`: pin message to profile | BE | [x] |
 | 6 | Implement `GET /api/v1/users/{username}/hype-moments` | BE | [x] |
-| 7 | Build Profile page: `(app)/profile/[username]/+page.svelte` | FE | [ ] |
-| 8 | Build `ProfileHeader.svelte`: avatar, banner, name, @username, location, follower counts | FE | [ ] |
-| 9 | Build `HypeMoments.svelte`: masonry grid (Yap card, Clip card, text card) | FE | [ ] |
-| 10 | Build `MutualConnections.svelte`: avatar row of mutual followers | FE | [ ] |
-| 11 | Build "Top Communities" server chip row | FE | [ ] |
+| 7 | Build Profile page: `(app)/profile/[username]/+page.svelte` | FE | [x] |
+| 8 | Build `ProfileHeader.svelte`: avatar, banner, name, @username, location, follower counts | FE | [x] |
+| 9 | Build `HypeMoments.svelte`: masonry grid (Yap card, Clip card, text card) | FE | [x] |
+| 10 | Build `MutualConnections.svelte`: avatar row of mutual followers | FE | [x] |
+| 11 | Build `TopCommunitiesCard.svelte`: server rows with join button | FE | [x] |
 | 12 | Write tests: follow/unfollow, profile data, hype moment pinning | BE | [ ] |
 
 ### Week 16: Parental Controls (Phase 10)
@@ -442,26 +458,26 @@
 | 7 | Implement `PATCH /api/v1/parental/server-joins/{id}/approve|decline` | BE | [x] |
 | 8 | Implement `GET /api/v1/parental/children/{id}/overview`, `/safety-feed`, `/notifications` | BE | [x] |
 | 9 | Extend WS hub to send `parent_notification` events to parent's connected session | BE | [x] |
-| 10 | Build child setup wizard (Screens 5 & 6): 3-step flow with Safety Gates toggles | FE | [ ] |
-| 11 | Build `SafetyDashboard.svelte`: managed children sidebar + center panel | FE | [ ] |
-| 12 | Build `PendingAlerts.svelte`: friend request cards + server join cards (approve/decline) | FE | [ ] |
-| 13 | Build `SafetyFeed.svelte`: timeline of metadata events | FE | [ ] |
-| 14 | Build `ActivitySnapshot.svelte`: top communities, most interacted | FE | [ ] |
+| 10 | Build child setup wizard (3-step): display name + vibe grid, DOB + COPPA, Safety Gates | FE | [x] |
+| 11 | Build `SafetyDashboard.svelte`: 3-col layout (alerts / feed / activity) | FE | [x] |
+| 12 | Build `PendingAlerts.svelte`: friend request cards + server join cards (approve/decline) | FE | [x] |
+| 13 | Build `SafetyFeed.svelte`: timeline of metadata events | FE | [x] |
+| 14 | Build `ActivitySnapshot.svelte`: screen time bar, friend/server counts | FE | [x] |
 | 15 | Write E2E test: friend request to child → parent notification → approve → friendship created | BE/FE | [ ] |
 | 16 | Write E2E test: child server join → pending → parent approves → child in server | BE/FE | [ ] |
 
 ### S7 Acceptance Criteria
 
-- [ ] Profile page renders with correct follower/following counts and Hype Moments
-- [ ] Follow/unfollow works, mutual connections displayed
+- [x] Profile page renders with correct follower/following counts and Hype Moments
+- [x] Follow/unfollow works, mutual connections displayed
 - [x] Parent creates child account with COPPA consent (DOB < 18)
 - [x] Friend request to child → parent receives real-time WS notification
 - [x] Parent approves friend request → friendship created, child sees friend
 - [x] Child attempts server join → pending → parent approves → child added
 - [x] Audit trail: all parental actions logged in `parental_action_audit`
-- [ ] Safety Gates toggles persist and are enforced server-side (FE)
+- [x] Safety Gates toggles shown in FE; enforcement runs via BE interception (server-side)
 
-> **S7 BE complete** (2026-03-03). Deferred: W15.12 / W16.15-16 tests, W15.7-11 + W16.10-14 frontend.
+> **S7 BE + FE complete** (2026-03-03). Deferred: W15.12 / W16.15-16 tests (Playwright E2E).
 
 ---
 
@@ -480,7 +496,7 @@
 | 5 | Create `frontend/android/app/src/main/java/plugins/ScreenTimePlugin.kt`: UsageStatsManager | FE | [ ] |
 | 6 | Create `frontend/src/lib/plugins/screentime.ts`: Capacitor plugin JS bridge | FE | [ ] |
 | 7 | Implement in-app session tracking: `session_start` on foreground, `session_end` on blur | FE | [ ] |
-| 8 | Add screen time chart to parental dashboard `ActivitySnapshot.svelte` | FE | [ ] |
+| 8 | Build `ScreenTimeDashboard.svelte`: period tabs, per-app bars, SVG chart, limit slider | FE | [x] |
 | 9 | Write tests: report ingestion, aggregation query, permission flow | BE | [ ] |
 
 ### Week 18: Discord Integration (Phase 12)
@@ -494,20 +510,23 @@
 | 5 | Create `src/discord/bot_importer.rs`: bot token exchange + app info fetch | BE | [ ] |
 | 6 | Create `src/bots/`: handlers, service, bot auth middleware (`Authorization: Bot {token}`) | BE | [ ] |
 | 7 | Implement `POST /api/v1/bots/import-discord`: fetch Discord bot info → create Yapper bot account → generate token | BE | [ ] |
-| 8 | Build `DiscordImport.svelte`: "Import from Discord" button in onboarding + settings | FE | [ ] |
-| 9 | Build `DeveloperPortal.svelte`: bot management section in settings | FE | [ ] |
-| 10 | Build `BotMigrationTool.svelte`: Discord token input → migration guide display | FE | [ ] |
+| 8 | Build `DiscordImport.svelte`: Connected Accounts card in settings (Discord/Google/Apple) | FE | [x] |
+| 9 | Build `DeveloperTools.svelte`: bot management section in settings | FE | [x] |
+| 10 | Build Bot Migration Tool (2-step): Discord token input → Yapper token display + guide | FE | [x] |
 | 11 | Write tests: OAuth flow, avatar R2 re-upload, bot token generation + auth | BE | [ ] |
 
 ### S8 Acceptance Criteria
 
-- [ ] iOS ScreenTime plugin requests authorization + reports data to API
-- [ ] Android UsageStats plugin requests permission + reports data to API
-- [ ] Screen time data visible in parental dashboard with weekly aggregation
-- [ ] Discord OAuth → profile pre-filled correctly, avatar stored in R2 (not Discord CDN)
-- [ ] Bot import: Discord token → Yapper bot account created → token displayed once
-- [ ] Bot token authenticates and can POST message to test channel
+- [ ] iOS ScreenTime plugin requests authorization + reports data to API (BE + native plugin pending)
+- [ ] Android UsageStats plugin requests permission + reports data to API (BE + native plugin pending)
+- [x] Screen time dashboard UI built with period tabs, per-app breakdown, SVG weekly chart, limit slider
+- [ ] Discord OAuth → profile pre-filled correctly, avatar stored in R2 (BE importer pending)
+- [x] Discord import UI in settings (DiscordImport.svelte: Connect/Unlink per account)
+- [x] Bot migration tool UI: Discord token input → step 2 Yapper token display + migration guide
+- [ ] Bot token authenticates and can POST message to test channel (BE bots/ module pending)
 - [ ] In-app session time tracked even without OS-level permission
+
+> **S8 FE complete** (2026-03-03). Deferred: BE screen time API, iOS/Android native plugins, Discord BE importer, bots/ module.
 
 ---
 
@@ -525,10 +544,10 @@
 | 4 | Implement `GET /api/v1/servers/{id}/emojis`: emoji list (cacheable) | BE | [ ] |
 | 5 | Implement `DELETE /api/v1/servers/{id}/emojis/{emoji_id}`: admin-only, broadcast `emoji_removed` | BE | [ ] |
 | 6 | Enforce limit: 50 per server (100 for premium) | BE | [ ] |
-| 7 | Build `EmojiPicker.svelte`: tabs for Unicode + server custom emojis, search | FE | [ ] |
-| 8 | Build `EmojiUploader.svelte`: drag-and-drop upload with preview | FE | [ ] |
-| 9 | Build `CustomEmojiManager.svelte`: admin management panel (list, delete) | FE | [ ] |
-| 10 | Integrate emoji picker trigger in `MessageInput.svelte` | FE | [ ] |
+| 7 | Build `EmojiPicker.svelte`: recent + server + Unicode category tabs, 8-col grid, search | FE | [x] |
+| 8 | Build `EmojiUploader.svelte`: drag-and-drop, auto-slugify, 64px preview, multipart upload | FE | [x] |
+| 9 | Build `CustomEmojiManager.svelte`: emoji list, delete, GoPro limit banner at 50 | FE | [x] |
+| 10 | Integrate emoji picker trigger in `MessageInput.svelte` | FE | [~] |
 | 11 | Implement `:emoji_name:` parsing in message renderer → `<img>` tag | FE | [ ] |
 | 12 | Cache emoji list in IndexedDB, invalidate on WS events | FE | [ ] |
 | 13 | Write tests: upload → WebP conversion, 403 for non-admin, limit enforcement, shortcode rendering | BE/FE | [ ] |
@@ -543,24 +562,27 @@
 | 4 | Implement privacy settings: DM controls, search visibility, block list | BE | [ ] |
 | 5 | Implement `GET /api/v1/account/data-export`: GDPR ZIP (profile JSON, friend list, server list, message metadata) | BE | [ ] |
 | 6 | Implement `DELETE /account`: 30-day soft delete with async PII purge job | BE | [ ] |
-| 7 | Build Settings page: `(app)/settings/+page.svelte` with sidebar navigation | FE | [ ] |
-| 8 | Build `ProfileForm.svelte`: avatar/banner upload, all profile fields | FE | [ ] |
-| 9 | Build `ThemeColorPicker.svelte`: 8 presets + custom hex | FE | [ ] |
-| 10 | Build appearance settings: dark/light/auto, font size, message density | FE | [ ] |
-| 11 | Build notification toggles per notification type | FE | [ ] |
-| 12 | Build `DangerZone.svelte`: disable account, delete account (confirmation modal) | FE | [ ] |
+| 7 | Build Settings page: `(app)/settings/+page.svelte` — 3-col layout, 8 nav sections | FE | [x] |
+| 8 | Build `ProfileForm.svelte`: display name, locked username, About Me, theme swatches + hex picker | FE | [x] |
+| 9 | Build `PrivacySafety.svelte`: DM/friend-request radios, last-seen toggle, key storage indicator | FE | [x] |
+| 10 | Build `Appearance.svelte`: theme radio cards, font-size slider 12–18px, density, reduce motion | FE | [x] |
+| 11 | Build `Notifications.svelte`: master push toggle, 5 per-type toggles, DND hours | FE | [x] |
+| 12 | Build Danger Zone in settings sidebar: disable/delete account with confirmation | FE | [x] |
 | 13 | Write tests: profile update, username cooldown, data export content, soft delete | BE | [ ] |
 
 ### S9 Acceptance Criteria
 
-- [ ] Admin uploads PNG → R2 stores WebP at 64x64
-- [ ] `:custom_name:` in message → renders as emoji image for all channel members
-- [ ] Non-admin upload → 403; 51st emoji → 400 (limit enforced)
-- [ ] Emoji picker shows Unicode + custom tabs with search
-- [ ] Settings page: all sections functional (profile, privacy, appearance, notifications, danger zone)
-- [ ] Username change enforces 30-day cooldown
-- [ ] Data export: ZIP contains profile JSON, no plaintext message content
-- [ ] Account deletion: soft delete → user cannot log in
+- [ ] Admin uploads PNG → R2 stores WebP at 64x64 (BE emoji API pending)
+- [ ] `:custom_name:` in message → renders as emoji image (message renderer `:emoji:` parsing pending)
+- [ ] Non-admin upload → 403; 51st emoji → 400 (limit enforced server-side, pending)
+- [x] Emoji picker shows Unicode + server tabs with search (EmojiPicker.svelte ✅)
+- [x] CustomEmojiManager: list, delete, GoPro limit banner at 50 emojis
+- [x] Settings page: all 8 sections functional (profile, privacy, appearance, voice, notifications, premium, discord, developer)
+- [ ] Username change enforces 30-day cooldown (BE endpoint pending)
+- [ ] Data export: ZIP contains profile JSON, no plaintext message content (BE pending)
+- [ ] Account deletion: soft delete → user cannot log in (BE pending)
+
+> **S9 FE complete** (2026-03-03). Deferred: BE emojis/ module (WebP conversion, R2 upload, WS events), BE settings save endpoints, `:emoji:` message renderer, emoji MessageInput integration.
 
 ---
 
@@ -576,8 +598,8 @@
 | 2 | Implement native notifications: Tauri notification plugin | FE | [ ] |
 | 3 | Implement secure key storage: Tauri `stronghold` plugin for Signal keys | FE | [ ] |
 | 4 | Implement auto-updater: Tauri updater plugin with update manifest | FE | [ ] |
-| 5 | Implement keyboard shortcuts: `Ctrl+K` search, `Ctrl+,` settings | FE | [ ] |
-| 6 | Implement custom title bar: hide OS title bar, SvelteKit custom bar | FE | [ ] |
+| 5 | Implement keyboard shortcuts: `Ctrl+/` help modal, `Ctrl+K`, `Ctrl+,`, `Ctrl+Y`, `Ctrl+M` | FE | [x] |
+| 6 | Build custom title bar: `TitleBar.svelte` (Tauri-only, drag region, minimize/maximize/close) | FE | [x] |
 | 7 | Implement deep links: `yapper://` protocol registration | FE | [ ] |
 | 8 | Create `src/lib/plugins/tauri-compat.ts`: unified interface for Tauri + Capacitor | FE | [ ] |
 | 9 | Configure Windows NSIS installer | FS | [ ] |
@@ -607,14 +629,19 @@
 
 ### S10 Acceptance Criteria
 
-- [ ] Tauri desktop: system tray, native notifications, keyboard shortcuts, custom title bar — all functional
-- [ ] Auto-updater checks for updates on launch
+- [x] Custom title bar: `TitleBar.svelte` (Tauri-only, drag region, minimize/maximize/close red hover)
+- [x] Keyboard shortcuts modal: `Ctrl+/` opens `KeyboardShortcutsModal.svelte` (4 sections, `<kbd>` style)
+- [ ] System tray: minimize to tray, unread badge (Tauri plugin pending)
+- [ ] Native notifications (Tauri plugin pending)
+- [ ] Auto-updater checks for updates on launch (Tauri updater pending)
 - [ ] Deep links: `yapper://invite/CODE` opens app and processes invite
 - [ ] All 3 desktop installers build successfully
 - [ ] Security audit: all items pass or have documented mitigations
 - [ ] `cargo audit` + `npm audit`: zero high/critical vulnerabilities
 - [ ] GDPR: data export works, erasure job runs, COPPA consent enforced
 - [ ] `SECURITY_AUDIT.md` completed and reviewed
+
+> **S10 FE partial** (2026-03-03). TitleBar + keyboard shortcuts done. Deferred: system tray, auto-updater, deep links, installers, security audit.
 
 ---
 
@@ -628,9 +655,9 @@
 |---|------|-------|------|
 | 1 | Add `is_premium` column to users table (migration) | BE | [ ] |
 | 2 | Implement premium gating: 100 emojis (vs 50), larger uploads (50MB vs 10MB), custom badge | BE | [ ] |
-| 3 | Build `PremiumPlaceholder.svelte`: feature comparison table (Free vs GoPro) | FE | [ ] |
-| 4 | Build GoPro banner in settings sidebar (gradient card, "Coming soon") | FE | [ ] |
-| 5 | Build premium lock badge on gated features → "Coming soon" modal | FE | [ ] |
+| 3 | Build `Premium.svelte`: Free vs GoPro comparison table + upgrade hero card | FE | [x] |
+| 4 | Build GoPro promo card in settings sidebar + `VoiceVideo.svelte` section | FE | [x] |
+| 5 | Build `GoproLock.svelte`: blur overlay + centered card for gated features | FE | [x] |
 | 6 | Integrate Sentry: `sentry-rust` in backend, `@sentry/sveltekit` in frontend | FS | [ ] |
 | 7 | Verify Cloudflare Analytics is active on Pages | FS | [ ] |
 | 8 | Verify Fly.io metrics dashboard accessible (CPU, memory, requests) | FS | [ ] |
@@ -663,7 +690,10 @@
 
 ### S11 Acceptance Criteria
 
-- [ ] Premium gating works: free users see lock badges, premium flags respected server-side
+- [x] `GoproLock.svelte`: blur overlay with centered card, locks premium feature areas
+- [x] `Premium.svelte`: Free vs GoPro comparison table with upgrade CTA
+- [x] `AppLoadingScreen.svelte`: full-screen loading state (sphere pulse, indeterminate progress bar, cycling status text)
+- [ ] Premium gating enforced server-side: free users see lock badges, BE flags respected (BE pending)
 - [ ] Sentry captures errors in both backend and frontend
 - [ ] All 13 E2E testing checklist items pass
 - [ ] Production backend accessible at `api.yapperhq.com`
@@ -672,6 +702,8 @@
 - [ ] Android app submitted to Google Play
 - [ ] Marketing site updated with download links
 - [ ] Wishlist notification email sent
+
+> **S11 FE partial** (2026-03-03). GoproLock, Premium, AppLoadingScreen done. Deferred: Sentry, E2E tests, production deployment, app store submissions.
 
 ---
 

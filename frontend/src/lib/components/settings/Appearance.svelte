@@ -1,0 +1,349 @@
+<script lang="ts">
+	import { toast } from '$stores/toast.js';
+
+	let theme: 'dark' | 'oled' | 'light' = 'dark';
+	let fontSize = 14;
+	let density: 'comfortable' | 'compact' = 'comfortable';
+	let reduceMotion = false;
+
+	function save() {
+		// Apply to document
+		document.documentElement.style.setProperty('--font-size-base', `${fontSize}px`);
+		document.documentElement.dataset.theme = theme;
+		document.documentElement.dataset.density = density;
+		toast.success('Appearance saved!');
+	}
+
+	const themeOptions = [
+		{ value: 'dark', label: 'Dark', desc: 'Deep space (default)', preview: '#0a0a0f' },
+		{ value: 'oled', label: 'OLED', desc: 'True black for OLED screens', preview: '#000000' },
+		{ value: 'light', label: 'Light', desc: 'Bright theme', preview: '#f9fafb' },
+	];
+</script>
+
+<div class="appearance-section">
+	<h2 class="section-title">Appearance</h2>
+
+	<!-- Theme -->
+	<div class="setting-block">
+		<h3 class="block-title">Theme</h3>
+		<div class="theme-cards">
+			{#each themeOptions as opt}
+				<label class="theme-card" class:active={theme === opt.value}>
+					<input type="radio" name="theme" value={opt.value} bind:group={theme} class="sr-only" />
+					<div class="theme-preview" style="background: {opt.preview}; border: 1px solid rgba(255,255,255,0.1)">
+						<div class="theme-preview-inner">
+							<div class="mock-bar" style="background: rgba(255,255,255,0.1)"></div>
+							<div class="mock-msg" style="background: rgba(124,58,237,0.4)"></div>
+							<div class="mock-msg short" style="background: rgba(255,255,255,0.07)"></div>
+						</div>
+					</div>
+					<div class="theme-info">
+						<span class="theme-name">{opt.label}</span>
+						<span class="theme-desc">{opt.desc}</span>
+					</div>
+				</label>
+			{/each}
+		</div>
+	</div>
+
+	<!-- Font size -->
+	<div class="setting-block">
+		<h3 class="block-title">Font Size</h3>
+		<div class="slider-row">
+			<span class="slider-label small">A</span>
+			<input type="range" min="12" max="18" step="1" bind:value={fontSize} class="slider" />
+			<span class="slider-label large">A</span>
+			<span class="slider-value">{fontSize}px</span>
+		</div>
+	</div>
+
+	<!-- Message density -->
+	<div class="setting-block">
+		<h3 class="block-title">Message Density</h3>
+		<div class="radio-group">
+			<label class="radio-row">
+				<input type="radio" name="density" value="comfortable" bind:group={density} />
+				<div>
+					<span class="radio-label">Comfortable</span>
+					<span class="radio-desc"> — More space between messages</span>
+				</div>
+			</label>
+			<label class="radio-row">
+				<input type="radio" name="density" value="compact" bind:group={density} />
+				<div>
+					<span class="radio-label">Compact</span>
+					<span class="radio-desc"> — See more messages at once</span>
+				</div>
+			</label>
+		</div>
+	</div>
+
+	<!-- Reduce motion -->
+	<div class="setting-block">
+		<div class="toggle-row">
+			<div>
+				<h3 class="block-title">Reduce Motion</h3>
+				<p class="block-desc">Disable animations and transitions.</p>
+			</div>
+			<label class="toggle-switch">
+				<input type="checkbox" bind:checked={reduceMotion} />
+				<span class="toggle-track"></span>
+			</label>
+		</div>
+	</div>
+
+	<button class="save-btn" on:click={save}>Save Appearance</button>
+</div>
+
+<style>
+	.appearance-section {
+		display: flex;
+		flex-direction: column;
+		gap: 24px;
+	}
+
+	.section-title {
+		font-size: 20px;
+		font-weight: 800;
+		color: #f9fafb;
+		margin: 0;
+	}
+
+	.setting-block {
+		background: rgba(255, 255, 255, 0.04);
+		border: 1px solid rgba(255, 255, 255, 0.07);
+		border-radius: 12px;
+		padding: 18px;
+		display: flex;
+		flex-direction: column;
+		gap: 14px;
+	}
+
+	.block-title {
+		font-size: 13px;
+		font-weight: 700;
+		color: #f9fafb;
+		margin: 0;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+
+	.block-desc {
+		font-size: 13px;
+		color: #6b7280;
+		margin: 4px 0 0;
+	}
+
+	/* Theme cards */
+	.theme-cards {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 12px;
+	}
+
+	.theme-card {
+		cursor: pointer;
+		border: 2px solid rgba(255, 255, 255, 0.08);
+		border-radius: 10px;
+		overflow: hidden;
+		transition: border-color 150ms;
+	}
+
+	.theme-card.active {
+		border-color: #7c3aed;
+	}
+
+	.theme-preview {
+		height: 80px;
+		padding: 8px;
+	}
+
+	.theme-preview-inner {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		height: 100%;
+		justify-content: center;
+	}
+
+	.mock-bar {
+		height: 8px;
+		border-radius: 4px;
+		width: 60%;
+	}
+
+	.mock-msg {
+		height: 14px;
+		border-radius: 4px;
+		width: 80%;
+	}
+
+	.mock-msg.short {
+		width: 50%;
+	}
+
+	.theme-info {
+		padding: 8px 10px;
+		display: flex;
+		flex-direction: column;
+		gap: 2px;
+	}
+
+	.theme-name {
+		font-size: 13px;
+		font-weight: 700;
+		color: #f9fafb;
+	}
+
+	.theme-desc {
+		font-size: 11px;
+		color: #6b7280;
+	}
+
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border-width: 0;
+	}
+
+	/* Slider */
+	.slider-row {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+	}
+
+	.slider-label {
+		color: #9ca3af;
+		font-weight: 600;
+	}
+
+	.slider-label.small {
+		font-size: 12px;
+	}
+
+	.slider-label.large {
+		font-size: 18px;
+	}
+
+	.slider {
+		flex: 1;
+		accent-color: #7c3aed;
+		cursor: pointer;
+	}
+
+	.slider-value {
+		font-size: 13px;
+		color: #9ca3af;
+		width: 32px;
+		text-align: right;
+	}
+
+	/* Radio */
+	.radio-group {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+
+	.radio-row {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		cursor: pointer;
+	}
+
+	.radio-row input[type='radio'] {
+		accent-color: #7c3aed;
+		width: 16px;
+		height: 16px;
+		cursor: pointer;
+		flex-shrink: 0;
+	}
+
+	.radio-label {
+		font-size: 14px;
+		font-weight: 600;
+		color: #f9fafb;
+	}
+
+	.radio-desc {
+		font-size: 14px;
+		color: #6b7280;
+	}
+
+	/* Toggle */
+	.toggle-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 16px;
+	}
+
+	.toggle-switch {
+		position: relative;
+		display: inline-block;
+		width: 44px;
+		height: 24px;
+		flex-shrink: 0;
+	}
+
+	.toggle-switch input {
+		opacity: 0;
+		width: 0;
+		height: 0;
+	}
+
+	.toggle-track {
+		position: absolute;
+		inset: 0;
+		background: #374151;
+		border-radius: 12px;
+		cursor: pointer;
+		transition: background 200ms;
+	}
+
+	.toggle-track::after {
+		content: '';
+		position: absolute;
+		width: 18px;
+		height: 18px;
+		border-radius: 50%;
+		background: white;
+		top: 3px;
+		left: 3px;
+		transition: transform 200ms;
+	}
+
+	.toggle-switch input:checked + .toggle-track {
+		background: #22c55e;
+	}
+
+	.toggle-switch input:checked + .toggle-track::after {
+		transform: translateX(20px);
+	}
+
+	.save-btn {
+		padding: 12px 24px;
+		background: #7c3aed;
+		color: white;
+		border: none;
+		border-radius: 10px;
+		font-size: 15px;
+		font-weight: 700;
+		cursor: pointer;
+		align-self: flex-start;
+		transition: opacity 150ms;
+	}
+
+	.save-btn:hover {
+		opacity: 0.85;
+	}
+</style>

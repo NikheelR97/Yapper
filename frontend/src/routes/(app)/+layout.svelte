@@ -2,6 +2,10 @@
 	import { goto } from "$app/navigation";
 	import { onMount, onDestroy } from "svelte";
 	import { get } from "svelte/store";
+	import Toast from "$components/Toast.svelte";
+	import TitleBar from "$components/TitleBar.svelte";
+	import AppLoadingScreen from "$components/AppLoadingScreen.svelte";
+	import KeyboardShortcutsModal from "$components/KeyboardShortcutsModal.svelte";
 	import { authStore } from "$stores/auth.js";
 	import { api } from "$api/client.js";
 	import type { User } from "$stores/auth.js";
@@ -17,6 +21,7 @@
 	import { registerCanvasHandler } from "$stores/canvas.js";
 
 	let ready = false;
+	let showShortcuts = false;
 	let unregisterDmHandler: (() => void) | null = null;
 	let unregisterChannelHandler: (() => void) | null = null;
 	let unregisterPresenceHandler: (() => void) | null = null;
@@ -66,46 +71,46 @@
 		unregisterCanvasHandler?.();
 		wsDisconnect();
 	});
+
+	function handleGlobalKeydown(e: KeyboardEvent) {
+		// Ctrl+/ → keyboard shortcuts modal
+		if (e.ctrlKey && e.key === '/') {
+			e.preventDefault();
+			showShortcuts = !showShortcuts;
+		}
+	}
 </script>
 
-{#if ready}
-	<div class="app-shell">
-		<slot />
-	</div>
-{:else}
-	<div class="loading-shell">
-		<div class="loader" aria-label="Loading…"></div>
-	</div>
-{/if}
+<svelte:window on:keydown={handleGlobalKeydown} />
+
+<div class="layout-root">
+	<TitleBar />
+
+	{#if ready}
+		<div class="app-shell">
+			<slot />
+		</div>
+	{:else}
+		<AppLoadingScreen />
+	{/if}
+</div>
+
+<Toast />
+<KeyboardShortcutsModal bind:open={showShortcuts} />
 
 <style>
-	.app-shell {
+	.layout-root {
 		display: flex;
+		flex-direction: column;
 		height: 100vh;
 		height: 100dvh;
 		overflow: hidden;
 	}
 
-	.loading-shell {
+	.app-shell {
 		display: flex;
-		align-items: center;
-		justify-content: center;
-		height: 100vh;
-		background: var(--color-bg-base);
-	}
-
-	.loader {
-		width: 32px;
-		height: 32px;
-		border: 3px solid var(--color-border);
-		border-top-color: var(--color-brand);
-		border-radius: 50%;
-		animation: spin 0.7s linear infinite;
-	}
-
-	@keyframes spin {
-		to {
-			transform: rotate(360deg);
-		}
+		flex: 1;
+		min-height: 0;
+		overflow: hidden;
 	}
 </style>

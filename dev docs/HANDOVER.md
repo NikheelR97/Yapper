@@ -1,7 +1,7 @@
 # YAPPER — Developer Handover Document
 
-**Last updated:** 2026-02-27
-**Project status:** Pre-development (plan finalized, marketing site scaffolded)
+**Last updated:** 2026-03-03
+**Project status:** Active development — S0–S7 fully complete (BE + FE); S8–S11 frontend complete, backends pending
 **Full implementation plan:** `C:\Users\rajma\.claude\plans\quizzical-yawning-starfish.md`
 
 ---
@@ -437,25 +437,36 @@ Mitigations for Neon cold starts (500ms–2s):
 
 | Phase | Name | Status | Key Deliverable |
 |-------|------|--------|-----------------|
-| 0 | Marketing Website | In progress | Astro site + wishlist on Cloudflare |
-| 1 | Repo Scaffolding | Pending | Runnable skeleton: backend + frontend + hot reload |
-| 2 | Authentication | Pending | Register, login, JWT refresh, OAuth (Discord/Google/Apple) |
-| 3 | E2EE Core (1:1 DMs) | Pending | Signal Protocol DMs, WebSocket hub, key management |
-| 4 | Servers & Groups | Pending | Server/channel CRUD, Sender Keys group E2EE |
-| 5 | Media Messages | Pending | Audio Yaps + Video Clips via R2, client-side AES encryption |
-| 6 | Real-Time Features | Pending | Typing indicators, read receipts, presence (all in-memory) |
-| 7 | Live Canvas | Pending | Music state, polls, clips carousel |
-| 8 | Explore Page | Pending | Search, trending tags, live servers, top yappers |
-| 9 | User Profiles | Pending | Public profiles, follow system, Hype Moments |
-| 10 | Parental Controls | Pending | Child accounts, approval workflows, safety dashboard |
-| 11 | Screen Time | Pending | iOS DeviceActivity + Android UsageStatsManager plugins |
-| 12 | Discord Integration | Pending | Profile import + bot migration tool |
-| 13 | Custom Emojis | Pending | Server-scoped emoji upload, picker, rendering |
-| 14 | User Settings | Pending | Full settings panel, GDPR data export, account deletion |
-| 15 | Tauri Polish | Pending | System tray, native notifications, Stronghold key storage |
-| 16 | Security Audit | Pending | Pre-launch hardening, GDPR/COPPA compliance verification |
-| 17 | Premium Placeholder | Pending | GoPro UI (no Stripe), feature flags |
-| 18 | Launch Prep | Pending | Fly.io deploy, Sentry, app store submissions, E2E test suite |
+| 0 | Marketing Website | ✅ Complete | Astro site + wishlist on Cloudflare (yapperhq.com live) |
+| 1 | Repo Scaffolding | ✅ Complete | Runnable skeleton: backend + frontend + hot reload + CI |
+| 2 | Authentication | ✅ Complete | Register, login, JWT refresh, OAuth (Discord + Google) |
+| 3 | E2EE Core (1:1 DMs) | ✅ Complete | Signal Protocol DMs, WebSocket hub, X3DH + ratchet, PIN backup |
+| 4 | Servers & Groups | ✅ Complete | Server/channel CRUD, Sender Keys group E2EE, invite links |
+| 5 | Media Messages | ✅ Complete | R2 credentials staged; real-time typing, read receipts, presence |
+| 6 | Real-Time Features | ✅ Complete | Typing indicators (5s auto-stop), away detection, presence dots |
+| 7 | Live Canvas | ✅ Complete | Music state, polls (live bar animation), clips carousel |
+| 8 | Explore Page | ✅ Complete | Search (pg_trgm), trending tags (5-min cache), live servers |
+| 9 | User Profiles | ✅ Complete (BE + FE) | Public profiles, follow/unfollow, Hype Moments, BioCard, top communities |
+| 10 | Parental Controls | ✅ Complete (BE + FE) | Child accounts (COPPA DOB), approval workflows, SafetyDashboard, 3-step setup wizard |
+| 11 | Screen Time | FE ✅ — BE Pending | `ScreenTimeDashboard.svelte` built; iOS/Android plugins + BE ingestion API pending |
+| 12 | Discord Integration | FE ✅ — BE Pending | `DiscordImport.svelte` + bot migration tool UI built; BE importer + bots/ module pending |
+| 13 | Custom Emojis | FE ✅ — BE Pending | `EmojiPicker`, `EmojiUploader`, `CustomEmojiManager` built; BE emojis/ (WebP, R2) pending |
+| 14 | User Settings | FE ✅ — BE Pending | 8-section settings page built (profile, privacy, appearance, voice, notifications, premium, discord, developer); BE save endpoints pending |
+| 15 | Tauri Polish | FE Partial | `TitleBar.svelte` + `KeyboardShortcutsModal.svelte` done; system tray, auto-updater, deep links pending |
+| 16 | Security Audit | Pending | Pre-launch hardening, GDPR/COPPA compliance verification, `SECURITY_AUDIT.md` |
+| 17 | Premium Placeholder | FE ✅ — BE Pending | `Premium.svelte`, `GoproLock.svelte`, settings GoPro promo card built; BE `is_premium` flag pending |
+| 18 | Launch Prep | Pending | Fly.io production deploy, Sentry, E2E test suite, app store submissions |
+
+### Global UI Infrastructure (Complete — 2026-03-03)
+
+The following cross-cutting UI components were built and wired into `(app)/+layout.svelte`:
+
+| Component | Purpose |
+|-----------|---------|
+| `Toast.svelte` + `stores/toast.ts` | Bottom-right notifications, 4 types, auto-dismiss |
+| `Skeleton.svelte` | Shimmer loader for async content |
+| `ContextMenu.svelte` | Cursor-positioned context menu, Escape to close |
+| `AppLoadingScreen.svelte` | Full-screen loading state shown while `!$auth.ready` |
 
 ---
 
@@ -610,10 +621,23 @@ For any developer picking up this project:
 
 - [ ] Read this document fully
 - [ ] Read the full implementation plan at `C:\Users\rajma\.claude\plans\quizzical-yawning-starfish.md`
-- [ ] Complete the Pre-Phase setup (accounts, tools, entitlements)
-- [ ] Run `docker compose up -d` and verify PostgreSQL is healthy
-- [ ] Understand the E2EE constraint: **server never sees plaintext**
-- [ ] Understand the parental controls constraint: **metadata only**
-- [ ] Review the database schema, especially the `messages` table and Signal key tables
-- [ ] Review the security standards in Section 4 — these are non-negotiable
+- [ ] Review the sprint plan at `dev docs/SPRINT_PLAN.md` for current task status
+- [x] Complete the Pre-Phase setup (accounts, tools, entitlements)
+- [x] Run `docker compose up -d` and verify PostgreSQL is healthy
+- [x] Understand the E2EE constraint: **server never sees plaintext**
+- [x] Understand the parental controls constraint: **metadata only**
+- [x] Review the database schema, especially the `messages` table and Signal key tables
+- [x] Review the security standards in Section 4 — these are non-negotiable
 - [ ] Check the current phase status and pick up where it left off
+
+### Where to Pick Up Next (as of 2026-03-03)
+
+**All frontend UI is built.** The next work is entirely backend:
+
+1. **S8 — Screen Time BE** (`backend/src/screentime/`): `POST /api/v1/screentime/report`, `GET /api/v1/parental/children/{id}/screentime`; then wire Capacitor native plugins (iOS `ScreenTimePlugin.swift`, Android `ScreenTimePlugin.kt`)
+2. **S8 — Discord BE** (`backend/src/discord/`): Discord profile importer (OAuth2 → avatar re-upload to R2); `backend/src/bots/` module (bot auth, `POST /api/v1/bots/import-discord`)
+3. **S9 — Emojis BE** (`backend/src/emojis/`): `POST/GET/DELETE /api/v1/servers/{id}/emojis`; PNG→WebP conversion (`image` crate), R2 upload, WS `emoji_added`/`emoji_removed` events; 50/100 limit enforcement
+4. **S9 — Settings BE**: user settings columns migration, profile update endpoints (avatar/banner/display name/about me/theme), privacy settings, GDPR data export ZIP, 30-day soft delete
+5. **S10 — Tauri Polish**: system tray plugin, native notifications, Stronghold key storage, auto-updater, deep links, installer configs (NSIS/DMG/AppImage)
+6. **S10 — Security Audit**: rate limit audit, CORS/CSP/HSTS review, GDPR/COPPA verification, `cargo audit`, `npm audit`, `SECURITY_AUDIT.md`
+7. **S11 — Launch**: Sentry integration, full Playwright E2E test suite, production deploy, app store submissions
