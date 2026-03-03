@@ -12,19 +12,27 @@ export interface User {
 interface AuthState {
 	user: User | null;
 	accessToken: string | null;
+	csrfToken: string | null;
 	loading: boolean;
 }
 
 const initial: AuthState = {
 	user: null,
 	accessToken: null,
+	csrfToken: null,
 	loading: true,
 };
 
 export const authStore = writable<AuthState>(initial);
 
-export function setAuth(user: User, accessToken: string) {
-	authStore.update((s) => ({ ...s, user, accessToken, loading: false }));
+export function setAuth(user: User, accessToken: string, csrfToken?: string | null) {
+	authStore.update((s) => ({
+		...s,
+		user,
+		accessToken,
+		csrfToken: csrfToken ?? s.csrfToken,
+		loading: false,
+	}));
 }
 
 export function clearAuth() {

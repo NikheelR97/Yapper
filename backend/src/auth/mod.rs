@@ -30,6 +30,7 @@ pub fn router() -> Router<AppState> {
             "/password-reset/confirm",
             post(handlers::confirm_password_reset),
         )
+        .route("/change-password", post(handlers::change_password))
 }
 
 /// OAuth routes — registered at top level (/auth/oauth/...) to match

@@ -15,11 +15,11 @@
 		error = '';
 		loading = true;
 		try {
-			const res = await api.post<{ access_token: string; user: User }>(
+			const res = await api.post<{ access_token: string; csrf_token: string; user: User }>(
 				'/api/v1/auth/login',
 				{ email, password }
 			);
-			setAuth(res.user, res.access_token);
+			setAuth(res.user, res.access_token, res.csrf_token);
 			await goto('/explore');
 		} catch (e) {
 			if (e instanceof ApiError) {

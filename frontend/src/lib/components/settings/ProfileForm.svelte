@@ -1,34 +1,66 @@
 <script lang="ts">
-	import { authStore } from '$stores/auth.js';
-	import { api } from '$api/client.js';
-	import { toast } from '$stores/toast.js';
+	import { authStore, setAuth } from "$stores/auth.js";
+	import { api } from "$api/client.js";
+	import { toast } from "$stores/toast.js";
+	import { get } from "svelte/store";
+	import { onMount } from "svelte";
 
 	$: user = $authStore.user;
 
-	let displayName = user?.displayName ?? '';
-	let aboutMe = '';
-	let selectedTheme = '#7c3aed';
+	let displayName = user?.displayName ?? "";
+	let aboutMe = "";
+	let selectedTheme = "#7c3aed";
 	let saving = false;
 
-	const themes = ['#7c3aed', '#ec4899', '#0891b2', '#059669', '#f59e0b'];
+	const themes = ["#7c3aed", "#ec4899", "#0891b2", "#059669", "#f59e0b"];
 
-	let customColor = '#7c3aed';
+	let customColor = "#7c3aed";
 	let showColorPicker = false;
 
 	$: charCount = aboutMe.length;
+
+	// Pre-populate bio and theme from the full profile (not stored in JWT)
+	onMount(async () => {
+		try {
+			const profile = await api.get<{
+				about_me: string | null;
+				profile_theme_color: string | null;
+			}>("/api/v1/users/me");
+			if (profile.about_me) aboutMe = profile.about_me;
+			if (profile.profile_theme_color) {
+				selectedTheme = profile.profile_theme_color;
+				customColor = profile.profile_theme_color;
+			}
+		} catch {
+			// Non-critical — form just starts with defaults
+		}
+	});
 
 	async function save() {
 		if (saving) return;
 		saving = true;
 		try {
-			await api.patch('/api/v1/users/me', {
-				displayName: displayName.trim(),
-				bio: aboutMe.trim(),
-				profileColor: selectedTheme,
+			await api.patch("/api/v1/users/me", {
+				display_name: displayName.trim() || undefined,
+				about_me: aboutMe.trim() || undefined,
+				profile_theme_color: selectedTheme,
 			});
-			toast.success('Profile saved!');
+			// Update local auth store so TopNav avatar name updates immediately
+			const current = get(authStore);
+			if (current.user && current.accessToken) {
+				setAuth(
+					{
+						...current.user,
+						displayName:
+							displayName.trim() || current.user.displayName,
+					},
+					current.accessToken,
+					current.csrfToken,
+				);
+			}
+			toast.success("Profile saved!");
 		} catch (e: any) {
-			toast.error(e.message ?? 'Failed to save');
+			toast.error(e.message ?? "Failed to save");
 		} finally {
 			saving = false;
 		}
@@ -38,24 +70,43 @@
 <div class="profile-form">
 	<!-- Preview card -->
 	<div class="preview-card">
-		<div class="preview-banner" style="background: linear-gradient(135deg, {selectedTheme}33, {selectedTheme}66)">
-			<svg viewBox="0 0 400 120" xmlns="http://www.w3.org/2000/svg" class="wave-svg" preserveAspectRatio="none">
-				<path d="M0,60 C100,100 300,20 400,60 L400,120 L0,120 Z" fill="{selectedTheme}22" />
-				<path d="M0,80 C120,40 280,100 400,70 L400,120 L0,120 Z" fill="{selectedTheme}33" />
+		<div
+			class="preview-banner"
+			style="background: linear-gradient(135deg, {selectedTheme}33, {selectedTheme}66)"
+		>
+			<svg
+				viewBox="0 0 400 120"
+				xmlns="http://www.w3.org/2000/svg"
+				class="wave-svg"
+				preserveAspectRatio="none"
+			>
+				<path
+					d="M0,60 C100,100 300,20 400,60 L400,120 L0,120 Z"
+					fill="{selectedTheme}22"
+				/>
+				<path
+					d="M0,80 C120,40 280,100 400,70 L400,120 L0,120 Z"
+					fill="{selectedTheme}33"
+				/>
 			</svg>
 		</div>
 		<div class="preview-avatar">
 			{#if user?.avatarUrl}
 				<img src={user.avatarUrl} alt="Avatar" />
 			{:else}
-				<div class="avatar-placeholder" style="background: linear-gradient(135deg, {selectedTheme}, #2e1065)">
-					{user?.displayName?.[0]?.toUpperCase() ?? 'U'}
+				<div
+					class="avatar-placeholder"
+					style="background: linear-gradient(135deg, {selectedTheme}, #2e1065)"
+				>
+					{user?.displayName?.[0]?.toUpperCase() ?? "U"}
 				</div>
 			{/if}
 		</div>
 		<div class="preview-body">
-			<div class="preview-name">{displayName || user?.displayName || 'Display Name'}</div>
-			<div class="preview-username">@{user?.username ?? 'username'}</div>
+			<div class="preview-name">
+				{displayName || user?.displayName || "Display Name"}
+			</div>
+			<div class="preview-username">@{user?.username ?? "username"}</div>
 			{#if aboutMe}
 				<div class="preview-bio">"{aboutMe}"</div>
 			{/if}
@@ -83,7 +134,7 @@
 				id="username"
 				type="text"
 				class="field-input locked"
-				value={user?.username ?? ''}
+				value={user?.username ?? ""}
 				disabled
 			/>
 			<span class="lock-icon">🔒</span>
@@ -102,7 +153,9 @@
 			placeholder="Tell the world about yourself…"
 			rows={4}
 		></textarea>
-		<span class="char-counter" class:near-limit={charCount >= 170}>{charCount}/190</span>
+		<span class="char-counter" class:near-limit={charCount >= 170}
+			>{charCount}/190</span
+		>
 	</div>
 
 	<!-- Profile theme -->
@@ -114,7 +167,10 @@
 					class="swatch"
 					class:active={selectedTheme === color}
 					style="background: {color}"
-					on:click={() => { selectedTheme = color; showColorPicker = false; }}
+					on:click={() => {
+						selectedTheme = color;
+						showColorPicker = false;
+					}}
 					aria-label={color}
 				></button>
 			{/each}
@@ -139,7 +195,7 @@
 	</div>
 
 	<button class="save-btn" on:click={save} disabled={saving}>
-		{saving ? 'Saving…' : 'Save Changes'}
+		{saving ? "Saving…" : "Save Changes"}
 	</button>
 </div>
 
@@ -315,7 +371,9 @@
 		border-radius: 50%;
 		border: 2px solid transparent;
 		cursor: pointer;
-		transition: transform 150ms, border-color 150ms;
+		transition:
+			transform 150ms,
+			border-color 150ms;
 	}
 
 	.swatch:hover {

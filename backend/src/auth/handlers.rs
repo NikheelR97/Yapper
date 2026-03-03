@@ -53,6 +53,7 @@ pub struct LoginRequest {
 #[derive(Debug, Serialize)]
 pub struct AuthResponse {
     pub access_token: String,
+    pub csrf_token: String,
     pub user: UserDto,
 }
 
@@ -135,11 +136,11 @@ pub async fn register(
     // Store refresh token session
     store_session(pool, user.id, &refresh_token, &state.jwt_keys).await?;
 
-    let response = AuthResponse { access_token, user };
+    let (cookies, csrf_token) = auth_cookies(&refresh_token);
     Ok((
         StatusCode::CREATED,
-        auth_cookies(&refresh_token),
-        Json(response),
+        cookies,
+        Json(AuthResponse { access_token, csrf_token, user }),
     ))
 }
 
@@ -217,9 +218,10 @@ pub async fn login(
         is_premium: row.is_premium,
     };
 
+    let (cookies, csrf_token) = refresh_cookie(&refresh_token);
     Ok((
-        refresh_cookie(&refresh_token),
-        Json(AuthResponse { access_token, user }),
+        cookies,
+        Json(AuthResponse { access_token, csrf_token, user }),
     ))
 }
 
@@ -291,9 +293,10 @@ pub async fn refresh(
 
     store_session(pool, user.id, &new_refresh, &state.jwt_keys).await?;
 
+    let (cookies, csrf_token) = refresh_cookie(&new_refresh);
     Ok((
-        refresh_cookie(&new_refresh),
-        Json(json_response(&new_access)),
+        cookies,
+        Json(serde_json::json!({ "access_token": new_access, "csrf_token": csrf_token })),
     ))
 }
 
@@ -445,10 +448,12 @@ fn sha256_hex(input: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-/// Returns both the refresh cookie and a new CSRF cookie for login/register responses.
-fn auth_cookies(refresh_token: &str) -> [(header::HeaderName, String); 2] {
+/// Returns both the refresh cookie headers and the new CSRF token value.
+/// The CSRF token is included in the JSON response body so cross-origin frontends
+/// (Tauri, Capacitor) can read it — they can't access Set-Cookie from a different origin.
+fn auth_cookies(refresh_token: &str) -> ([(header::HeaderName, String); 2], String) {
     let csrf_token = Uuid::new_v4().to_string();
-    [
+    let cookies = [
         (
             header::SET_COOKIE,
             format!(
@@ -459,11 +464,12 @@ fn auth_cookies(refresh_token: &str) -> [(header::HeaderName, String); 2] {
             header::SET_COOKIE,
             crate::csrf::csrf_cookie_header(&csrf_token),
         ),
-    ]
+    ];
+    (cookies, csrf_token)
 }
 
 /// Refresh endpoint: rotate refresh token, issue fresh CSRF token.
-fn refresh_cookie(token: &str) -> [(header::HeaderName, String); 2] {
+fn refresh_cookie(token: &str) -> ([(header::HeaderName, String); 2], String) {
     auth_cookies(token)
 }
 
@@ -498,10 +504,6 @@ fn extract_ip(headers: &HeaderMap) -> IpAddr {
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.parse().ok())
         .unwrap_or(IpAddr::from([127, 0, 0, 1]))
-}
-
-fn json_response(access_token: &str) -> serde_json::Value {
-    serde_json::json!({ "access_token": access_token })
 }
 
 async fn send_verification_email(to: &str, token: &str, api_key: &str) -> anyhow::Result<()> {
@@ -611,4 +613,47 @@ pub async fn confirm_password_reset(
     Ok(Json(
         serde_json::json!({ "message": "Password updated successfully" }),
     ))
+}
+
+// Change password (authenticated)
+#[derive(Deserialize, Validate)]
+#[serde(deny_unknown_fields)]
+pub struct ChangePasswordRequest {
+    pub current_password: String,
+    #[validate(length(min = 8, max = 1024))]
+    pub new_password: String,
+}
+
+pub async fn change_password(
+    State(state): State<AppState>,
+    auth: crate::auth::AuthUser,
+    Json(req): Json<ChangePasswordRequest>,
+) -> AppResult<impl IntoResponse> {
+    req.validate().map_err(|e| AppError::BadRequest(e.to_string()))?;
+
+    if req.current_password == req.new_password {
+        return Err(AppError::BadRequest("New password must differ from current password".to_string()));
+    }
+
+    let pool = state.db.pool();
+    let row = sqlx::query!(
+        "SELECT password_hash FROM users WHERE id = $1 AND deleted_at IS NULL",
+        auth.user_id
+    ).fetch_optional(pool).await?.ok_or(AppError::Unauthorized)?;
+
+    let Some(current_hash) = row.password_hash else {
+        return Err(AppError::BadRequest("This account uses social login and has no password.".to_string()));
+    };
+
+    if !verify_password(&req.current_password, &current_hash)? {
+        return Err(AppError::Unauthorized);
+    }
+
+    let new_hash = hash_password(&req.new_password)?;
+    sqlx::query!("UPDATE users SET password_hash = $2 WHERE id = $1", auth.user_id, new_hash)
+        .execute(pool).await?;
+    sqlx::query!("UPDATE sessions SET revoked_at = NOW() WHERE user_id = $1", auth.user_id)
+        .execute(pool).await?;
+
+    Ok((clear_auth_cookies(), StatusCode::NO_CONTENT))
 }

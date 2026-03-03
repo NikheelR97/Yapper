@@ -1,26 +1,48 @@
 <script lang="ts">
-	import { api } from '$api/client.js';
-	import { toast } from '$stores/toast.js';
+	import { api } from "$api/client.js";
+	import { toast } from "$stores/toast.js";
+	import { onMount } from "svelte";
 
-	let dmPermission: 'everyone' | 'friends' | 'nobody' = 'everyone';
-	let friendRequestPermission: 'everyone' | 'friends_of_friends' | 'nobody' = 'everyone';
-	let showLastSeen = true;
+	let dm_permission: "everyone" | "friends" | "nobody" = "everyone";
+	let friend_request_permission:
+		| "everyone"
+		| "friends_of_friends"
+		| "nobody" = "everyone";
+	let show_last_seen = true;
 	let saving = false;
 
 	// Detect if running in Tauri
-	const isTauri = typeof window !== 'undefined' && !!(window as any).__TAURI__;
+	const isTauri =
+		typeof window !== "undefined" && !!(window as any).__TAURI__;
+
+	// Pre-populate from the API
+	onMount(async () => {
+		try {
+			const priv = await api.get<{
+				dm_permission: string;
+				friend_request_permission: string;
+				show_last_seen: boolean;
+			}>("/api/v1/users/me/privacy");
+			dm_permission = priv.dm_permission as typeof dm_permission;
+			friend_request_permission =
+				priv.friend_request_permission as typeof friend_request_permission;
+			show_last_seen = priv.show_last_seen;
+		} catch {
+			// Non-critical — defaults are fine
+		}
+	});
 
 	async function save() {
 		saving = true;
 		try {
-			await api.patch('/api/v1/users/me/privacy', {
-				dmPermission,
-				friendRequestPermission,
-				showLastSeen,
+			await api.patch("/api/v1/users/me/privacy", {
+				dm_permission,
+				friend_request_permission,
+				show_last_seen,
 			});
-			toast.success('Privacy settings saved!');
+			toast.success("Privacy settings saved!");
 		} catch (e: any) {
-			toast.error(e.message ?? 'Failed to save');
+			toast.error(e.message ?? "Failed to save");
 		} finally {
 			saving = false;
 		}
@@ -36,9 +58,14 @@
 			<h3 class="block-title">Who can send you DMs?</h3>
 		</div>
 		<div class="radio-group">
-			{#each [['everyone', 'Everyone'], ['friends', 'Friends only'], ['nobody', 'Nobody']] as [val, label]}
+			{#each [["everyone", "Everyone"], ["friends", "Friends only"], ["nobody", "Nobody"]] as [val, label]}
 				<label class="radio-row">
-					<input type="radio" name="dm" value={val} bind:group={dmPermission} />
+					<input
+						type="radio"
+						name="dm"
+						value={val}
+						bind:group={dm_permission}
+					/>
 					<span class="radio-label">{label}</span>
 				</label>
 			{/each}
@@ -51,9 +78,14 @@
 			<h3 class="block-title">Who can send you friend requests?</h3>
 		</div>
 		<div class="radio-group">
-			{#each [['everyone', 'Everyone'], ['friends_of_friends', 'Friends of friends'], ['nobody', 'Nobody']] as [val, label]}
+			{#each [["everyone", "Everyone"], ["friends_of_friends", "Friends of friends"], ["nobody", "Nobody"]] as [val, label]}
 				<label class="radio-row">
-					<input type="radio" name="friend_req" value={val} bind:group={friendRequestPermission} />
+					<input
+						type="radio"
+						name="friend_req"
+						value={val}
+						bind:group={friend_request_permission}
+					/>
 					<span class="radio-label">{label}</span>
 				</label>
 			{/each}
@@ -65,10 +97,12 @@
 		<div class="toggle-row">
 			<div>
 				<h3 class="block-title">Show last seen status</h3>
-				<p class="block-desc">Let others see when you were last online.</p>
+				<p class="block-desc">
+					Let others see when you were last online.
+				</p>
 			</div>
 			<label class="toggle-switch">
-				<input type="checkbox" bind:checked={showLastSeen} />
+				<input type="checkbox" bind:checked={show_last_seen} />
 				<span class="toggle-track"></span>
 			</label>
 		</div>
@@ -101,7 +135,7 @@
 	</div>
 
 	<button class="save-btn" on:click={save} disabled={saving}>
-		{saving ? 'Saving…' : 'Save Privacy Settings'}
+		{saving ? "Saving…" : "Save Privacy Settings"}
 	</button>
 </div>
 
@@ -163,7 +197,7 @@
 		cursor: pointer;
 	}
 
-	.radio-row input[type='radio'] {
+	.radio-row input[type="radio"] {
 		accent-color: #7c3aed;
 		width: 16px;
 		height: 16px;
@@ -206,7 +240,7 @@
 	}
 
 	.toggle-track::after {
-		content: '';
+		content: "";
 		position: absolute;
 		width: 18px;
 		height: 18px;

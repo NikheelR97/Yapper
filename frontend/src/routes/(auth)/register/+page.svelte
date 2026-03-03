@@ -37,7 +37,7 @@
 				'/api/v1/auth/register',
 				{ username, email, password, display_name: displayName || undefined }
 			);
-			setAuth(res.user, res.access_token);
+			setAuth(res.user, res.access_token, res.csrf_token);
 			await goto('/onboarding');
 		} catch (e) {
 			if (e instanceof ApiError) {

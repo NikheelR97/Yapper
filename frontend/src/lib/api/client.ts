@@ -10,11 +10,11 @@ class ApiError extends Error {
 	}
 }
 
-/** Read the non-HttpOnly csrf_token cookie set by the server on login. */
+/** Read the CSRF token from the auth store (set on login/refresh response body).
+ * Using the response body instead of document.cookie works cross-origin —
+ * Tauri (tauri://localhost) and Capacitor can't read cookies set by http://localhost:8080. */
 function getCsrfToken(): string | null {
-	if (typeof document === 'undefined') return null;
-	const match = document.cookie.split(';').find((c) => c.trim().startsWith('csrf_token='));
-	return match ? match.trim().slice('csrf_token='.length) : null;
+	return get(authStore).csrfToken ?? null;
 }
 
 async function request<T>(

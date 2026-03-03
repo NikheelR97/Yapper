@@ -9,7 +9,7 @@
 	} from "$stores/servers.js";
 	import type { Channel } from "$stores/servers.js";
 	import { prepareChannel } from "$signal/index.js";
-	import ServerSidebar from "$lib/components/chat/ServerSidebar.svelte";
+
 	import MessageList from "$lib/components/chat/MessageList.svelte";
 	import MessageInput from "$lib/components/chat/MessageInput.svelte";
 	import TypingIndicator from "$lib/components/chat/TypingIndicator.svelte";
@@ -77,8 +77,6 @@
 </svelte:head>
 
 <div class="channel-page">
-	<ServerSidebar activeServerId={serverId} activeChannelId={channelId} />
-
 	<div class="chat-area" class:canvas-open={showCanvas}>
 		<!-- Header -->
 		<header class="chat-header">
@@ -86,12 +84,32 @@
 			<button
 				class="canvas-toggle"
 				on:click={() => (showCanvas = !showCanvas)}
-				title={showCanvas ? 'Hide Canvas' : 'Show Canvas'}
+				title={showCanvas ? "Hide Canvas" : "Show Canvas"}
 				aria-pressed={showCanvas}
 			>
-				<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-					<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
-					<rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+				<svg
+					width="15"
+					height="15"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					aria-hidden="true"
+				>
+					<rect x="3" y="3" width="7" height="7" /><rect
+						x="14"
+						y="3"
+						width="7"
+						height="7"
+					/>
+					<rect x="14" y="14" width="7" height="7" /><rect
+						x="3"
+						y="14"
+						width="7"
+						height="7"
+					/>
 				</svg>
 			</button>
 			<span class="e2ee-badge" title="End-to-end encrypted">
@@ -183,11 +201,13 @@
 		cursor: pointer;
 		display: flex;
 		align-items: center;
-		transition: border-color var(--transition-fast), color var(--transition-fast);
+		transition:
+			border-color var(--transition-fast),
+			color var(--transition-fast);
 	}
 
 	.canvas-toggle:hover,
-	.canvas-toggle[aria-pressed='true'] {
+	.canvas-toggle[aria-pressed="true"] {
 		border-color: var(--color-brand);
 		color: var(--color-brand-light);
 	}

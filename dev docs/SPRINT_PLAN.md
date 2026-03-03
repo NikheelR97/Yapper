@@ -19,7 +19,7 @@
 | **S6** | W13–W14 | Phase 7 + Phase 8 | Live Canvas + Explore Page | ✅ Complete |
 | **S7** | W15–W16 | Phase 9 + Phase 10 | Profiles + Parental Controls | ✅ Complete (BE + FE) |
 | **S8** | W17–W18 | Phase 11 + Phase 12 | Screen Time + Discord Integration | Screen Time ✅ — Discord BE Pending |
-| **S9** | W19–W20 | Phase 13 + Phase 14 | Emojis + Settings | FE ✅ — BE Pending |
+| **S9** | W19–W20 | Phase 13 + Phase 14 | Emojis + Settings | Emojis BE Pending — Settings BE ✅ FE ✅ |
 | **S10** | W21–W22 | Phase 15 + Phase 16 | Desktop Polish + Security Audit | FE Partial — BE Pending |
 | **S11** | W23–W24 | Phase 17 + Phase 18 | Premium Prep + Launch | FE Partial — BE Pending |
 
@@ -406,6 +406,21 @@
 
 ---
 
+## App Shell + Navigation (Completed 2026-03-03)
+
+Built the global application shell wired into `(app)/+layout.svelte`:
+
+| Component | File | Notes |
+|-----------|------|-------|
+| Top navigation bar | `lib/components/nav/TopNav.svelte` | 48px persistent bar: logo, Channels/Direct/Explore tabs (active state), settings gear, user avatar |
+| App sidebar | `lib/components/nav/AppSidebar.svelte` | 240px sidebar, 3 modes: server (icon strip + channel list), DM (conversation list), default (explore/settings nav + server list) |
+| DM index page | `routes/(app)/dm/+page.svelte` | Empty state; pre-fetches conversations on mount |
+| Servers index page | `routes/(app)/servers/+page.svelte` | Auto-redirects to first joined server, otherwise shows empty state |
+
+**Also fixed:** OAuth CSRF cookie missing after Discord/Google login (`oauth.rs` now sets `csrf_token` cookie alongside `refresh_token`). Deployed to production 2026-03-03.
+
+---
+
 ## Global Components (Completed 2026-03-03)
 
 These prerequisite UI components were built across S7–S11 FE work and wired into `(app)/+layout.svelte`:
@@ -559,15 +574,17 @@ These prerequisite UI components were built across S7–S11 FE work and wired in
 
 | # | Task | Owner | Done |
 |---|------|-------|------|
-| 1 | Write migration: user settings columns / table | BE | [ ] |
-| 2 | Implement profile update endpoints: avatar, banner, display name, about me, theme color, location | BE | [ ] |
-| 3 | Implement username change with 30-day cooldown | BE | [ ] |
-| 4 | Implement privacy settings: DM controls, search visibility, block list | BE | [ ] |
-| 5 | Implement `GET /api/v1/account/data-export`: GDPR ZIP (profile JSON, friend list, server list, message metadata) | BE | [ ] |
+| 1 | Write migration: user settings columns / table | BE | [x] |
+| 2 | Implement `PATCH /api/v1/users/me`: profile update (display name, about me, theme color, avatar URL, banner URL) | BE | [x] |
+| 3 | Implement username change with 30-day cooldown (`PATCH /api/v1/users/me/username`) | BE | [x] |
+| 4 | Implement privacy settings (`GET/PATCH /api/v1/users/me/privacy`): DM controls, search visibility, show last seen | BE | [x] |
+| 4b | Implement `POST /api/v1/auth/change-password`: verify current, update hash, revoke all sessions | BE | [x] |
+| 5 | Implement `GET /api/v1/account/data-export`: GDPR JSON (profile, friends, servers, message metadata) | BE | [x] |
 | 6 | Implement `DELETE /account`: 30-day soft delete with async PII purge job | BE | [ ] |
-| 7 | Build Settings page: `(app)/settings/+page.svelte` — 3-col layout, 8 nav sections | FE | [x] |
-| 8 | Build `ProfileForm.svelte`: display name, locked username, About Me, theme swatches + hex picker | FE | [x] |
-| 9 | Build `PrivacySafety.svelte`: DM/friend-request radios, last-seen toggle, key storage indicator | FE | [x] |
+| 7 | Build Settings page: `(app)/settings/+page.svelte` — 3-col layout, 9 nav sections | FE | [x] |
+| 8 | Build `ProfileForm.svelte`: display name, locked username, About Me, theme swatches + hex picker — wired to API w/ onMount pre-population | FE | [x] |
+| 9 | Build `PrivacySafety.svelte`: DM/friend-request radios, last-seen toggle, key storage indicator — wired to API w/ onMount pre-population | FE | [x] |
+| 9b | Build `ChangePassword.svelte`: current + new + confirm password fields, redirects on success | FE | [x] |
 | 10 | Build `Appearance.svelte`: theme radio cards, font-size slider 12–18px, density, reduce motion | FE | [x] |
 | 11 | Build `Notifications.svelte`: master push toggle, 5 per-type toggles, DND hours | FE | [x] |
 | 12 | Build Danger Zone in settings sidebar: disable/delete account with confirmation | FE | [x] |
@@ -580,12 +597,15 @@ These prerequisite UI components were built across S7–S11 FE work and wired in
 - [ ] Non-admin upload → 403; 51st emoji → 400 (limit enforced server-side, pending)
 - [x] Emoji picker shows Unicode + server tabs with search (EmojiPicker.svelte ✅)
 - [x] CustomEmojiManager: list, delete, GoPro limit banner at 50 emojis
-- [x] Settings page: all 8 sections functional (profile, privacy, appearance, voice, notifications, premium, discord, developer)
-- [ ] Username change enforces 30-day cooldown (BE endpoint pending)
-- [ ] Data export: ZIP contains profile JSON, no plaintext message content (BE pending)
-- [ ] Account deletion: soft delete → user cannot log in (BE pending)
+- [x] Settings page: all 9 sections functional (profile, privacy, **password**, appearance, voice, notifications, premium, discord, developer)
+- [x] Profile save: `PATCH /api/v1/users/me` (display name, bio, theme) — pre-populated on open
+- [x] Privacy save: `PATCH /api/v1/users/me/privacy` (DM permission, friend request permission, show last seen) — pre-populated on open
+- [x] Password change: `POST /api/v1/auth/change-password` — verifies current password, revokes all sessions, redirects to login
+- [x] Username change enforces 30-day cooldown (`PATCH /api/v1/users/me/username` ✅)
+- [x] Data export: GDPR JSON (profile, friends, servers, message metadata — no plaintext ciphertext)
+- [ ] Account deletion: soft delete → user cannot log in (BE `DELETE /account` pending)
 
-> **S9 FE complete** (2026-03-03). Deferred: BE emojis/ module (WebP conversion, R2 upload, WS events), BE settings save endpoints, `:emoji:` message renderer, emoji MessageInput integration.
+> **S9 Settings BE + FE complete** (2026-03-03). Deferred: BE emojis/ module (WebP conversion, R2 upload, WS events), `:emoji:` message renderer, emoji MessageInput integration, `DELETE /account` soft-delete.
 
 ---
 

@@ -34,6 +34,8 @@
 		initDesktopNotifications,
 	} from "$lib/desktop/notifications.js";
 	import UpdateBanner from "$components/desktop/UpdateBanner.svelte";
+	import TopNav from "$lib/components/nav/TopNav.svelte";
+	import AppSidebar from "$lib/components/nav/AppSidebar.svelte";
 
 	let ready = false;
 	let showShortcuts = false;
@@ -49,11 +51,11 @@
 		if (!state.user) {
 			// Try to refresh session via HttpOnly cookie
 			try {
-				const res = await api.post<{ access_token: string }>(
+				const res = await api.post<{ access_token: string; csrf_token: string }>(
 					"/api/v1/auth/refresh",
 				);
 				const user = await api.get<User>("/api/v1/users/me");
-				setAuth(user, res.access_token);
+				setAuth(user, res.access_token, res.csrf_token);
 			} catch {
 				toast.error("Session expired. Please sign in again.");
 				await goto("/login");
@@ -115,6 +117,7 @@
 <div class="layout-root">
 	<TitleBar />
 	<UpdateBanner />
+	<TopNav />
 
 	{#if ready && !$wsStore.connected}
 		<div class="reconnecting-banner">Reconnecting…</div>
@@ -122,7 +125,10 @@
 
 	{#if ready}
 		<div class="app-shell">
-			<slot />
+			<AppSidebar />
+			<main class="main-content">
+				<slot />
+			</main>
 		</div>
 	{:else}
 		<AppLoadingScreen />
@@ -146,6 +152,14 @@
 		flex: 1;
 		min-height: 0;
 		overflow: hidden;
+	}
+
+	.main-content {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		display: flex;
+		flex-direction: column;
 	}
 
 	.reconnecting-banner {

@@ -1,28 +1,30 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-	import { authStore, clearAuth } from '$stores/auth.js';
-	import { api } from '$api/client.js';
-	import { toast } from '$stores/toast.js';
-	import ProfileForm from '$components/settings/ProfileForm.svelte';
-	import PrivacySafety from '$components/settings/PrivacySafety.svelte';
-	import Appearance from '$components/settings/Appearance.svelte';
-	import VoiceVideo from '$components/settings/VoiceVideo.svelte';
-	import Notifications from '$components/settings/Notifications.svelte';
-	import Premium from '$components/settings/Premium.svelte';
-	import DiscordImport from '$components/settings/DiscordImport.svelte';
-	import DeveloperTools from '$components/settings/DeveloperTools.svelte';
+	import { goto } from "$app/navigation";
+	import { authStore, clearAuth } from "$stores/auth.js";
+	import { api } from "$api/client.js";
+	import { toast } from "$stores/toast.js";
+	import ProfileForm from "$components/settings/ProfileForm.svelte";
+	import PrivacySafety from "$components/settings/PrivacySafety.svelte";
+	import Appearance from "$components/settings/Appearance.svelte";
+	import VoiceVideo from "$components/settings/VoiceVideo.svelte";
+	import Notifications from "$components/settings/Notifications.svelte";
+	import Premium from "$components/settings/Premium.svelte";
+	import DiscordImport from "$components/settings/DiscordImport.svelte";
+	import DeveloperTools from "$components/settings/DeveloperTools.svelte";
+	import ChangePassword from "$components/settings/ChangePassword.svelte";
 
 	type Section =
-		| 'profile'
-		| 'privacy'
-		| 'appearance'
-		| 'voice'
-		| 'notifications'
-		| 'premium'
-		| 'connections'
-		| 'developer';
+		| "profile"
+		| "privacy"
+		| "password"
+		| "appearance"
+		| "voice"
+		| "notifications"
+		| "premium"
+		| "connections"
+		| "developer";
 
-	let activeSection: Section = 'profile';
+	let activeSection: Section = "profile";
 	let showDeleteConfirm = false;
 	let deleting = false;
 
@@ -30,42 +32,49 @@
 	$: isPremium = user?.isPremium ?? false;
 
 	const navItems: { id: Section; label: string; badge?: string }[] = [
-		{ id: 'profile', label: 'My Profile' },
-		{ id: 'privacy', label: 'Privacy & Safety' },
-		{ id: 'appearance', label: 'Appearance' },
-		{ id: 'voice', label: 'Voice & Video' },
-		{ id: 'notifications', label: 'Notifications' },
-		{ id: 'premium', label: 'Yapper Premium', badge: isPremium ? undefined : 'NEW' },
-		{ id: 'connections', label: 'Connected Accounts' },
-		{ id: 'developer', label: 'For Developers' },
+		{ id: "profile", label: "My Profile" },
+		{ id: "privacy", label: "Privacy & Safety" },
+		{ id: "password", label: "Change Password" },
+		{ id: "appearance", label: "Appearance" },
+		{ id: "voice", label: "Voice & Video" },
+		{ id: "notifications", label: "Notifications" },
+		{
+			id: "premium",
+			label: "Yapper Premium",
+			badge: isPremium ? undefined : "NEW",
+		},
+		{ id: "connections", label: "Connected Accounts" },
+		{ id: "developer", label: "For Developers" },
 	];
 
 	async function logout() {
 		try {
-			await api.post('/api/v1/auth/logout');
+			await api.post("/api/v1/auth/logout");
 		} catch {}
 		clearAuth();
-		await goto('/login');
+		await goto("/login");
 	}
 
 	async function exportData() {
 		try {
-			const res = await api.post<{ downloadUrl: string }>('/api/v1/users/me/export');
-			window.open(res.downloadUrl, '_blank');
-			toast.success('Export started — check your email.');
+			const res = await api.post<{ downloadUrl: string }>(
+				"/api/v1/users/me/export",
+			);
+			window.open(res.downloadUrl, "_blank");
+			toast.success("Export started — check your email.");
 		} catch (e: any) {
-			toast.error(e.message ?? 'Failed to start export');
+			toast.error(e.message ?? "Failed to start export");
 		}
 	}
 
 	async function deleteAccount() {
 		deleting = true;
 		try {
-			await api.delete('/api/v1/users/me');
+			await api.delete("/api/v1/users/me");
 			clearAuth();
-			await goto('/login');
+			await goto("/login");
 		} catch (e: any) {
-			toast.error(e.message ?? 'Failed to delete account');
+			toast.error(e.message ?? "Failed to delete account");
 			deleting = false;
 		}
 	}
@@ -101,21 +110,23 @@
 
 	<!-- Main content -->
 	<main class="settings-main">
-		{#if activeSection === 'profile'}
+		{#if activeSection === "profile"}
 			<ProfileForm />
-		{:else if activeSection === 'privacy'}
+		{:else if activeSection === "privacy"}
 			<PrivacySafety />
-		{:else if activeSection === 'appearance'}
+		{:else if activeSection === "password"}
+			<ChangePassword />
+		{:else if activeSection === "appearance"}
 			<Appearance />
-		{:else if activeSection === 'voice'}
+		{:else if activeSection === "voice"}
 			<VoiceVideo />
-		{:else if activeSection === 'notifications'}
+		{:else if activeSection === "notifications"}
 			<Notifications />
-		{:else if activeSection === 'premium'}
+		{:else if activeSection === "premium"}
 			<Premium />
-		{:else if activeSection === 'connections'}
+		{:else if activeSection === "connections"}
 			<DiscordImport />
-		{:else if activeSection === 'developer'}
+		{:else if activeSection === "developer"}
 			<DeveloperTools />
 		{/if}
 	</main>
@@ -139,21 +150,31 @@
 		<div class="sidebar-card danger-card">
 			<h3 class="sidebar-card-title danger-title">Danger Zone</h3>
 			<div class="sidebar-actions">
-				<button class="danger-btn">
-					⏸ Disable Account
-				</button>
+				<button class="danger-btn"> ⏸ Disable Account </button>
 				{#if showDeleteConfirm}
 					<div class="delete-confirm">
-						<p class="delete-warn">This is permanent and cannot be undone.</p>
-						<button class="delete-confirm-btn" on:click={deleteAccount} disabled={deleting}>
-							{deleting ? 'Deleting…' : 'Yes, delete my account'}
+						<p class="delete-warn">
+							This is permanent and cannot be undone.
+						</p>
+						<button
+							class="delete-confirm-btn"
+							on:click={deleteAccount}
+							disabled={deleting}
+						>
+							{deleting ? "Deleting…" : "Yes, delete my account"}
 						</button>
-						<button class="cancel-link" on:click={() => (showDeleteConfirm = false)}>
+						<button
+							class="cancel-link"
+							on:click={() => (showDeleteConfirm = false)}
+						>
 							Cancel
 						</button>
 					</div>
 				{:else}
-					<button class="delete-btn" on:click={() => (showDeleteConfirm = true)}>
+					<button
+						class="delete-btn"
+						on:click={() => (showDeleteConfirm = true)}
+					>
 						🗑 Delete Account
 					</button>
 				{/if}
@@ -165,8 +186,13 @@
 			<div class="sidebar-card pro-card">
 				<div class="pro-icon">🚀</div>
 				<h3 class="pro-title">Go GoPro</h3>
-				<p class="pro-desc">Animated avatars, 100 custom emojis, HD clips and more.</p>
-				<button class="pro-btn" on:click={() => (activeSection = 'premium')}>
+				<p class="pro-desc">
+					Animated avatars, 100 custom emojis, HD clips and more.
+				</p>
+				<button
+					class="pro-btn"
+					on:click={() => (activeSection = "premium")}
+				>
 					Learn More →
 				</button>
 			</div>
@@ -433,7 +459,11 @@
 
 	/* GoPro promo */
 	.pro-card {
-		background: linear-gradient(135deg, rgba(124, 58, 237, 0.12), rgba(219, 39, 119, 0.05));
+		background: linear-gradient(
+			135deg,
+			rgba(124, 58, 237, 0.12),
+			rgba(219, 39, 119, 0.05)
+		);
 		border-color: rgba(124, 58, 237, 0.25);
 		align-items: center;
 		text-align: center;

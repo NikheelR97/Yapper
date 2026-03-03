@@ -420,18 +420,32 @@ async fn issue_oauth_session(
     .execute(pool)
     .await?;
 
-    let redirect_url = format!(
-        "{}/oauth/callback?access_token={}&is_new={}",
-        frontend_base(),
-        access_token,
-        is_new,
-    );
-
-    let cookie = format!(
+    let refresh_cookie = format!(
         "refresh_token={refresh_token}; HttpOnly; Secure; SameSite=Lax; Path=/auth/oauth; Max-Age={REFRESH_TTL_SECS}"
     );
 
-    Ok(([(header::SET_COOKIE, cookie)], Redirect::to(&redirect_url)).into_response())
+    // Generate a CSRF token so that state-mutating POSTs (e.g. Signal key upload)
+    // work immediately after OAuth login — same as the regular /auth/login flow.
+    // Also returned as a URL param so the cross-origin frontend (Tauri/Capacitor) can read it.
+    let csrf_token = new_state_token();
+    let csrf_cookie = crate::csrf::csrf_cookie_header(&csrf_token);
+
+    let redirect_url = format!(
+        "{}/oauth/callback?access_token={}&is_new={}&csrf_token={}",
+        frontend_base(),
+        access_token,
+        is_new,
+        csrf_token,
+    );
+
+    Ok((
+        [
+            (header::SET_COOKIE, refresh_cookie),
+            (header::SET_COOKIE, csrf_cookie),
+        ],
+        Redirect::to(&redirect_url),
+    )
+        .into_response())
 }
 
 /// Make a username unique by appending random digits if needed.

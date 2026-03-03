@@ -13,6 +13,7 @@
 	onMount(async () => {
 		const params = get(page).url.searchParams;
 		const accessToken = params.get('access_token');
+		const csrfToken = params.get('csrf_token');
 		const isNew = params.get('is_new') === 'true';
 		const oauthError = params.get('oauth_error');
 
@@ -37,7 +38,7 @@
 			if (!res.ok) throw new Error('Failed to fetch user');
 
 			const user: User = await res.json();
-			setAuth(user, accessToken);
+			setAuth(user, accessToken, csrfToken);
 			await goto(isNew ? '/onboarding' : '/explore');
 		} catch {
 			error = 'Failed to load your account. Please try again.';
