@@ -537,8 +537,8 @@ fn generate_apple_client_secret() -> anyhow::Result<String> {
         std::env::var("APPLE_TEAM_ID").map_err(|_| anyhow::anyhow!("APPLE_TEAM_ID not set"))?;
     let key_id =
         std::env::var("APPLE_KEY_ID").map_err(|_| anyhow::anyhow!("APPLE_KEY_ID not set"))?;
-    let client_id = std::env::var("APPLE_CLIENT_ID")
-        .map_err(|_| anyhow::anyhow!("APPLE_CLIENT_ID not set"))?;
+    let client_id =
+        std::env::var("APPLE_CLIENT_ID").map_err(|_| anyhow::anyhow!("APPLE_CLIENT_ID not set"))?;
     // APPLE_PRIVATE_KEY: contents of the .p8 file (PKCS#8 PEM, -----BEGIN PRIVATE KEY-----)
     let private_key_pem = std::env::var("APPLE_PRIVATE_KEY")
         .map_err(|_| anyhow::anyhow!("APPLE_PRIVATE_KEY not set"))?;
@@ -682,7 +682,11 @@ pub async fn apple_callback(
             let first = v["name"]["firstName"].as_str().unwrap_or("").to_string();
             let last = v["name"]["lastName"].as_str().unwrap_or("").to_string();
             let name = format!("{first} {last}").trim().to_string();
-            if name.is_empty() { None } else { Some(name) }
+            if name.is_empty() {
+                None
+            } else {
+                Some(name)
+            }
         })
         .unwrap_or_else(|| email.split('@').next().unwrap_or("user").to_string());
 

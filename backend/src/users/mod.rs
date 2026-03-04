@@ -156,7 +156,11 @@ async fn unlink_connection(
 ) -> AppResult<impl IntoResponse> {
     match provider.as_str() {
         "discord" | "google" | "apple" => {}
-        _ => return Err(AppError::BadRequest(format!("Unknown provider: {provider}"))),
+        _ => {
+            return Err(AppError::BadRequest(format!(
+                "Unknown provider: {provider}"
+            )))
+        }
     }
 
     // Verify the provider is actually linked before clearing it

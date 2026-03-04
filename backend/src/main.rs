@@ -74,13 +74,11 @@ async fn main() -> anyhow::Result<()> {
         std::env::var("SENTRY_DSN").unwrap_or_default(),
         sentry::ClientOptions {
             release: sentry::release_name!(),
-            environment: Some(
-                if std::env::var("FLY_APP_NAME").is_ok() {
-                    "production".into()
-                } else {
-                    "development".into()
-                },
-            ),
+            environment: Some(if std::env::var("FLY_APP_NAME").is_ok() {
+                "production".into()
+            } else {
+                "development".into()
+            }),
             ..Default::default()
         },
     ));
