@@ -812,6 +812,61 @@ These prerequisite UI components were built across S7–S11 FE work and wired in
 
 ---
 
+## B2 - HubSpot Support CRM Integration (Run in Parallel, Any Time)
+
+**Goal:** Capture in-app support requests into HubSpot CRM/Tickets while keeping E2EE boundaries intact.
+**Plan:** Use HubSpot Free first (Contacts + Tickets API), and defer paid-only chat identity features until needed.
+**No core dependency** - can run in parallel with S10-S11 launch tasks.
+
+### Week 1: Backend API + Ticket Pipeline
+
+| # | Task | Owner | Done |
+|---|------|-------|------|
+| 1 | Create `src/support/mod.rs`, `handlers.rs`, `service.rs` and mount `/api/v1/support` routes | BE | [ ] |
+| 2 | Implement `POST /api/v1/support/tickets` (authenticated): subject, category, description, platform, app_version | BE | [ ] |
+| 3 | Validate payload + redact secrets/tokens before forwarding to CRM | BE | [ ] |
+| 4 | Create HubSpot client module with retries + bounded backoff | BE | [ ] |
+| 5 | Upsert HubSpot Contact by user email; persist `hubspot_contact_id` in local DB | BE | [ ] |
+| 6 | Create HubSpot Ticket and persist `hubspot_ticket_id` + status mapping | BE | [ ] |
+| 7 | Add abuse/rate limit for support endpoint (ex: 5 req/hr/user) | BE | [ ] |
+| 8 | Add unit + integration tests for success/failure/retry paths | BE | [ ] |
+
+### Week 2: Frontend UX + Status Sync
+
+| # | Task | Owner | Done |
+|---|------|-------|------|
+| 1 | Build `SupportForm.svelte` under settings/help with category + priority + message | FE | [ ] |
+| 2 | Wire frontend to `POST /api/v1/support/tickets` with JWT + CSRF headers | FE | [ ] |
+| 3 | Build `SupportHistory.svelte` list from local ticket table (`open`, `pending`, `resolved`) | FE | [ ] |
+| 4 | Add backend webhook endpoint for HubSpot ticket status changes | BE | [ ] |
+| 5 | Verify webhook signature and idempotency; update local ticket status | BE | [ ] |
+| 6 | Add in-app notifications when ticket status changes to `resolved` | FE/BE | [ ] |
+| 7 | Add admin runbook: token rotation, webhook replay handling, error dashboards | FS | [ ] |
+
+### Acceptance Criteria
+
+- [ ] User can submit support request in app and receive local ticket reference immediately.
+- [ ] Backend creates/links HubSpot Contact and Ticket successfully.
+- [ ] No E2EE message plaintext is sent to HubSpot; only user-submitted support payload and metadata.
+- [ ] HubSpot status changes sync back into Yapper within 60 seconds.
+- [ ] Endpoint and webhook are covered by tests and rate limits.
+- [ ] Failures are observable via structured logs and alerting.
+
+### Data Boundaries (Non-Negotiable)
+
+- Never export encrypted chat message bodies or decrypted plaintext from user conversations.
+- Support payload must be explicitly user-authored in support UI (opt-in), not auto-harvested.
+- Strip auth headers, tokens, cookies, and IP-level sensitive data from CRM payload.
+
+### Risks
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| HubSpot API rate limits/outages | Ticket creation delay | Queue + retry with dead-letter logging |
+| Webhook spoofing | Unauthorized status updates | Signature verification + timestamp window |
+| Over-sharing data to CRM | Compliance/security risk | Strict payload schema + allowlist fields |
+
+---
 ## Dependency Graph (Critical Path)
 
 ```
@@ -870,5 +925,8 @@ APPLE_KEY_ID=...
 APPLE_PRIVATE_KEY=...
 FCM_SERVICE_ACCOUNT_JSON=...           # Firebase Cloud Messaging
 SENTRY_DSN=...                         # Error monitoring
+HUBSPOT_PRIVATE_APP_TOKEN=...          # HubSpot private app token
+HUBSPOT_PORTAL_ID=...                  # HubSpot account portal id
+HUBSPOT_WEBHOOK_SECRET=...             # HubSpot webhook signature secret
 FRONTEND_URL=https://app.yapperhq.com    # CORS origin
 ```
