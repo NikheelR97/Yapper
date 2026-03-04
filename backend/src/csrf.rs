@@ -27,12 +27,21 @@ pub async fn csrf_check(req: Request, next: Next) -> Result<Response, StatusCode
         return Ok(next.run(req).await);
     }
 
-    // Exempt auth routes — they issue the CSRF cookie and cannot require one they haven't set yet.
+    // Exempt specific auth routes — they issue the CSRF cookie and cannot require one they haven't
+    // set yet. Explicit allowlist prevents accidentally exempting future routes under /auth/.
     // NOTE: Axum strips the /api/v1 prefix before this middleware sees the path, so the path
     // here is e.g. "/auth/refresh", not "/api/v1/auth/refresh".
     // OAuth routes (/auth/oauth/*) are mounted at the top level outside api_router() so this
     // middleware never runs for them — no need to list them here.
-    const CSRF_EXEMPT: &[&str] = &["/auth/"];
+    const CSRF_EXEMPT: &[&str] = &[
+        "/auth/login",
+        "/auth/register",
+        "/auth/verify-email",
+        "/auth/forgot-password",
+        "/auth/reset-password",
+        "/auth/refresh",
+        "/auth/logout",
+    ];
     let path = req.uri().path();
     if CSRF_EXEMPT.iter().any(|p| path.starts_with(p)) {
         return Ok(next.run(req).await);

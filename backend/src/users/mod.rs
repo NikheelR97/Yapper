@@ -68,6 +68,7 @@ pub fn router() -> Router<AppState> {
         .route("/me/banner", post(upload_banner))
         .route("/me/username", patch(change_username))
         .route("/me/privacy", get(get_privacy).patch(update_privacy))
+        .route("/me/connections/:provider", delete(unlink_connection))
         .route(
             "/me/appearance",
             get(get_appearance).patch(update_appearance),
@@ -100,13 +101,25 @@ async fn get_me(auth: AuthUser, State(state): State<AppState>) -> AppResult<impl
     let row = sqlx::query(
         "SELECT id, username, display_name, avatar_url, banner_url, about_me, location,
                 profile_theme_color, account_type, is_premium, parental_controls_enabled,
-                created_at
+                discord_id, created_at
          FROM users WHERE id = $1 AND deleted_at IS NULL",
     )
     .bind(auth.user_id)
     .fetch_optional(state.db.pool())
     .await?
     .ok_or_else(|| AppError::NotFound("User not found".into()))?;
+
+    // discord_id column stores "provider:id" (e.g. "discord:123", "google:456")
+    // or a raw numeric Discord ID from the profile import flow.
+    let discord_id_raw: Option<String> = row.try_get("discord_id").ok().flatten();
+    let discord_linked = discord_id_raw
+        .as_deref()
+        .map(|v| !v.starts_with("google:") && !v.starts_with("apple:"))
+        .unwrap_or(false);
+    let google_linked = discord_id_raw
+        .as_deref()
+        .map(|v| v.starts_with("google:"))
+        .unwrap_or(false);
 
     Ok(Json(serde_json::json!({
         "id":                        row.try_get::<Uuid, _>("id").ok(),
@@ -120,9 +133,65 @@ async fn get_me(auth: AuthUser, State(state): State<AppState>) -> AppResult<impl
         "account_type":              row.try_get::<String, _>("account_type").unwrap_or_default(),
         "is_premium":                row.try_get::<bool, _>("is_premium").unwrap_or(false),
         "parental_controls_enabled": row.try_get::<bool, _>("parental_controls_enabled").unwrap_or(false),
+        "connections": {
+            "discord": discord_linked,
+            "google":  google_linked,
+            "apple":   false,
+        },
         "created_at":                row.try_get::<chrono::DateTime<chrono::Utc>, _>("created_at")
                                         .ok().map(|t| t.to_rfc3339()),
     })))
+}
+
+// ─── Connected accounts ───────────────────────────────────────────────────────
+
+/// DELETE /api/v1/users/me/connections/:provider
+///
+/// Unlinks a connected OAuth provider from the user's account.
+/// Sets discord_id = NULL. Both "discord" and "google" share the discord_id column.
+async fn unlink_connection(
+    auth: AuthUser,
+    State(state): State<AppState>,
+    Path(provider): Path<String>,
+) -> AppResult<impl IntoResponse> {
+    match provider.as_str() {
+        "discord" | "google" | "apple" => {}
+        _ => return Err(AppError::BadRequest(format!("Unknown provider: {provider}"))),
+    }
+
+    // Verify the provider is actually linked before clearing it
+    let row = sqlx::query("SELECT discord_id FROM users WHERE id = $1 AND deleted_at IS NULL")
+        .bind(auth.user_id)
+        .fetch_optional(state.db.pool())
+        .await?
+        .ok_or_else(|| AppError::NotFound("User not found".into()))?;
+
+    let discord_id_raw: Option<String> = row.try_get("discord_id").ok().flatten();
+    let is_linked = match provider.as_str() {
+        "discord" => discord_id_raw
+            .as_deref()
+            .map(|v| !v.starts_with("google:") && !v.starts_with("apple:"))
+            .unwrap_or(false),
+        "google" => discord_id_raw
+            .as_deref()
+            .map(|v| v.starts_with("google:"))
+            .unwrap_or(false),
+        _ => false,
+    };
+
+    if !is_linked {
+        return Err(AppError::BadRequest(format!(
+            "{provider} is not linked to this account"
+        )));
+    }
+
+    sqlx::query("UPDATE users SET discord_id = NULL WHERE id = $1 AND deleted_at IS NULL")
+        .bind(auth.user_id)
+        .execute(state.db.pool())
+        .await?;
+
+    tracing::info!(user_id = %auth.user_id, provider = %provider, "OAuth provider unlinked");
+    Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
 // ─── Presence ─────────────────────────────────────────────────────────────────

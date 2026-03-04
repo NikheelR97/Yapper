@@ -45,6 +45,7 @@ impl IntoResponse for AppError {
             AppError::RateLimited => (StatusCode::TOO_MANY_REQUESTS, "Rate limited".to_string()),
             AppError::Internal(e) => {
                 tracing::error!("Internal error: {e:#}");
+                sentry::capture_error(e.as_ref() as &dyn std::error::Error);
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Internal server error".to_string(),
@@ -53,6 +54,7 @@ impl IntoResponse for AppError {
             AppError::Database(e) => {
                 // Don't leak DB internals to clients
                 tracing::error!("Database error: {e}");
+                sentry::capture_error(e as &dyn std::error::Error);
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Internal server error".to_string(),

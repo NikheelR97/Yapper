@@ -60,6 +60,9 @@ image = { version = "0.24", features = ["png", "gif", "jpeg", "webp"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
+# Error monitoring
+sentry = { version = "0.34", features = ["backtrace", "contexts", "panic", "tracing"] }
+
 # Error handling
 thiserror = "1"
 anyhow = "1"

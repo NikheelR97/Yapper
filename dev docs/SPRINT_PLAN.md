@@ -22,8 +22,10 @@
 | **S9** | W19–W20 | Phase 13 + Phase 14 | Emojis + Settings | ✅ Emojis end-to-end; Settings Appearance+Notifications ✅; GDPR export + avatar upload pending |
 | **S10** | W21–W22 | Phase 15 + Phase 16 | Desktop Polish + Security Audit | FE Partial — BE Pending |
 | **S11** | W23–W24 | Phase 17 + Phase 18 | Premium Prep + Launch | FE Partial — BE Pending |
+| **B1** | Any time | Business | Startup Cloud Credits | ⏳ Not started — apply basic tracks immediately |
 
 **Total: ~24 weeks (6 months) to MVP launch.**
+**B1 runs in parallel with any sprint — no code dependencies.**
 
 ---
 
@@ -758,6 +760,55 @@ These prerequisite UI components were built across S7–S11 FE work and wired in
 3. No P0/P1 bugs remaining
 4. Documentation updated (if applicable)
 5. Demo completed successfully
+
+---
+
+## B1 — Startup Cloud Credits (Run in Parallel, Any Time)
+
+**Goal:** Secure cloud infrastructure credits to reduce hosting costs through growth stages.
+**Effort:** 15–30 minutes for basic tracks. Investor tracks require networking (ongoing).
+**No code dependencies** — can be done alongside any sprint.
+
+> Full details, application guides, and tracker: `dev docs/STARTUP_CREDITS.md`
+
+### Immediate Actions (Basic Tracks — Do Today)
+
+| # | Task | Owner | Done |
+|---|------|-------|------|
+| 1 | Set up `yourname@yapperhq.com` via Cloudflare Email Routing | FS | [ ] |
+| 2 | Create LinkedIn company page for Yapper (yapperhq.com) | FS | [ ] |
+| 3 | Create AWS account + add payment method (required for Activate) | FS | [ ] |
+| 4 | Apply — **AWS Activate Founders** ($1,000) at aws.amazon.com/startups/credits | FS | [ ] |
+| 5 | Record 10-min demo video with Loom (website + DM + server + parental dashboard) | FS | [ ] |
+| 6 | Apply — **Microsoft for Startups Basic** ($1,000–$5,000) at portal.startups.microsoft.com | FS | [ ] |
+| 7 | Apply — **Google for Startups** (up to $200,000) at cloud.google.com/startup | FS | [ ] |
+
+### Acceptance Criteria
+- AWS Activate Founders credits confirmed in AWS account
+- Microsoft Founders Hub application approved + credits active
+- Google for Startups application submitted
+- All entries logged in `STARTUP_CREDITS.md` Section 8 tracker
+
+### Investor Track (Ongoing)
+
+| # | Task | Owner | Done |
+|---|------|-------|------|
+| 1 | Research SA AWS Activate Providers (Silicon Cape, Bandwidth Barn, AlphaCode) | FS | [ ] |
+| 2 | Contact at least 2 local SA startup hubs for provider Org ID | FS | [ ] |
+| 3 | Investigate Microsoft for Startups Investor Network referral via local angels | FS | [ ] |
+| 4 | Apply — **AWS Activate Portfolio** ($100,000) once provider ID secured | FS | [ ] |
+| 5 | Apply — **Microsoft for Startups Investor** ($150,000) once referral secured | FS | [ ] |
+
+### Credit Summary
+
+| Program | Basic | Investor Track | Total Possible |
+|---------|-------|---------------|----------------|
+| AWS Activate | $1,000 | $100,000 | $101,000 |
+| Microsoft for Startups | $5,000 | $150,000 | $155,000 |
+| Google for Startups | $200,000 | $200,000 | $200,000 |
+| GitHub for Startups | Free Team | — | — |
+| Cloudflare for Startups | $3,000/yr | — | $3,000/yr |
+| **Total** | **~$206,000** | | **~$456,000** |
 
 ---
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { api } from '$api/client.js';
 	import { toast } from '$stores/toast.js';
 
@@ -8,7 +9,6 @@
 		connected: boolean;
 	}
 
-	// These would normally be loaded from the API
 	let accounts: ConnectedAccount[] = [
 		{ provider: 'discord', username: null, connected: false },
 		{ provider: 'google', username: null, connected: false },
@@ -19,8 +19,26 @@
 
 	const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8080';
 
+	onMount(async () => {
+		try {
+			const me = await api.get<{ connections: Record<string, boolean> }>('/api/v1/users/me');
+			const conns = me.connections ?? {};
+			accounts = accounts.map((a) => ({ ...a, connected: !!conns[a.provider] }));
+		} catch {
+			// Non-fatal — UI just shows unconnected state
+		}
+	});
+
 	function connect(provider: string) {
-		window.location.href = `${BASE_URL}/auth/oauth/${provider}`;
+		if (provider === 'discord') {
+			// Profile import flow — requires existing session, links to current account
+			window.location.href = `${BASE_URL}/api/v1/discord/import-profile`;
+		} else if (provider === 'google') {
+			// Google OAuth — will link to existing account if email matches
+			window.location.href = `${BASE_URL}/auth/oauth/google`;
+		} else {
+			toast.error('Apple sign-in coming soon.');
+		}
 	}
 
 	async function unlink(provider: 'discord' | 'google' | 'apple') {
@@ -29,7 +47,7 @@
 			accounts = accounts.map((a) =>
 				a.provider === provider ? { ...a, connected: false, username: null } : a
 			);
-			toast.success(`${provider} account unlinked.`);
+			toast.success(`${providerNames[provider]} account unlinked.`);
 			unlinkConfirm = null;
 		} catch (e: any) {
 			toast.error(e.message ?? 'Failed to unlink');

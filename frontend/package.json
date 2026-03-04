@@ -23,13 +23,13 @@
     "@capacitor/push-notifications": "^8.0.1",
     "@noble/curves": "^2.0.1",
     "@noble/hashes": "^2.0.1",
+    "@sentry/sveltekit": "^10.42.0",
     "@signalapp/libsignal-client": "^0.54.0",
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-global-shortcut": "^2.0.0",
     "@tauri-apps/plugin-notification": "^2.0.0",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-updater": "^2.0.0",
-    "capacitor-secure-storage-plugin": "^0.10.0",
     "idb": "^8.0.0"
   },
   "devDependencies": {

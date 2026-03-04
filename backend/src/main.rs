@@ -21,6 +21,7 @@ const NOSNIFF: &str = "nosniff";
 const DENY_FRAME: &str = "DENY";
 const HSTS: &str = "max-age=63072000; includeSubDomains; preload";
 const CSP_API: &str = "default-src 'none'; frame-ancestors 'none'";
+use sentry::integrations::tracing as sentry_tracing;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Per-IP rate limiter shared across all API routes.
@@ -67,8 +68,25 @@ async fn main() -> anyhow::Result<()> {
     // Load .env in development
     dotenvy::dotenv().ok();
 
-    // Structured logging
+    // Sentry error monitoring — no-op if SENTRY_DSN is absent
+    let _sentry_guard = sentry::init((
+        std::env::var("SENTRY_DSN").unwrap_or_default(),
+        sentry::ClientOptions {
+            release: sentry::release_name!(),
+            environment: Some(
+                if std::env::var("FLY_APP_NAME").is_ok() {
+                    "production".into()
+                } else {
+                    "development".into()
+                },
+            ),
+            ..Default::default()
+        },
+    ));
+
+    // Structured logging (+ Sentry breadcrumb integration)
     tracing_subscriber::registry()
+        .with(sentry_tracing::layer())
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "yapper_server=debug,info".into()),
