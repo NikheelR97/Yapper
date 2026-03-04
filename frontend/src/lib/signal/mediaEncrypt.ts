@@ -15,17 +15,18 @@ const IV_LENGTH = 12;   // bytes (96-bit IV — recommended for AES-GCM)
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function bufferToBase64(buf: ArrayBuffer): string {
-	return btoa(String.fromCharCode(...new Uint8Array(buf)));
+function bufferToBase64(buf: ArrayBuffer | Uint8Array): string {
+	const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+	return btoa(String.fromCharCode(...bytes));
 }
 
-function base64ToBuffer(b64: string): ArrayBuffer {
+function base64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
 	const binary = atob(b64);
 	const bytes = new Uint8Array(binary.length);
 	for (let i = 0; i < binary.length; i++) {
 		bytes[i] = binary.charCodeAt(i);
 	}
-	return bytes.buffer;
+	return bytes;
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -68,8 +69,8 @@ export async function encryptMedia(blob: Blob): Promise<EncryptedMedia> {
 
 	return {
 		encrypted,
-		key: bufferToBase64(rawKey.buffer),
-		iv: bufferToBase64(iv.buffer)
+		key: bufferToBase64(rawKey),
+		iv: bufferToBase64(iv)
 	};
 }
 
@@ -88,8 +89,8 @@ export async function decryptMedia(
 	mimeType: string
 ): Promise<Blob> {
 	const encryptedBytes = new Uint8Array(encrypted);
-	const rawKey = base64ToBuffer(keyB64);
-	const iv = new Uint8Array(base64ToBuffer(ivB64));
+	const rawKey = base64ToBytes(keyB64);
+	const iv = base64ToBytes(ivB64);
 
 	const cryptoKey = await crypto.subtle.importKey(
 		'raw',
