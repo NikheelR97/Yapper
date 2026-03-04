@@ -38,3 +38,10 @@ export function setAuth(user: User, accessToken: string, csrfToken?: string | nu
 export function clearAuth() {
 	authStore.set({ user: null, accessToken: null, csrfToken: null, loading: false });
 }
+
+export function setPremiumStatus(isPremium: boolean) {
+	authStore.update((s) => ({
+		...s,
+		user: s.user ? { ...s.user, isPremium } : null,
+	}));
+}

@@ -41,6 +41,9 @@ pub async fn csrf_check(req: Request, next: Next) -> Result<Response, StatusCode
         "/auth/reset-password",
         "/auth/refresh",
         "/auth/logout",
+        // Stripe webhook arrives from Stripe's servers (no cookie/CSRF token).
+        // The Stripe-Signature HMAC check in the handler replaces CSRF protection.
+        "/premium/webhook",
     ];
     let path = req.uri().path();
     if CSRF_EXEMPT.iter().any(|p| path.starts_with(p)) {

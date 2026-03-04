@@ -44,6 +44,7 @@ mod media;
 mod messages;
 mod notifications;
 mod parental;
+mod premium;
 mod screentime;
 mod servers;
 mod users;
@@ -182,6 +183,7 @@ fn api_router() -> Router<AppState> {
         .merge(screentime::router())
         .nest("/bots", bots::router())
         .nest("/discord", discord::router())
+        .nest("/premium", premium::router())
         .nest("/notifications", notifications::router())
         .layer(axum::middleware::from_fn(csrf::csrf_check))
 }
