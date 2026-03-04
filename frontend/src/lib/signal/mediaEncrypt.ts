@@ -46,7 +46,8 @@ export interface EncryptedMedia {
  * identical content will always produce different output.
  */
 export async function encryptMedia(blob: Blob): Promise<EncryptedMedia> {
-	const plaintext = await blob.arrayBuffer();
+	// Normalize into current-realm bytes to avoid cross-realm BufferSource issues in tests/SSR.
+	const plaintextBytes = new Uint8Array(await blob.arrayBuffer());
 
 	const rawKey = crypto.getRandomValues(new Uint8Array(KEY_LENGTH / 8));
 	const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
@@ -62,7 +63,7 @@ export async function encryptMedia(blob: Blob): Promise<EncryptedMedia> {
 	const encrypted = await crypto.subtle.encrypt(
 		{ name: ALGO, iv },
 		cryptoKey,
-		plaintext
+		plaintextBytes
 	);
 
 	return {
@@ -86,6 +87,7 @@ export async function decryptMedia(
 	ivB64: string,
 	mimeType: string
 ): Promise<Blob> {
+	const encryptedBytes = new Uint8Array(encrypted);
 	const rawKey = base64ToBuffer(keyB64);
 	const iv = new Uint8Array(base64ToBuffer(ivB64));
 
@@ -100,7 +102,7 @@ export async function decryptMedia(
 	const plaintext = await crypto.subtle.decrypt(
 		{ name: ALGO, iv },
 		cryptoKey,
-		encrypted
+		encryptedBytes
 	);
 
 	return new Blob([plaintext], { type: mimeType });

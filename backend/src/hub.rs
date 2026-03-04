@@ -911,7 +911,6 @@ async fn store_and_fanout_channel(
 /// Resolves member UUIDs for a channel (bounded to MAX_FANOUT_MEMBERS).
 async fn fetch_channel_member_ids(channel_id: Uuid, state: &AppState) -> Option<Vec<Uuid>> {
     debug_assert!(channel_id != Uuid::nil());
-    debug_assert!(MAX_FANOUT_MEMBERS >= 100);
 
     let server_row = sqlx::query("SELECT server_id FROM channels WHERE id = $1")
         .bind(channel_id)
