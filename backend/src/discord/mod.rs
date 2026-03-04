@@ -8,7 +8,6 @@
  *
  * This flow is separate from the new-user OAuth in auth/ — it requires an existing session.
  */
-
 use axum::{
     extract::{Query, State},
     response::{IntoResponse, Redirect},
@@ -56,8 +55,8 @@ async fn import_profile_start(
 ) -> AppResult<impl IntoResponse> {
     let client_id = std::env::var("DISCORD_CLIENT_ID")
         .map_err(|_| AppError::Internal(anyhow::anyhow!("DISCORD_CLIENT_ID not set")))?;
-    let base_url = std::env::var("BASE_URL")
-        .unwrap_or_else(|_| "http://localhost:8080".to_string());
+    let base_url =
+        std::env::var("BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
 
     // Generate random 16-byte CSRF token (hex)
     let mut csrf_bytes = [0u8; 16];
@@ -72,7 +71,9 @@ async fn import_profile_start(
         });
 
     // Store csrf_token → Instant in oauth_states (same store used by existing OAuth)
-    state.oauth_states.insert(csrf_token.clone(), Instant::now());
+    state
+        .oauth_states
+        .insert(csrf_token.clone(), Instant::now());
 
     // Encode user_id in the state param so the callback can retrieve it
     let oauth_state = format!("{csrf_token}:{}", auth.user_id);
@@ -111,8 +112,12 @@ async fn import_profile_callback(
         return Err(AppError::BadRequest(format!("Discord OAuth error: {err}")));
     }
 
-    let code = query.code.ok_or_else(|| AppError::BadRequest("Missing code".into()))?;
-    let oauth_state = query.state.ok_or_else(|| AppError::BadRequest("Missing state".into()))?;
+    let code = query
+        .code
+        .ok_or_else(|| AppError::BadRequest("Missing code".into()))?;
+    let oauth_state = query
+        .state
+        .ok_or_else(|| AppError::BadRequest("Missing state".into()))?;
 
     // Validate CSRF state and extract user_id
     // State format: "{csrf_token}:{user_id}"
@@ -123,8 +128,8 @@ async fn import_profile_callback(
         .map_err(|_| AppError::Internal(anyhow::anyhow!("DISCORD_CLIENT_ID not set")))?;
     let client_secret = std::env::var("DISCORD_CLIENT_SECRET")
         .map_err(|_| AppError::Internal(anyhow::anyhow!("DISCORD_CLIENT_SECRET not set")))?;
-    let base_url = std::env::var("BASE_URL")
-        .unwrap_or_else(|_| "http://localhost:8080".to_string());
+    let base_url =
+        std::env::var("BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
     let redirect_uri = format!("{base_url}{REDIRECT_SUFFIX}");
 
     let http_client = reqwest::Client::new();
@@ -183,10 +188,9 @@ async fn import_profile_callback(
     }
 
     // Download and re-upload Discord avatar to R2 (Discord CDN URLs are not permanent)
-    let avatar_url = if let (Some(avatar_hash), Some(discord_id_str)) = (
-        profile["avatar"].as_str(),
-        profile["id"].as_str(),
-    ) {
+    let avatar_url = if let (Some(avatar_hash), Some(discord_id_str)) =
+        (profile["avatar"].as_str(), profile["id"].as_str())
+    {
         let cdn_url = format!(
             "https://cdn.discordapp.com/avatars/{discord_id_str}/{avatar_hash}.png?size=256"
         );
@@ -232,7 +236,9 @@ fn validate_import_state(oauth_state: &str, state: &AppState) -> AppResult<Uuid>
     // Consume & validate the stored state (one-time use) — OAuthStateStore is DashMap<String, Instant>
     let stored = state.oauth_states.remove(csrf_token);
     if stored.is_none() {
-        return Err(AppError::BadRequest("Invalid or expired OAuth state".into()));
+        return Err(AppError::BadRequest(
+            "Invalid or expired OAuth state".into(),
+        ));
     }
 
     user_id_str
@@ -247,13 +253,7 @@ async fn download_and_reupload_avatar(
     url: &str,
     user_id: Uuid,
 ) -> anyhow::Result<String> {
-    let image_bytes = client
-        .get(url)
-        .send()
-        .await?
-        .bytes()
-        .await?
-        .to_vec();
+    let image_bytes = client.get(url).send().await?.bytes().await?.to_vec();
 
     // Resize to 256×256 WebP in a blocking thread
     let webp_bytes = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<u8>> {
@@ -288,7 +288,7 @@ async fn download_and_reupload_avatar(
         .await
         .map_err(|e| anyhow::anyhow!("R2 avatar upload error: {e}"))?;
 
-    let public_base = std::env::var("R2_PUBLIC_URL")
-        .unwrap_or_else(|_| format!("https://pub.r2.dev/{bucket}"));
+    let public_base =
+        std::env::var("R2_PUBLIC_URL").unwrap_or_else(|_| format!("https://pub.r2.dev/{bucket}"));
     Ok(format!("{public_base}/{r2_key}"))
 }

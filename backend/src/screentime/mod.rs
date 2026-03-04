@@ -7,8 +7,8 @@ use axum::{
 };
 use chrono::{Duration, NaiveDate, NaiveTime, Utc};
 use serde::Deserialize;
-use sqlx::Row;
 use sqlx::PgPool;
+use sqlx::Row;
 use uuid::Uuid;
 
 use crate::{
@@ -564,7 +564,9 @@ mod tests {
         .expect("summary row should exist");
 
         let total_seconds: i32 = row.try_get("total_seconds").expect("total_seconds present");
-        let yapper_seconds: i32 = row.try_get("yapper_seconds").expect("yapper_seconds present");
+        let yapper_seconds: i32 = row
+            .try_get("yapper_seconds")
+            .expect("yapper_seconds present");
         let other_seconds: i32 = row.try_get("other_seconds").expect("other_seconds present");
 
         assert_eq!(total_seconds, 6600);
@@ -615,7 +617,9 @@ mod tests {
         .await
         .expect("settings row should exist");
 
-        let limit: i32 = row.try_get("daily_limit_minutes").expect("limit should exist");
+        let limit: i32 = row
+            .try_get("daily_limit_minutes")
+            .expect("limit should exist");
         let bedtime_start: Option<NaiveTime> = row
             .try_get("bedtime_start")
             .expect("bedtime_start should exist");

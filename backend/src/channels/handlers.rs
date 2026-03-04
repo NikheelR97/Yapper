@@ -8,12 +8,12 @@ use base64::Engine;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use super::service;
 use crate::{
     auth::AuthUser,
     error::{AppError, AppResult},
     AppState,
 };
-use super::service;
 
 // ─── Response types (pub — used by servers router) ───────────────────────────
 
@@ -87,13 +87,16 @@ pub async fn create_channel(
 ) -> AppResult<(StatusCode, Json<ChannelResp>)> {
     let name = req.name.trim().to_lowercase();
     if name.is_empty() || name.len() > 50 {
-        return Err(AppError::BadRequest("Channel name must be 1–50 characters".into()));
+        return Err(AppError::BadRequest(
+            "Channel name must be 1–50 characters".into(),
+        ));
     }
     let channel_type = req.channel_type.as_deref().unwrap_or("text");
     if !["text", "voice", "announcement"].contains(&channel_type) {
         return Err(AppError::BadRequest("Invalid channel type".into()));
     }
-    let channel = service::create_channel(auth.user_id, server_id, name, channel_type, &state).await?;
+    let channel =
+        service::create_channel(auth.user_id, server_id, name, channel_type, &state).await?;
     Ok((StatusCode::CREATED, Json(channel)))
 }
 
@@ -177,7 +180,11 @@ pub(super) async fn post_key_dists(
             if ek_public.len() != 32 {
                 return Err(AppError::BadRequest("ek_public must be 32 bytes".into()));
             }
-            Ok(service::KeyDistItem { to_user: d.to_user_id, ciphertext, ek_public })
+            Ok(service::KeyDistItem {
+                to_user: d.to_user_id,
+                ciphertext,
+                ek_public,
+            })
         })
         .collect::<AppResult<Vec<_>>>()?;
 

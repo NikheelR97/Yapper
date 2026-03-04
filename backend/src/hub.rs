@@ -8,7 +8,11 @@ use axum::{
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use dashmap::DashMap;
 use futures::{SinkExt, StreamExt};
-use governor::{clock::DefaultClock, state::{InMemoryState, NotKeyed}, RateLimiter};
+use governor::{
+    clock::DefaultClock,
+    state::{InMemoryState, NotKeyed},
+    RateLimiter,
+};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use std::{num::NonZeroU32, sync::Arc};
@@ -159,8 +163,12 @@ impl Hub {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum WsInbound {
-    Auth { token: String },
-    Reauth { token: String },
+    Auth {
+        token: String,
+    },
+    Reauth {
+        token: String,
+    },
     SendDm {
         conversation_id: Uuid,
         ciphertext: String,
@@ -174,8 +182,13 @@ pub enum WsInbound {
         message_type: Option<String>,
         msg_num: Option<i32>,
     },
-    TypingStart { channel_id: Uuid },
-    Read { message_id: Uuid, channel_id: Uuid },
+    TypingStart {
+        channel_id: Uuid,
+    },
+    Read {
+        message_id: Uuid,
+        channel_id: Uuid,
+    },
     Ping,
 }
 
@@ -183,25 +196,53 @@ pub enum WsInbound {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum WsOutbound {
-    Ready { user_id: Uuid },
-    Message { payload: serde_json::Value },
-    Typing { channel_id: Uuid, user_id: Uuid },
-    TypingStop { channel_id: Uuid, user_id: Uuid },
-    ReadReceipt { message_id: Uuid, user_id: Uuid },
+    Ready {
+        user_id: Uuid,
+    },
+    Message {
+        payload: serde_json::Value,
+    },
+    Typing {
+        channel_id: Uuid,
+        user_id: Uuid,
+    },
+    TypingStop {
+        channel_id: Uuid,
+        user_id: Uuid,
+    },
+    ReadReceipt {
+        message_id: Uuid,
+        user_id: Uuid,
+    },
     /// Real-time presence notification. `online=false` means disconnected;
     /// `online=true, away=true` means connected but inactive for 5+ min.
-    Presence { user_id: Uuid, online: bool, away: bool, last_seen_at: Option<String> },
+    Presence {
+        user_id: Uuid,
+        online: bool,
+        away: bool,
+        last_seen_at: Option<String>,
+    },
     ReAuthRequired,
-    CanvasUpdate { payload: serde_json::Value },
-    ParentNotification { payload: serde_json::Value },
-    Error { code: u16, message: String },
+    CanvasUpdate {
+        payload: serde_json::Value,
+    },
+    ParentNotification {
+        payload: serde_json::Value,
+    },
+    Error {
+        code: u16,
+        message: String,
+    },
     Pong,
 }
 
 // ─── Shared helpers ──────────────────────────────────────────────────────────
 
 fn send_ws_error(tx: &ConnTx, code: u16, message: &str) {
-    let _ = tx.send(WsOutbound::Error { code, message: message.to_string() });
+    let _ = tx.send(WsOutbound::Error {
+        code,
+        message: message.to_string(),
+    });
 }
 
 fn check_rate_limit(state: &AppState, user_id: &Uuid, tx: &ConnTx) -> bool {
@@ -228,15 +269,23 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         while let Some(msg) = rx.recv().await {
             let text = match serde_json::to_string(&msg) {
                 Ok(t) => t,
-                Err(e) => { tracing::error!("WS serialize error: {e}"); continue; }
+                Err(e) => {
+                    tracing::error!("WS serialize error: {e}");
+                    continue;
+                }
             };
-            if sender.send(Message::Text(text)).await.is_err() { break; }
+            if sender.send(Message::Text(text)).await.is_err() {
+                break;
+            }
         }
     });
 
     let user_id = match wait_for_auth(&mut receiver, &state).await {
         Some(id) => id,
-        None => { send_task.abort(); return; }
+        None => {
+            send_task.abort();
+            return;
+        }
     };
 
     state.hub.register(user_id, conn_id.clone(), tx.clone());
@@ -300,7 +349,13 @@ fn update_last_seen(user_id: Uuid, state: &AppState) {
 
 /// Fan out a Presence event to all users who share a DM or server with `user_id`.
 /// This covers everyone who might display an avatar with a presence dot.
-async fn broadcast_presence(user_id: Uuid, online: bool, last_seen_at: Option<String>, away: bool, state: &AppState) {
+async fn broadcast_presence(
+    user_id: Uuid,
+    online: bool,
+    last_seen_at: Option<String>,
+    away: bool,
+    state: &AppState,
+) {
     debug_assert!(user_id != Uuid::nil());
 
     // Collect unique peer IDs from:
@@ -402,15 +457,25 @@ async fn deliver_offline_messages(user_id: &Uuid, state: &AppState, tx: &ConnTx)
     .await;
 
     let Ok(rows) = rows else { return };
-    if rows.is_empty() { return; }
+    if rows.is_empty() {
+        return;
+    }
 
     let mut delivered_ids: Vec<Uuid> = Vec::with_capacity(rows.len());
 
     for row in &rows {
-        let Ok(msg_id) = row.try_get::<Uuid, _>("id") else { continue };
-        let Ok(conv_id) = row.try_get::<Uuid, _>("conversation_id") else { continue };
-        let Ok(sender_id) = row.try_get::<Uuid, _>("sender_id") else { continue };
-        let Ok(cipher) = row.try_get::<Vec<u8>, _>("ciphertext") else { continue };
+        let Ok(msg_id) = row.try_get::<Uuid, _>("id") else {
+            continue;
+        };
+        let Ok(conv_id) = row.try_get::<Uuid, _>("conversation_id") else {
+            continue;
+        };
+        let Ok(sender_id) = row.try_get::<Uuid, _>("sender_id") else {
+            continue;
+        };
+        let Ok(cipher) = row.try_get::<Vec<u8>, _>("ciphertext") else {
+            continue;
+        };
         let ek: Option<Vec<u8>> = row.try_get("ek_public").ok().flatten();
         let opk_id: Option<i32> = row.try_get("opk_id").ok().flatten();
 
@@ -454,10 +519,18 @@ async fn deliver_pending_key_dists(user_id: &Uuid, state: &AppState, tx: &ConnTx
     let Ok(rows) = rows else { return };
 
     for row in &rows {
-        let Ok(channel_id) = row.try_get::<uuid::Uuid, _>("channel_id") else { continue };
-        let Ok(from_user) = row.try_get::<uuid::Uuid, _>("from_user") else { continue };
-        let Ok(ct) = row.try_get::<Vec<u8>, _>("ciphertext") else { continue };
-        let Ok(ek) = row.try_get::<Vec<u8>, _>("ek_public") else { continue };
+        let Ok(channel_id) = row.try_get::<uuid::Uuid, _>("channel_id") else {
+            continue;
+        };
+        let Ok(from_user) = row.try_get::<uuid::Uuid, _>("from_user") else {
+            continue;
+        };
+        let Ok(ct) = row.try_get::<Vec<u8>, _>("ciphertext") else {
+            continue;
+        };
+        let Ok(ek) = row.try_get::<Vec<u8>, _>("ek_public") else {
+            continue;
+        };
 
         let payload = serde_json::json!({
             "type": "key_dist",
@@ -482,31 +555,72 @@ async fn handle_inbound(text: String, user_id: Uuid, state: &AppState, tx: &Conn
 
     let msg: WsInbound = match serde_json::from_str(&text) {
         Ok(m) => m,
-        Err(_) => { send_ws_error(tx, 4000, "Invalid message format"); return; }
+        Err(_) => {
+            send_ws_error(tx, 4000, "Invalid message format");
+            return;
+        }
     };
 
     // Reset the away timer on any real user activity. Pings and auth frames are
     // automatic/background — only deliberate actions count as "presence".
-    if !matches!(msg, WsInbound::Ping | WsInbound::Auth { .. } | WsInbound::Reauth { .. }) {
+    if !matches!(
+        msg,
+        WsInbound::Ping | WsInbound::Auth { .. } | WsInbound::Reauth { .. }
+    ) {
         state.hub.reset_away_timer(user_id, state.clone());
     }
 
     match msg {
-        WsInbound::Ping => { let _ = tx.send(WsOutbound::Pong); }
-        WsInbound::SendDm { conversation_id, ciphertext, ephemeral_key, opk_id, msg_num } => {
+        WsInbound::Ping => {
+            let _ = tx.send(WsOutbound::Pong);
+        }
+        WsInbound::SendDm {
+            conversation_id,
+            ciphertext,
+            ephemeral_key,
+            opk_id,
+            msg_num,
+        } => {
             if check_rate_limit(state, &user_id, tx) {
-                handle_send_dm(conversation_id, ciphertext, ephemeral_key, opk_id, msg_num, user_id, state, tx).await;
+                handle_send_dm(
+                    conversation_id,
+                    ciphertext,
+                    ephemeral_key,
+                    opk_id,
+                    msg_num,
+                    user_id,
+                    state,
+                    tx,
+                )
+                .await;
             }
         }
-        WsInbound::SendChannel { channel_id, ciphertext, message_type, msg_num } => {
+        WsInbound::SendChannel {
+            channel_id,
+            ciphertext,
+            message_type,
+            msg_num,
+        } => {
             if check_rate_limit(state, &user_id, tx) {
-                handle_send_channel(channel_id, ciphertext, message_type, msg_num, user_id, state, tx).await;
+                handle_send_channel(
+                    channel_id,
+                    ciphertext,
+                    message_type,
+                    msg_num,
+                    user_id,
+                    state,
+                    tx,
+                )
+                .await;
             }
         }
         WsInbound::TypingStart { channel_id } => {
             handle_typing_start(channel_id, user_id, state).await;
         }
-        WsInbound::Read { message_id, channel_id } => {
+        WsInbound::Read {
+            message_id,
+            channel_id,
+        } => {
             handle_mark_read(message_id, channel_id, user_id, state).await;
         }
         WsInbound::Reauth { token } => {
@@ -535,7 +649,10 @@ async fn handle_send_dm(
 
     let cipher_bytes = match BASE64.decode(&ciphertext) {
         Ok(b) => b,
-        Err(_) => { send_ws_error(tx, 4005, "Invalid ciphertext encoding"); return; }
+        Err(_) => {
+            send_ws_error(tx, 4005, "Invalid ciphertext encoding");
+            return;
+        }
     };
     let ek_bytes = ephemeral_key.as_ref().and_then(|k| BASE64.decode(k).ok());
 
@@ -545,9 +662,19 @@ async fn handle_send_dm(
     };
 
     store_and_route_dm(
-        conversation_id, &cipher_bytes, ek_bytes.as_deref(), opk_id, msg_num,
-        &ciphertext, &ephemeral_key, sender_id, recipient_id, state, tx,
-    ).await;
+        conversation_id,
+        &cipher_bytes,
+        ek_bytes.as_deref(),
+        opk_id,
+        msg_num,
+        &ciphertext,
+        &ephemeral_key,
+        sender_id,
+        recipient_id,
+        state,
+        tx,
+    )
+    .await;
 }
 
 async fn resolve_dm_recipient(
@@ -556,16 +683,15 @@ async fn resolve_dm_recipient(
     state: &AppState,
     tx: &ConnTx,
 ) -> Option<Uuid> {
-    let is_participant = sqlx::query(
-        "SELECT 1 FROM dm_participants WHERE conversation_id = $1 AND user_id = $2",
-    )
-    .bind(conversation_id)
-    .bind(sender_id)
-    .fetch_optional(state.db.pool())
-    .await
-    .ok()
-    .flatten()
-    .is_some();
+    let is_participant =
+        sqlx::query("SELECT 1 FROM dm_participants WHERE conversation_id = $1 AND user_id = $2")
+            .bind(conversation_id)
+            .bind(sender_id)
+            .fetch_optional(state.db.pool())
+            .await
+            .ok()
+            .flatten()
+            .is_some();
 
     if !is_participant {
         send_ws_error(tx, 4006, "Not a participant in this conversation");
@@ -628,7 +754,9 @@ async fn store_and_route_dm(
         "sender_id": sender_id, "ciphertext": ciphertext_b64,
         "ephemeral_key": ephemeral_key, "opk_id": opk_id, "msg_num": msg_num,
     });
-    state.hub.send_to_user(&recipient_id, WsOutbound::Message { payload });
+    state
+        .hub
+        .send_to_user(&recipient_id, WsOutbound::Message { payload });
 }
 
 // ─── Send Channel ────────────────────────────────────────────────────────────
@@ -646,7 +774,10 @@ async fn handle_send_channel(
 
     let cipher_bytes = match BASE64.decode(&ciphertext) {
         Ok(b) => b,
-        Err(_) => { send_ws_error(tx, 4005, "Invalid ciphertext encoding"); return; }
+        Err(_) => {
+            send_ws_error(tx, 4005, "Invalid ciphertext encoding");
+            return;
+        }
     };
 
     let server_id = match resolve_channel_membership(channel_id, sender_id, state, tx).await {
@@ -656,9 +787,17 @@ async fn handle_send_channel(
 
     let msg_type = message_type.as_deref().unwrap_or("text");
     store_and_fanout_channel(
-        channel_id, server_id, &cipher_bytes, msg_type, msg_num,
-        &ciphertext, sender_id, state, tx,
-    ).await;
+        channel_id,
+        server_id,
+        &cipher_bytes,
+        msg_type,
+        msg_num,
+        &ciphertext,
+        sender_id,
+        state,
+        tx,
+    )
+    .await;
 }
 
 async fn resolve_channel_membership(
@@ -676,19 +815,21 @@ async fn resolve_channel_membership(
 
     let server_id: Uuid = match server_row.and_then(|r| r.try_get("server_id").ok()) {
         Some(id) => id,
-        None => { send_ws_error(tx, 4006, "Channel not found"); return None; }
+        None => {
+            send_ws_error(tx, 4006, "Channel not found");
+            return None;
+        }
     };
 
-    let is_member = sqlx::query(
-        "SELECT 1 FROM server_memberships WHERE user_id = $1 AND server_id = $2",
-    )
-    .bind(sender_id)
-    .bind(server_id)
-    .fetch_optional(state.db.pool())
-    .await
-    .ok()
-    .flatten()
-    .is_some();
+    let is_member =
+        sqlx::query("SELECT 1 FROM server_memberships WHERE user_id = $1 AND server_id = $2")
+            .bind(sender_id)
+            .bind(server_id)
+            .fetch_optional(state.db.pool())
+            .await
+            .ok()
+            .flatten()
+            .is_some();
 
     if !is_member {
         send_ws_error(tx, 4006, "Not a member of this server");
@@ -731,17 +872,19 @@ async fn store_and_fanout_channel(
         return;
     }
 
-    let member_rows = match sqlx::query(
-        "SELECT user_id FROM server_memberships WHERE server_id = $1 LIMIT $2",
-    )
-    .bind(server_id)
-    .bind(MAX_FANOUT_MEMBERS)
-    .fetch_all(state.db.pool())
-    .await
-    {
-        Ok(rows) => rows,
-        Err(e) => { tracing::error!("Failed to fetch members for fanout: {e}"); return; }
-    };
+    let member_rows =
+        match sqlx::query("SELECT user_id FROM server_memberships WHERE server_id = $1 LIMIT $2")
+            .bind(server_id)
+            .bind(MAX_FANOUT_MEMBERS)
+            .fetch_all(state.db.pool())
+            .await
+        {
+            Ok(rows) => rows,
+            Err(e) => {
+                tracing::error!("Failed to fetch members for fanout: {e}");
+                return;
+            }
+        };
 
     let payload = serde_json::json!({
         "type": "channel", "id": msg_id, "channel_id": channel_id,
@@ -752,7 +895,12 @@ async fn store_and_fanout_channel(
     for m in member_rows.iter().take(MAX_FANOUT_MEMBERS as usize) {
         if let Ok(uid) = m.try_get::<Uuid, _>("user_id") {
             if uid != sender_id {
-                state.hub.send_to_user(&uid, WsOutbound::Message { payload: payload.clone() });
+                state.hub.send_to_user(
+                    &uid,
+                    WsOutbound::Message {
+                        payload: payload.clone(),
+                    },
+                );
             }
         }
     }
@@ -773,16 +921,18 @@ async fn fetch_channel_member_ids(channel_id: Uuid, state: &AppState) -> Option<
         .flatten()?;
     let server_id: Uuid = server_row.try_get("server_id").ok()?;
 
-    let rows = sqlx::query(
-        "SELECT user_id FROM server_memberships WHERE server_id = $1 LIMIT $2",
-    )
-    .bind(server_id)
-    .bind(MAX_FANOUT_MEMBERS)
-    .fetch_all(state.db.pool())
-    .await
-    .ok()?;
+    let rows = sqlx::query("SELECT user_id FROM server_memberships WHERE server_id = $1 LIMIT $2")
+        .bind(server_id)
+        .bind(MAX_FANOUT_MEMBERS)
+        .fetch_all(state.db.pool())
+        .await
+        .ok()?;
 
-    Some(rows.iter().filter_map(|r| r.try_get::<Uuid, _>("user_id").ok()).collect())
+    Some(
+        rows.iter()
+            .filter_map(|r| r.try_get::<Uuid, _>("user_id").ok())
+            .collect(),
+    )
 }
 
 /// Fan out a TypingStart event and schedule an auto-stop after 5 seconds of silence.
@@ -790,7 +940,9 @@ async fn handle_typing_start(channel_id: Uuid, user_id: Uuid, state: &AppState) 
     debug_assert!(user_id != Uuid::nil());
     debug_assert!(channel_id != Uuid::nil());
 
-    let Some(member_ids) = fetch_channel_member_ids(channel_id, state).await else { return };
+    let Some(member_ids) = fetch_channel_member_ids(channel_id, state).await else {
+        return;
+    };
     let key = (channel_id, user_id);
 
     // Abort any existing timer to reset the 5-second window
@@ -800,7 +952,13 @@ async fn handle_typing_start(channel_id: Uuid, user_id: Uuid, state: &AppState) 
 
     for uid in member_ids.iter().take(MAX_FANOUT_MEMBERS as usize) {
         if *uid != user_id {
-            state.hub.send_to_user(uid, WsOutbound::Typing { channel_id, user_id });
+            state.hub.send_to_user(
+                uid,
+                WsOutbound::Typing {
+                    channel_id,
+                    user_id,
+                },
+            );
         }
     }
 
@@ -810,7 +968,13 @@ async fn handle_typing_start(channel_id: Uuid, user_id: Uuid, state: &AppState) 
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         for uid in ids.iter().take(MAX_FANOUT_MEMBERS as usize) {
             if *uid != user_id {
-                hub.send_to_user(uid, WsOutbound::TypingStop { channel_id, user_id });
+                hub.send_to_user(
+                    uid,
+                    WsOutbound::TypingStop {
+                        channel_id,
+                        user_id,
+                    },
+                );
             }
         }
         hub.typing_timers.remove(&key);
@@ -838,9 +1002,17 @@ async fn handle_mark_read(message_id: Uuid, channel_id: Uuid, user_id: Uuid, sta
         return;
     }
 
-    let Some(member_ids) = fetch_channel_member_ids(channel_id, state).await else { return };
+    let Some(member_ids) = fetch_channel_member_ids(channel_id, state).await else {
+        return;
+    };
     for uid in member_ids.iter().take(MAX_FANOUT_MEMBERS as usize) {
-        state.hub.send_to_user(uid, WsOutbound::ReadReceipt { message_id, user_id });
+        state.hub.send_to_user(
+            uid,
+            WsOutbound::ReadReceipt {
+                message_id,
+                user_id,
+            },
+        );
     }
 }
 

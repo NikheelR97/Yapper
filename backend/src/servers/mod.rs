@@ -10,8 +10,14 @@ use crate::AppState;
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/", post(handlers::create_server).get(handlers::list_my_servers))
-        .route("/:id", get(handlers::get_server).patch(handlers::update_server))
+        .route(
+            "/",
+            post(handlers::create_server).get(handlers::list_my_servers),
+        )
+        .route(
+            "/:id",
+            get(handlers::get_server).patch(handlers::update_server),
+        )
         .route("/:id/join", post(handlers::join_server))
         .route("/:id/leave", delete(handlers::leave_server))
         .route("/:id/invite", post(handlers::create_invite))

@@ -140,7 +140,11 @@ pub async fn register(
     Ok((
         StatusCode::CREATED,
         cookies,
-        Json(AuthResponse { access_token, csrf_token, user }),
+        Json(AuthResponse {
+            access_token,
+            csrf_token,
+            user,
+        }),
     ))
 }
 
@@ -221,7 +225,11 @@ pub async fn login(
     let (cookies, csrf_token) = refresh_cookie(&refresh_token);
     Ok((
         cookies,
-        Json(AuthResponse { access_token, csrf_token, user }),
+        Json(AuthResponse {
+            access_token,
+            csrf_token,
+            user,
+        }),
     ))
 }
 
@@ -629,20 +637,28 @@ pub async fn change_password(
     auth: crate::auth::AuthUser,
     Json(req): Json<ChangePasswordRequest>,
 ) -> AppResult<impl IntoResponse> {
-    req.validate().map_err(|e| AppError::BadRequest(e.to_string()))?;
+    req.validate()
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
 
     if req.current_password == req.new_password {
-        return Err(AppError::BadRequest("New password must differ from current password".to_string()));
+        return Err(AppError::BadRequest(
+            "New password must differ from current password".to_string(),
+        ));
     }
 
     let pool = state.db.pool();
     let row = sqlx::query!(
         "SELECT password_hash FROM users WHERE id = $1 AND deleted_at IS NULL",
         auth.user_id
-    ).fetch_optional(pool).await?.ok_or(AppError::Unauthorized)?;
+    )
+    .fetch_optional(pool)
+    .await?
+    .ok_or(AppError::Unauthorized)?;
 
     let Some(current_hash) = row.password_hash else {
-        return Err(AppError::BadRequest("This account uses social login and has no password.".to_string()));
+        return Err(AppError::BadRequest(
+            "This account uses social login and has no password.".to_string(),
+        ));
     };
 
     if !verify_password(&req.current_password, &current_hash)? {
@@ -650,10 +666,19 @@ pub async fn change_password(
     }
 
     let new_hash = hash_password(&req.new_password)?;
-    sqlx::query!("UPDATE users SET password_hash = $2 WHERE id = $1", auth.user_id, new_hash)
-        .execute(pool).await?;
-    sqlx::query!("UPDATE sessions SET revoked_at = NOW() WHERE user_id = $1", auth.user_id)
-        .execute(pool).await?;
+    sqlx::query!(
+        "UPDATE users SET password_hash = $2 WHERE id = $1",
+        auth.user_id,
+        new_hash
+    )
+    .execute(pool)
+    .await?;
+    sqlx::query!(
+        "UPDATE sessions SET revoked_at = NOW() WHERE user_id = $1",
+        auth.user_id
+    )
+    .execute(pool)
+    .await?;
 
     Ok((clear_auth_cookies(), StatusCode::NO_CONTENT))
 }

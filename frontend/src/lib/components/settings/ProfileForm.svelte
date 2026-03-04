@@ -11,6 +11,11 @@
 	let aboutMe = "";
 	let selectedTheme = "#7c3aed";
 	let saving = false;
+	let uploadingAvatar = false;
+	let uploadingBanner = false;
+	let bannerUrl: string | null = null;
+
+	const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8080";
 
 	const themes = ["#7c3aed", "#ec4899", "#0891b2", "#059669", "#f59e0b"];
 
@@ -23,18 +28,104 @@
 	onMount(async () => {
 		try {
 			const profile = await api.get<{
+				display_name: string;
 				about_me: string | null;
 				profile_theme_color: string | null;
+				banner_url: string | null;
 			}>("/api/v1/users/me");
+			if (profile.display_name) displayName = profile.display_name;
 			if (profile.about_me) aboutMe = profile.about_me;
 			if (profile.profile_theme_color) {
 				selectedTheme = profile.profile_theme_color;
 				customColor = profile.profile_theme_color;
 			}
+			bannerUrl = profile.banner_url ?? null;
 		} catch {
 			// Non-critical — form just starts with defaults
 		}
 	});
+
+	async function uploadProfileImage(kind: "avatar" | "banner", file: File) {
+		if (!file.type.startsWith("image/")) {
+			toast.error("Please select an image file.");
+			return;
+		}
+
+		const maxSize = kind === "avatar" ? 2 * 1024 * 1024 : 5 * 1024 * 1024;
+		if (file.size > maxSize) {
+			toast.error(
+				kind === "avatar"
+					? "Avatar must be 2MB or smaller."
+					: "Banner must be 5MB or smaller.",
+			);
+			return;
+		}
+
+		if (kind === "avatar") uploadingAvatar = true;
+		else uploadingBanner = true;
+
+		try {
+			const { accessToken, csrfToken } = get(authStore);
+			const formData = new FormData();
+			formData.append("file", file);
+
+			const headers: Record<string, string> = {};
+			if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+			if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
+
+			const res = await fetch(`${BASE_URL}/api/v1/users/me/${kind}`, {
+				method: "POST",
+				body: formData,
+				headers,
+				credentials: "include",
+			});
+
+			if (!res.ok) {
+				const body = await res.json().catch(() => ({ error: "Upload failed" }));
+				throw new Error(body.error ?? "Upload failed");
+			}
+
+			const body = await res.json();
+			if (kind === "avatar") {
+				const current = get(authStore);
+				if (current.user && current.accessToken) {
+					setAuth(
+						{
+							...current.user,
+							avatarUrl: body.avatar_url ?? current.user.avatarUrl,
+						},
+						current.accessToken,
+						current.csrfToken,
+					);
+				}
+				toast.success("Avatar updated.");
+			} else {
+				bannerUrl = body.banner_url ?? bannerUrl;
+				toast.success("Banner updated.");
+			}
+		} catch (e: any) {
+			toast.error(e.message ?? "Upload failed");
+		} finally {
+			if (kind === "avatar") uploadingAvatar = false;
+			else uploadingBanner = false;
+		}
+	}
+
+	async function onAvatarSelected(e: Event) {
+		const target = e.target as HTMLInputElement;
+		const file = target.files?.[0];
+		target.value = "";
+		if (!file) return;
+		await uploadProfileImage("avatar", file);
+	}
+
+	async function onBannerSelected(e: Event) {
+		const target = e.target as HTMLInputElement;
+		const file = target.files?.[0];
+		target.value = "";
+		if (!file) return;
+		await uploadProfileImage("banner", file);
+	}
 
 	async function save() {
 		if (saving) return;
@@ -72,23 +163,27 @@
 	<div class="preview-card">
 		<div
 			class="preview-banner"
-			style="background: linear-gradient(135deg, {selectedTheme}33, {selectedTheme}66)"
+			style={bannerUrl
+				? `background-image: url('${bannerUrl}'); background-size: cover; background-position: center;`
+				: `background: linear-gradient(135deg, ${selectedTheme}33, ${selectedTheme}66)`}
 		>
-			<svg
-				viewBox="0 0 400 120"
-				xmlns="http://www.w3.org/2000/svg"
-				class="wave-svg"
-				preserveAspectRatio="none"
-			>
-				<path
-					d="M0,60 C100,100 300,20 400,60 L400,120 L0,120 Z"
-					fill="{selectedTheme}22"
-				/>
-				<path
-					d="M0,80 C120,40 280,100 400,70 L400,120 L0,120 Z"
-					fill="{selectedTheme}33"
-				/>
-			</svg>
+			{#if !bannerUrl}
+				<svg
+					viewBox="0 0 400 120"
+					xmlns="http://www.w3.org/2000/svg"
+					class="wave-svg"
+					preserveAspectRatio="none"
+				>
+					<path
+						d="M0,60 C100,100 300,20 400,60 L400,120 L0,120 Z"
+						fill="{selectedTheme}22"
+					/>
+					<path
+						d="M0,80 C120,40 280,100 400,70 L400,120 L0,120 Z"
+						fill="{selectedTheme}33"
+					/>
+				</svg>
+			{/if}
 		</div>
 		<div class="preview-avatar">
 			{#if user?.avatarUrl}
@@ -111,6 +206,27 @@
 				<div class="preview-bio">"{aboutMe}"</div>
 			{/if}
 		</div>
+	</div>
+
+	<div class="media-actions">
+		<label class="upload-btn-inline" class:disabled={uploadingAvatar}>
+			{uploadingAvatar ? "Uploading Avatar…" : "Upload Avatar"}
+			<input
+				type="file"
+				accept="image/png,image/jpeg,image/webp"
+				on:change={onAvatarSelected}
+				disabled={uploadingAvatar}
+			/>
+		</label>
+		<label class="upload-btn-inline" class:disabled={uploadingBanner}>
+			{uploadingBanner ? "Uploading Banner…" : "Upload Banner"}
+			<input
+				type="file"
+				accept="image/png,image/jpeg,image/webp"
+				on:change={onBannerSelected}
+				disabled={uploadingBanner}
+			/>
+		</label>
 	</div>
 
 	<!-- Display name -->
@@ -278,6 +394,44 @@
 	}
 
 	/* Fields */
+	.media-actions {
+		display: flex;
+		gap: 10px;
+		flex-wrap: wrap;
+	}
+
+	.upload-btn-inline {
+		position: relative;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		padding: 10px 14px;
+		border-radius: 8px;
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		background: rgba(255, 255, 255, 0.04);
+		color: #d1d5db;
+		font-size: 13px;
+		font-weight: 600;
+		cursor: pointer;
+		transition: background 150ms;
+	}
+
+	.upload-btn-inline:hover {
+		background: rgba(255, 255, 255, 0.08);
+	}
+
+	.upload-btn-inline.disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.upload-btn-inline input {
+		position: absolute;
+		inset: 0;
+		opacity: 0;
+		cursor: pointer;
+	}
+
 	.field {
 		display: flex;
 		flex-direction: column;

@@ -6,12 +6,12 @@ use axum::{
 use serde::Deserialize;
 use uuid::Uuid;
 
+use super::service::{self, CreateInviteInput, UpdateServerInput};
 use crate::{
     auth::AuthUser,
     error::{AppError, AppResult},
     AppState,
 };
-use super::service::{self, CreateInviteInput, UpdateServerInput};
 
 // ─── Request DTOs ─────────────────────────────────────────────────────────────
 
@@ -49,7 +49,9 @@ pub async fn create_server(
 ) -> AppResult<(StatusCode, Json<service::ServerResp>)> {
     let name = req.name.trim().to_string();
     if name.is_empty() || name.len() > 100 {
-        return Err(AppError::BadRequest("Server name must be 1–100 characters".into()));
+        return Err(AppError::BadRequest(
+            "Server name must be 1–100 characters".into(),
+        ));
     }
     let resp = service::create_server(
         auth.user_id,

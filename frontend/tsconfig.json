@@ -10,19 +10,5 @@
 		"sourceMap": true,
 		"strict": true,
 		"moduleResolution": "bundler",
-		"paths": {
-			"$lib": ["./src/lib"],
-			"$lib/*": ["./src/lib/*"],
-			"$components": ["./src/lib/components"],
-			"$components/*": ["./src/lib/components/*"],
-			"$stores": ["./src/lib/stores"],
-			"$stores/*": ["./src/lib/stores/*"],
-			"$api": ["./src/lib/api"],
-			"$api/*": ["./src/lib/api/*"],
-			"$signal": ["./src/lib/signal"],
-			"$signal/*": ["./src/lib/signal/*"],
-			"$plugins": ["./src/lib/plugins"],
-			"$plugins/*": ["./src/lib/plugins/*"]
-		}
 	}
 }

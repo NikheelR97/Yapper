@@ -30,8 +30,8 @@ pub type IpRateLimiter = Arc<RateLimiter<IpAddr, DefaultKeyedStateStore<IpAddr>,
 mod auth;
 mod bots;
 mod canvas;
-mod csrf;
 mod channels;
+mod csrf;
 mod db;
 mod discord;
 mod emojis;

@@ -50,10 +50,14 @@ async fn upload_identity_key(
         .map_err(|_| AppError::BadRequest("Invalid signing_public_key encoding".into()))?;
 
     if dh_key.len() != 32 {
-        return Err(AppError::BadRequest("dh_public_key must be 32 bytes".into()));
+        return Err(AppError::BadRequest(
+            "dh_public_key must be 32 bytes".into(),
+        ));
     }
     if sig_key.len() != 32 {
-        return Err(AppError::BadRequest("signing_public_key must be 32 bytes".into()));
+        return Err(AppError::BadRequest(
+            "signing_public_key must be 32 bytes".into(),
+        ));
     }
 
     sqlx::query(
@@ -157,14 +161,16 @@ async fn upload_one_time_prekeys(
     Json(req): Json<UploadOtpkReq>,
 ) -> AppResult<Json<serde_json::Value>> {
     if req.keys.is_empty() || req.keys.len() > 200 {
-        return Err(AppError::BadRequest("Provide 1–200 one-time prekeys".into()));
+        return Err(AppError::BadRequest(
+            "Provide 1–200 one-time prekeys".into(),
+        ));
     }
 
     let mut tx = state.db.pool().begin().await?;
     for item in &req.keys {
-        let pub_key = BASE64
-            .decode(&item.public_key)
-            .map_err(|_| AppError::BadRequest(format!("Bad encoding for key_id {}", item.key_id)))?;
+        let pub_key = BASE64.decode(&item.public_key).map_err(|_| {
+            AppError::BadRequest(format!("Bad encoding for key_id {}", item.key_id))
+        })?;
         if pub_key.len() != 32 {
             return Err(AppError::BadRequest(format!(
                 "public_key for key_id {} must be 32 bytes",
@@ -208,7 +214,9 @@ async fn get_opk_count(
     .await?;
 
     let count: i64 = row.try_get("count")?;
-    Ok(Json(serde_json::json!({ "count": count, "low": count < 10 })))
+    Ok(Json(
+        serde_json::json!({ "count": count, "low": count < 10 }),
+    ))
 }
 
 // ─── Get Key Bundle ───────────────────────────────────────────────────────────
@@ -351,7 +359,9 @@ async fn put_backup(
     }
     // 10 MB cap — keystore should be kilobytes even with many sessions
     if blob.len() > 10 * 1024 * 1024 {
-        return Err(AppError::BadRequest("encrypted_blob exceeds 10 MB limit".into()));
+        return Err(AppError::BadRequest(
+            "encrypted_blob exceeds 10 MB limit".into(),
+        ));
     }
 
     sqlx::query(
@@ -371,10 +381,7 @@ async fn put_backup(
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }
 
-async fn get_backup(
-    auth: AuthUser,
-    State(state): State<AppState>,
-) -> AppResult<Json<BackupResp>> {
+async fn get_backup(auth: AuthUser, State(state): State<AppState>) -> AppResult<Json<BackupResp>> {
     let row = sqlx::query(
         r#"
         SELECT encrypted_blob, updated_at

@@ -3,6 +3,7 @@
 	import { authStore, clearAuth } from "$stores/auth.js";
 	import { api } from "$api/client.js";
 	import { toast } from "$stores/toast.js";
+	import { get } from "svelte/store";
 	import ProfileForm from "$components/settings/ProfileForm.svelte";
 	import PrivacySafety from "$components/settings/PrivacySafety.svelte";
 	import Appearance from "$components/settings/Appearance.svelte";
@@ -27,6 +28,7 @@
 	let activeSection: Section = "profile";
 	let showDeleteConfirm = false;
 	let deleting = false;
+	const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8080";
 
 	$: user = $authStore.user;
 	$: isPremium = user?.isPremium ?? false;
@@ -57,20 +59,44 @@
 
 	async function exportData() {
 		try {
-			const res = await api.post<{ downloadUrl: string }>(
-				"/api/v1/users/me/export",
-			);
-			window.open(res.downloadUrl, "_blank");
-			toast.success("Export started — check your email.");
+			const { accessToken } = get(authStore);
+			if (!accessToken) {
+				throw new Error("You are not logged in.");
+			}
+
+			const res = await fetch(`${BASE_URL}/api/v1/account/data-export`, {
+				method: "GET",
+				headers: { Authorization: `Bearer ${accessToken}` },
+				credentials: "include",
+			});
+
+			if (!res.ok) {
+				const body = await res.json().catch(() => ({
+					error: "Failed to export data",
+				}));
+				throw new Error(body.error ?? "Failed to export data");
+			}
+
+			const blob = await res.blob();
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement("a");
+			a.href = url;
+			a.download = `yapper-data-export-${new Date().toISOString().slice(0, 10)}.zip`;
+			document.body.appendChild(a);
+			a.click();
+			document.body.removeChild(a);
+			URL.revokeObjectURL(url);
+
+			toast.success("Data export downloaded.");
 		} catch (e: any) {
-			toast.error(e.message ?? "Failed to start export");
+			toast.error(e.message ?? "Failed to export data");
 		}
 	}
 
 	async function deleteAccount() {
 		deleting = true;
 		try {
-			await api.delete("/api/v1/users/me");
+			await api.delete("/api/v1/account");
 			clearAuth();
 			await goto("/login");
 		} catch (e: any) {
@@ -521,3 +547,4 @@
 		}
 	}
 </style>
+

@@ -63,6 +63,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 # Error handling
 thiserror = "1"
 anyhow = "1"
+zip = "2"
 
 # Async utilities
 tokio-stream = "0.1"

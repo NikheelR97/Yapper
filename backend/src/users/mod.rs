@@ -4,6 +4,8 @@
  * Routes (mounted under /api/v1/users):
  *   GET    /me                              — own full profile
  *   PATCH  /me                              — update profile fields
+ *   POST   /me/avatar                       — upload avatar image
+ *   POST   /me/banner                       — upload profile banner image
  *   PATCH  /me/username                     — change username (30-day cooldown)
  *   GET    /me/privacy                      — fetch privacy settings
  *   PATCH  /me/privacy                      — update privacy settings
@@ -17,21 +19,22 @@
  *   GET    /by/:username/hype-moments       — pinned messages for a profile
  *
  * Routes (mounted under /api/v1/account):
- *   GET    /data-export                     — GDPR data export (JSON)
+ *   GET    /data-export                     — GDPR data export (ZIP containing JSON)
  *   DELETE /                                — soft-delete account
  */
-
 use axum::{
-    extract::{Path, State},
+    extract::{Multipart, Path, State},
     http::{header, StatusCode},
     response::IntoResponse,
     routing::{delete, get, patch, post},
     Json, Router,
 };
 use chrono::Utc;
-use regex::Regex;
+use image::{imageops::FilterType, GenericImageView, ImageFormat};
 use once_cell::sync::Lazy;
+use regex::Regex;
 use sqlx::Row;
+use std::io::{Cursor, Write};
 use uuid::Uuid;
 
 use crate::{
@@ -46,23 +49,33 @@ const MAX_DISPLAY_NAME: usize = 50;
 const MAX_ABOUT_ME: usize = 500;
 const MAX_LOCATION: usize = 100;
 const USERNAME_COOLDOWN_DAYS: i64 = 30;
+const MAX_AVATAR_UPLOAD_BYTES: usize = 2 * 1024 * 1024; // 2MB
+const MAX_BANNER_UPLOAD_BYTES: usize = 5 * 1024 * 1024; // 5MB
+const AVATAR_SIZE: u32 = 256;
+const BANNER_WIDTH: u32 = 1500;
+const BANNER_HEIGHT: u32 = 500;
 
-static USERNAME_REGEX: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^[a-zA-Z0-9_]{3,32}$").unwrap());
+static USERNAME_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^[a-zA-Z0-9_]{3,32}$").unwrap());
 
-static HEX_COLOR_REGEX: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^#[0-9a-fA-F]{6}$").unwrap());
+static HEX_COLOR_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^#[0-9a-fA-F]{6}$").unwrap());
 
-static HTTPS_URL_REGEX: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^https://").unwrap());
+static HTTPS_URL_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^https://").unwrap());
 
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/me", get(get_me).patch(update_profile))
+        .route("/me/avatar", post(upload_avatar))
+        .route("/me/banner", post(upload_banner))
         .route("/me/username", patch(change_username))
         .route("/me/privacy", get(get_privacy).patch(update_privacy))
-        .route("/me/appearance", get(get_appearance).patch(update_appearance))
-        .route("/me/notifications", get(get_notifications).patch(update_notifications))
+        .route(
+            "/me/appearance",
+            get(get_appearance).patch(update_appearance),
+        )
+        .route(
+            "/me/notifications",
+            get(get_notifications).patch(update_notifications),
+        )
         .route("/me/feed", get(get_feed))
         .route("/me/hype-moments", post(pin_hype_moment))
         .route("/:id/presence", get(get_presence))
@@ -83,10 +96,7 @@ pub fn account_router() -> Router<AppState> {
 // ─── Own profile ──────────────────────────────────────────────────────────────
 
 /// GET /api/v1/users/me
-async fn get_me(
-    auth: AuthUser,
-    State(state): State<AppState>,
-) -> AppResult<impl IntoResponse> {
+async fn get_me(auth: AuthUser, State(state): State<AppState>) -> AppResult<impl IntoResponse> {
     let row = sqlx::query(
         "SELECT id, username, display_name, avatar_url, banner_url, about_me, location,
                 profile_theme_color, account_type, is_premium, parental_controls_enabled,
@@ -126,12 +136,10 @@ async fn get_presence(
     let online = state.hub.is_online(&user_id);
     let away = online && state.hub.is_away(&user_id);
 
-    let row = sqlx::query(
-        "SELECT last_seen_at FROM users WHERE id = $1 AND deleted_at IS NULL",
-    )
-    .bind(user_id)
-    .fetch_optional(state.db.pool())
-    .await?;
+    let row = sqlx::query("SELECT last_seen_at FROM users WHERE id = $1 AND deleted_at IS NULL")
+        .bind(user_id)
+        .fetch_optional(state.db.pool())
+        .await?;
 
     let last_seen_at: Option<String> = row.as_ref().and_then(|r| {
         r.try_get::<chrono::DateTime<chrono::Utc>, _>("last_seen_at")
@@ -181,14 +189,13 @@ async fn get_profile(
     let following_count: i64 = counts.try_get("following_count").unwrap_or(0);
 
     // Is the calling user following this profile?
-    let is_following: bool = sqlx::query(
-        "SELECT 1 FROM followers WHERE follower_id = $1 AND following_id = $2",
-    )
-    .bind(auth.user_id)
-    .bind(profile_id)
-    .fetch_optional(state.db.pool())
-    .await?
-    .is_some();
+    let is_following: bool =
+        sqlx::query("SELECT 1 FROM followers WHERE follower_id = $1 AND following_id = $2")
+            .bind(auth.user_id)
+            .bind(profile_id)
+            .fetch_optional(state.db.pool())
+            .await?
+            .is_some();
 
     // Are they friends?
     let (uid1, uid2) = if auth.user_id < profile_id {
@@ -206,14 +213,13 @@ async fn get_profile(
     .is_some();
 
     // Hype moment count + recent moments
-    let hype_moment_count: i64 = sqlx::query(
-        "SELECT COUNT(*) FROM hype_moments WHERE user_id = $1",
-    )
-    .bind(profile_id)
-    .fetch_one(state.db.pool())
-    .await
-    .map(|r| r.try_get::<i64, _>(0).unwrap_or(0))
-    .unwrap_or(0);
+    let hype_moment_count: i64 =
+        sqlx::query("SELECT COUNT(*) FROM hype_moments WHERE user_id = $1")
+            .bind(profile_id)
+            .fetch_one(state.db.pool())
+            .await
+            .map(|r| r.try_get::<i64, _>(0).unwrap_or(0))
+            .unwrap_or(0);
 
     let hype_rows = sqlx::query(
         "SELECT id, message_id, type, pinned_at FROM hype_moments
@@ -225,17 +231,19 @@ async fn get_profile(
 
     let hype_moments: Vec<serde_json::Value> = hype_rows
         .iter()
-        .map(|r| serde_json::json!({
-            "id":         r.try_get::<Uuid, _>("id").ok(),
-            "messageId":  r.try_get::<Uuid, _>("message_id").ok(),
-            "type":       r.try_get::<String, _>("type").unwrap_or_default(),
-            "createdAt":  r.try_get::<chrono::DateTime<chrono::Utc>, _>("pinned_at")
-                            .ok().map(|t| t.to_rfc3339()),
-            "content":    null,
-            "mediaUrl":   null,
-            "gradientStart": null,
-            "gradientEnd":   null,
-        }))
+        .map(|r| {
+            serde_json::json!({
+                "id":         r.try_get::<Uuid, _>("id").ok(),
+                "messageId":  r.try_get::<Uuid, _>("message_id").ok(),
+                "type":       r.try_get::<String, _>("type").unwrap_or_default(),
+                "createdAt":  r.try_get::<chrono::DateTime<chrono::Utc>, _>("pinned_at")
+                                .ok().map(|t| t.to_rfc3339()),
+                "content":    null,
+                "mediaUrl":   null,
+                "gradientStart": null,
+                "gradientEnd":   null,
+            })
+        })
         .collect();
 
     // Mutual followers (people who follow both the viewer and the profile)
@@ -257,13 +265,15 @@ async fn get_profile(
 
     let mutual_friends: Vec<serde_json::Value> = mutual_rows
         .iter()
-        .map(|r| serde_json::json!({
-            "id":          r.try_get::<Uuid, _>("id").ok(),
-            "username":    r.try_get::<String, _>("username").unwrap_or_default(),
-            "displayName": r.try_get::<Option<String>, _>("display_name").ok().flatten(),
-            "avatarUrl":   r.try_get::<Option<String>, _>("avatar_url").ok().flatten(),
-            "mutualCount": 0,
-        }))
+        .map(|r| {
+            serde_json::json!({
+                "id":          r.try_get::<Uuid, _>("id").ok(),
+                "username":    r.try_get::<String, _>("username").unwrap_or_default(),
+                "displayName": r.try_get::<Option<String>, _>("display_name").ok().flatten(),
+                "avatarUrl":   r.try_get::<Option<String>, _>("avatar_url").ok().flatten(),
+                "mutualCount": 0,
+            })
+        })
         .collect();
 
     // Top public servers this user is in
@@ -284,12 +294,14 @@ async fn get_profile(
 
     let top_communities: Vec<serde_json::Value> = server_rows
         .iter()
-        .map(|r| serde_json::json!({
-            "id":          r.try_get::<Uuid, _>("id").ok(),
-            "name":        r.try_get::<String, _>("name").unwrap_or_default(),
-            "iconUrl":     r.try_get::<Option<String>, _>("icon_url").ok().flatten(),
-            "memberCount": r.try_get::<i64, _>("member_count").unwrap_or(0),
-        }))
+        .map(|r| {
+            serde_json::json!({
+                "id":          r.try_get::<Uuid, _>("id").ok(),
+                "name":        r.try_get::<String, _>("name").unwrap_or_default(),
+                "iconUrl":     r.try_get::<Option<String>, _>("icon_url").ok().flatten(),
+                "memberCount": r.try_get::<i64, _>("member_count").unwrap_or(0),
+            })
+        })
         .collect();
 
     Ok(Json(serde_json::json!({
@@ -343,13 +355,11 @@ async fn unfollow_user(
     Path(username): Path<String>,
 ) -> AppResult<impl IntoResponse> {
     let target = resolve_user(&username, &state).await?;
-    sqlx::query(
-        "DELETE FROM followers WHERE follower_id = $1 AND following_id = $2",
-    )
-    .bind(auth.user_id)
-    .bind(target)
-    .execute(state.db.pool())
-    .await?;
+    sqlx::query("DELETE FROM followers WHERE follower_id = $1 AND following_id = $2")
+        .bind(auth.user_id)
+        .bind(target)
+        .execute(state.db.pool())
+        .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -364,7 +374,9 @@ pub async fn send_friend_request(
 ) -> AppResult<impl IntoResponse> {
     let target_id = resolve_user(&username, &state).await?;
     if target_id == auth.user_id {
-        return Err(AppError::BadRequest("Cannot send friend request to yourself".into()));
+        return Err(AppError::BadRequest(
+            "Cannot send friend request to yourself".into(),
+        ));
     }
 
     let target_row = sqlx::query(
@@ -375,17 +387,17 @@ pub async fn send_friend_request(
     .await?
     .ok_or_else(|| AppError::NotFound("User not found".into()))?;
 
-    let parental: bool = target_row.try_get("parental_controls_enabled").unwrap_or(false);
+    let parental: bool = target_row
+        .try_get("parental_controls_enabled")
+        .unwrap_or(false);
 
     // Requester display name for the notification detail
-    let requester_name: String = sqlx::query(
-        "SELECT display_name FROM users WHERE id = $1",
-    )
-    .bind(auth.user_id)
-    .fetch_optional(state.db.pool())
-    .await?
-    .and_then(|r| r.try_get::<String, _>("display_name").ok())
-    .unwrap_or_else(|| "Unknown".into());
+    let requester_name: String = sqlx::query("SELECT display_name FROM users WHERE id = $1")
+        .bind(auth.user_id)
+        .fetch_optional(state.db.pool())
+        .await?
+        .and_then(|r| r.try_get::<String, _>("display_name").ok())
+        .unwrap_or_else(|| "Unknown".into());
 
     if parental {
         let req_row = sqlx::query(
@@ -436,10 +448,7 @@ pub async fn send_friend_request(
 // ─── Activity feed ────────────────────────────────────────────────────────────
 
 /// GET /api/v1/users/me/feed — recent hype moments from followed users.
-async fn get_feed(
-    auth: AuthUser,
-    State(state): State<AppState>,
-) -> AppResult<impl IntoResponse> {
+async fn get_feed(auth: AuthUser, State(state): State<AppState>) -> AppResult<impl IntoResponse> {
     let rows = sqlx::query(
         "SELECT hm.id, hm.user_id, hm.message_id, hm.type, hm.pinned_at,
                 u.username, u.display_name, u.avatar_url
@@ -456,19 +465,21 @@ async fn get_feed(
 
     let items: Vec<serde_json::Value> = rows
         .iter()
-        .map(|r| serde_json::json!({
-            "id":         r.try_get::<Uuid, _>("id").ok(),
-            "user_id":    r.try_get::<Uuid, _>("user_id").ok(),
-            "message_id": r.try_get::<Uuid, _>("message_id").ok(),
-            "type":       r.try_get::<String, _>("type").unwrap_or_default(),
-            "pinned_at":  r.try_get::<chrono::DateTime<chrono::Utc>, _>("pinned_at")
-                            .ok().map(|t| t.to_rfc3339()),
-            "author": {
-                "username":     r.try_get::<String, _>("username").unwrap_or_default(),
-                "display_name": r.try_get::<Option<String>, _>("display_name").ok().flatten(),
-                "avatar_url":   r.try_get::<Option<String>, _>("avatar_url").ok().flatten(),
-            },
-        }))
+        .map(|r| {
+            serde_json::json!({
+                "id":         r.try_get::<Uuid, _>("id").ok(),
+                "user_id":    r.try_get::<Uuid, _>("user_id").ok(),
+                "message_id": r.try_get::<Uuid, _>("message_id").ok(),
+                "type":       r.try_get::<String, _>("type").unwrap_or_default(),
+                "pinned_at":  r.try_get::<chrono::DateTime<chrono::Utc>, _>("pinned_at")
+                                .ok().map(|t| t.to_rfc3339()),
+                "author": {
+                    "username":     r.try_get::<String, _>("username").unwrap_or_default(),
+                    "display_name": r.try_get::<Option<String>, _>("display_name").ok().flatten(),
+                    "avatar_url":   r.try_get::<Option<String>, _>("avatar_url").ok().flatten(),
+                },
+            })
+        })
         .collect();
 
     Ok(Json(serde_json::json!({ "items": items })))
@@ -490,7 +501,9 @@ async fn pin_hype_moment(
     Json(body): Json<HypeMomentInput>,
 ) -> AppResult<impl IntoResponse> {
     if !["yap", "clip", "text"].contains(&body.moment_type.as_str()) {
-        return Err(AppError::BadRequest("type must be yap, clip, or text".into()));
+        return Err(AppError::BadRequest(
+            "type must be yap, clip, or text".into(),
+        ));
     }
 
     // Max 9 hype moments per profile
@@ -538,13 +551,15 @@ async fn get_hype_moments(
 
     let moments: Vec<serde_json::Value> = rows
         .iter()
-        .map(|r| serde_json::json!({
-            "id":         r.try_get::<Uuid, _>("id").ok(),
-            "message_id": r.try_get::<Uuid, _>("message_id").ok(),
-            "type":       r.try_get::<String, _>("type").unwrap_or_default(),
-            "pinned_at":  r.try_get::<chrono::DateTime<chrono::Utc>, _>("pinned_at")
-                            .ok().map(|t| t.to_rfc3339()),
-        }))
+        .map(|r| {
+            serde_json::json!({
+                "id":         r.try_get::<Uuid, _>("id").ok(),
+                "message_id": r.try_get::<Uuid, _>("message_id").ok(),
+                "type":       r.try_get::<String, _>("type").unwrap_or_default(),
+                "pinned_at":  r.try_get::<chrono::DateTime<chrono::Utc>, _>("pinned_at")
+                                .ok().map(|t| t.to_rfc3339()),
+            })
+        })
         .collect();
 
     Ok(Json(serde_json::json!({ "moments": moments })))
@@ -572,23 +587,23 @@ async fn update_profile(
     if let Some(ref v) = body.display_name {
         let trimmed = v.trim();
         if trimmed.is_empty() || trimmed.len() > MAX_DISPLAY_NAME {
-            return Err(AppError::BadRequest(
-                format!("display_name must be 1–{MAX_DISPLAY_NAME} characters"),
-            ));
+            return Err(AppError::BadRequest(format!(
+                "display_name must be 1–{MAX_DISPLAY_NAME} characters"
+            )));
         }
     }
     if let Some(ref v) = body.about_me {
         if v.len() > MAX_ABOUT_ME {
-            return Err(AppError::BadRequest(
-                format!("about_me must be at most {MAX_ABOUT_ME} characters"),
-            ));
+            return Err(AppError::BadRequest(format!(
+                "about_me must be at most {MAX_ABOUT_ME} characters"
+            )));
         }
     }
     if let Some(ref v) = body.location {
         if v.len() > MAX_LOCATION {
-            return Err(AppError::BadRequest(
-                format!("location must be at most {MAX_LOCATION} characters"),
-            ));
+            return Err(AppError::BadRequest(format!(
+                "location must be at most {MAX_LOCATION} characters"
+            )));
         }
     }
     if let Some(ref v) = body.profile_theme_color {
@@ -604,9 +619,9 @@ async fn update_profile(
     ] {
         if let Some(ref url) = url_opt {
             if !HTTPS_URL_REGEX.is_match(url) {
-                return Err(AppError::BadRequest(
-                    format!("{field_name} must start with https://"),
-                ));
+                return Err(AppError::BadRequest(format!(
+                    "{field_name} must start with https://"
+                )));
             }
         }
     }
@@ -632,6 +647,64 @@ async fn update_profile(
     .await?;
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// POST /api/v1/users/me/avatar
+///
+/// Multipart form-data:
+///   - file: image file (png/jpg/webp), max 2MB
+async fn upload_avatar(
+    auth: AuthUser,
+    State(state): State<AppState>,
+    multipart: Multipart,
+) -> AppResult<impl IntoResponse> {
+    let image_bytes = parse_image_upload(multipart, MAX_AVATAR_UPLOAD_BYTES).await?;
+    let webp_bytes = transcode_avatar_webp(image_bytes).await?;
+
+    let r2_key = format!("profiles/avatars/{}.webp", auth.user_id);
+    let avatar_url = upload_webp_to_r2(&r2_key, webp_bytes).await?;
+
+    let updated =
+        sqlx::query("UPDATE users SET avatar_url = $2 WHERE id = $1 AND deleted_at IS NULL")
+            .bind(auth.user_id)
+            .bind(&avatar_url)
+            .execute(state.db.pool())
+            .await?;
+
+    if updated.rows_affected() == 0 {
+        return Err(AppError::Unauthorized);
+    }
+
+    Ok(Json(serde_json::json!({ "avatar_url": avatar_url })))
+}
+
+/// POST /api/v1/users/me/banner
+///
+/// Multipart form-data:
+///   - file: image file (png/jpg/webp), max 5MB
+async fn upload_banner(
+    auth: AuthUser,
+    State(state): State<AppState>,
+    multipart: Multipart,
+) -> AppResult<impl IntoResponse> {
+    let image_bytes = parse_image_upload(multipart, MAX_BANNER_UPLOAD_BYTES).await?;
+    let webp_bytes = transcode_banner_webp(image_bytes).await?;
+
+    let r2_key = format!("profiles/banners/{}.webp", auth.user_id);
+    let banner_url = upload_webp_to_r2(&r2_key, webp_bytes).await?;
+
+    let updated =
+        sqlx::query("UPDATE users SET banner_url = $2 WHERE id = $1 AND deleted_at IS NULL")
+            .bind(auth.user_id)
+            .bind(&banner_url)
+            .execute(state.db.pool())
+            .await?;
+
+    if updated.rows_affected() == 0 {
+        return Err(AppError::Unauthorized);
+    }
+
+    Ok(Json(serde_json::json!({ "banner_url": banner_url })))
 }
 
 // ─── Settings: Username change ────────────────────────────────────────────────
@@ -684,14 +757,13 @@ async fn change_username(
     }
 
     // Check uniqueness
-    let taken = sqlx::query(
-        "SELECT 1 FROM users WHERE username = $1 AND id != $2 AND deleted_at IS NULL",
-    )
-    .bind(&new_username)
-    .bind(auth.user_id)
-    .fetch_optional(state.db.pool())
-    .await?
-    .is_some();
+    let taken =
+        sqlx::query("SELECT 1 FROM users WHERE username = $1 AND id != $2 AND deleted_at IS NULL")
+            .bind(&new_username)
+            .bind(auth.user_id)
+            .fetch_optional(state.db.pool())
+            .await?
+            .is_some();
 
     if taken {
         return Err(AppError::Conflict(format!(
@@ -699,13 +771,11 @@ async fn change_username(
         )));
     }
 
-    sqlx::query(
-        "UPDATE users SET username = $2, username_changed_at = NOW() WHERE id = $1",
-    )
-    .bind(auth.user_id)
-    .bind(&new_username)
-    .execute(state.db.pool())
-    .await?;
+    sqlx::query("UPDATE users SET username = $2, username_changed_at = NOW() WHERE id = $1")
+        .bind(auth.user_id)
+        .bind(&new_username)
+        .execute(state.db.pool())
+        .await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -772,7 +842,8 @@ async fn update_privacy(
     if let Some(ref v) = body.friend_request_permission {
         if !valid_fr.contains(&v.as_str()) {
             return Err(AppError::BadRequest(
-                "friend_request_permission must be one of: everyone, friends_of_friends, nobody".into(),
+                "friend_request_permission must be one of: everyone, friends_of_friends, nobody"
+                    .into(),
             ));
         }
     }
@@ -857,7 +928,9 @@ async fn update_appearance(
     }
     if let Some(fs) = body.font_size {
         if !(12..=18).contains(&fs) {
-            return Err(AppError::BadRequest("fontSize must be between 12 and 18".into()));
+            return Err(AppError::BadRequest(
+                "fontSize must be between 12 and 18".into(),
+            ));
         }
     }
     if let Some(ref d) = body.density {
@@ -942,16 +1015,16 @@ async fn update_notifications(
     Json(body): Json<serde_json::Value>,
 ) -> AppResult<impl IntoResponse> {
     // Parse all fields manually to handle the camelCase mapping cleanly
-    let push_enabled        = body.get("pushEnabled").and_then(|v| v.as_bool());
-    let notify_dms          = body.get("notifyDMs").and_then(|v| v.as_bool());
-    let notify_mentions     = body.get("notifyMentions").and_then(|v| v.as_bool());
-    let notify_fr           = body.get("notifyFriendRequests").and_then(|v| v.as_bool());
-    let notify_srv          = body.get("notifyServerActivity").and_then(|v| v.as_bool());
-    let notify_yap          = body.get("notifyYapRecordings").and_then(|v| v.as_bool());
-    let dnd_enabled         = body.get("dndEnabled").and_then(|v| v.as_bool());
+    let push_enabled = body.get("pushEnabled").and_then(|v| v.as_bool());
+    let notify_dms = body.get("notifyDMs").and_then(|v| v.as_bool());
+    let notify_mentions = body.get("notifyMentions").and_then(|v| v.as_bool());
+    let notify_fr = body.get("notifyFriendRequests").and_then(|v| v.as_bool());
+    let notify_srv = body.get("notifyServerActivity").and_then(|v| v.as_bool());
+    let notify_yap = body.get("notifyYapRecordings").and_then(|v| v.as_bool());
+    let dnd_enabled = body.get("dndEnabled").and_then(|v| v.as_bool());
     // dndStart / dndEnd are either a "HH:MM" string or null (to clear)
     let dnd_start: Option<Option<&str>> = body.get("dndStart").map(|v| v.as_str());
-    let dnd_end: Option<Option<&str>>   = body.get("dndEnd").map(|v| v.as_str());
+    let dnd_end: Option<Option<&str>> = body.get("dndEnd").map(|v| v.as_str());
 
     sqlx::query(
         "INSERT INTO user_notification_settings
@@ -994,7 +1067,7 @@ async fn update_notifications(
 
 /// GET /api/v1/account/data-export
 ///
-/// Returns a JSON document with the user's non-encrypted account data.
+/// Returns a ZIP containing a JSON document with the user's non-encrypted account data.
 /// Message *ciphertext* is intentionally excluded — it is client-side only.
 async fn gdpr_export(
     auth: AuthUser,
@@ -1085,15 +1158,37 @@ async fn gdpr_export(
 
     let json_bytes = serde_json::to_vec_pretty(&export)
         .map_err(|e| AppError::Internal(anyhow::anyhow!("Serialization failed: {e}")))?;
+    let zip_bytes = build_data_export_zip(&json_bytes)?;
 
     Ok((
         StatusCode::OK,
         [
-            (header::CONTENT_TYPE, "application/json"),
-            (header::CONTENT_DISPOSITION, "attachment; filename=\"yapper-data-export.json\""),
+            (header::CONTENT_TYPE, "application/zip"),
+            (
+                header::CONTENT_DISPOSITION,
+                "attachment; filename=\"yapper-data-export.zip\"",
+            ),
         ],
-        json_bytes,
+        zip_bytes,
     ))
+}
+
+fn build_data_export_zip(json_bytes: &[u8]) -> AppResult<Vec<u8>> {
+    use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
+
+    let writer = Cursor::new(Vec::<u8>::new());
+    let mut zip = ZipWriter::new(writer);
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+
+    zip.start_file("yapper-data-export.json", options)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("ZIP start_file failed: {e}")))?;
+    zip.write_all(json_bytes)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("ZIP write failed: {e}")))?;
+
+    let writer = zip
+        .finish()
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("ZIP finalize failed: {e}")))?;
+    Ok(writer.into_inner())
 }
 
 // ─── Account: Soft delete ─────────────────────────────────────────────────────
@@ -1107,15 +1202,16 @@ async fn delete_account(
     State(state): State<AppState>,
 ) -> AppResult<impl IntoResponse> {
     // Soft-delete the user
-    let result = sqlx::query(
-        "UPDATE users SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL",
-    )
-    .bind(auth.user_id)
-    .execute(state.db.pool())
-    .await?;
+    let result =
+        sqlx::query("UPDATE users SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL")
+            .bind(auth.user_id)
+            .execute(state.db.pool())
+            .await?;
 
     if result.rows_affected() == 0 {
-        return Err(AppError::NotFound("Account not found or already deleted".into()));
+        return Err(AppError::NotFound(
+            "Account not found or already deleted".into(),
+        ));
     }
 
     // Invalidate all sessions immediately
@@ -1142,6 +1238,132 @@ async fn resolve_user(username: &str, state: &AppState) -> AppResult<Uuid> {
         .ok_or_else(|| AppError::NotFound(format!("User @{username} not found")))?
         .try_get("id")
         .map_err(AppError::Database)
+}
+
+/// Parse multipart upload, extracting one `file` field and validating size/format.
+async fn parse_image_upload(mut multipart: Multipart, max_bytes: usize) -> AppResult<Vec<u8>> {
+    let mut file_bytes: Option<Vec<u8>> = None;
+
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| AppError::BadRequest(format!("Multipart parse error: {e}")))?
+    {
+        if field.name() != Some("file") {
+            continue;
+        }
+
+        if file_bytes.is_some() {
+            return Err(AppError::BadRequest(
+                "Only one `file` field is allowed".into(),
+            ));
+        }
+
+        if let Some(content_type) = field.content_type() {
+            if !is_supported_image_content_type(content_type) {
+                return Err(AppError::BadRequest(
+                    "Unsupported image content type (allowed: image/png, image/jpeg, image/webp)"
+                        .into(),
+                ));
+            }
+        }
+
+        let bytes = field
+            .bytes()
+            .await
+            .map_err(|e| AppError::BadRequest(format!("Failed reading file field: {e}")))?;
+
+        if bytes.is_empty() {
+            return Err(AppError::BadRequest("Image file cannot be empty".into()));
+        }
+        if bytes.len() > max_bytes {
+            return Err(AppError::BadRequest(format!(
+                "Image exceeds max size of {} KB",
+                max_bytes / 1024
+            )));
+        }
+
+        file_bytes = Some(bytes.to_vec());
+    }
+
+    let raw = file_bytes.ok_or_else(|| AppError::BadRequest("Missing `file` field".into()))?;
+    image::guess_format(&raw)
+        .map_err(|_| AppError::BadRequest("Unsupported image format".into()))?;
+    Ok(raw)
+}
+
+fn is_supported_image_content_type(content_type: &str) -> bool {
+    matches!(
+        content_type,
+        "image/png" | "image/jpeg" | "image/jpg" | "image/webp"
+    )
+}
+
+async fn transcode_avatar_webp(raw_bytes: Vec<u8>) -> AppResult<Vec<u8>> {
+    tokio::task::spawn_blocking(move || -> AppResult<Vec<u8>> {
+        let img = image::load_from_memory(&raw_bytes)
+            .map_err(|e| AppError::BadRequest(format!("Unsupported image format: {e}")))?;
+
+        let (width, height) = img.dimensions();
+        let side = width.min(height);
+        let x = (width.saturating_sub(side)) / 2;
+        let y = (height.saturating_sub(side)) / 2;
+        let cropped = img.crop_imm(x, y, side, side);
+        let resized = cropped.resize_exact(AVATAR_SIZE, AVATAR_SIZE, FilterType::Lanczos3);
+
+        let mut buf = Cursor::new(Vec::new());
+        resized
+            .write_to(&mut buf, ImageFormat::WebP)
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("WebP encode failed: {e}")))?;
+        Ok(buf.into_inner())
+    })
+    .await
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("Image task failed: {e}")))?
+}
+
+async fn transcode_banner_webp(raw_bytes: Vec<u8>) -> AppResult<Vec<u8>> {
+    tokio::task::spawn_blocking(move || -> AppResult<Vec<u8>> {
+        let img = image::load_from_memory(&raw_bytes)
+            .map_err(|e| AppError::BadRequest(format!("Unsupported image format: {e}")))?;
+
+        let resized = img.resize_to_fill(BANNER_WIDTH, BANNER_HEIGHT, FilterType::Lanczos3);
+        let mut buf = Cursor::new(Vec::new());
+        resized
+            .write_to(&mut buf, ImageFormat::WebP)
+            .map_err(|e| AppError::Internal(anyhow::anyhow!("WebP encode failed: {e}")))?;
+        Ok(buf.into_inner())
+    })
+    .await
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("Image task failed: {e}")))?
+}
+
+async fn upload_webp_to_r2(r2_key: &str, webp_bytes: Vec<u8>) -> AppResult<String> {
+    use aws_sdk_s3::primitives::ByteStream;
+
+    let client = crate::media::r2::r2_client_opt();
+    let bucket = crate::media::r2::r2_bucket_opt();
+
+    let (Some(client), Some(bucket)) = (client, bucket) else {
+        tracing::warn!(r2_key, "R2 not configured; returning stub URL");
+        return Ok(format!("https://cdn.example.com/{r2_key}"));
+    };
+
+    client
+        .put_object()
+        .bucket(bucket)
+        .key(r2_key)
+        .content_type("image/webp")
+        .body(ByteStream::from(webp_bytes))
+        .send()
+        .await
+        .map_err(|e| {
+            tracing::error!("R2 put_object error: {e}");
+            AppError::Internal(anyhow::anyhow!("Failed to upload image to R2: {e}"))
+        })?;
+
+    let public_base =
+        std::env::var("R2_PUBLIC_URL").unwrap_or_else(|_| format!("https://pub.r2.dev/{bucket}"));
+    Ok(format!("{public_base}/{r2_key}"))
 }
 
 /// Persist a parent_notification row and push a real-time WS event to the parent.
@@ -1184,7 +1406,161 @@ pub async fn notify_parent(
         "reference_id": reference_id,
         "detail":       detail,
     });
-    state
-        .hub
-        .send_to_user(&parent_id, crate::hub::WsOutbound::ParentNotification { payload });
+    state.hub.send_to_user(
+        &parent_id,
+        crate::hub::WsOutbound::ParentNotification { payload },
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{body::Body, extract::FromRequest, http::Request};
+    use image::{DynamicImage, Rgba, RgbaImage};
+    use std::io::{Cursor, Read};
+
+    fn tiny_png_bytes() -> Vec<u8> {
+        let img = RgbaImage::from_pixel(2, 2, Rgba([255, 0, 0, 255]));
+        let mut buf = Cursor::new(Vec::new());
+        DynamicImage::ImageRgba8(img)
+            .write_to(&mut buf, ImageFormat::Png)
+            .expect("png encode should succeed");
+        buf.into_inner()
+    }
+
+    fn multipart_with_file(
+        boundary: &str,
+        field_name: &str,
+        filename: &str,
+        content_type: &str,
+        bytes: &[u8],
+    ) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend(format!("--{boundary}\r\n").as_bytes());
+        body.extend(
+            format!(
+                "Content-Disposition: form-data; name=\"{field_name}\"; filename=\"{filename}\"\r\n"
+            )
+            .as_bytes(),
+        );
+        body.extend(format!("Content-Type: {content_type}\r\n\r\n").as_bytes());
+        body.extend(bytes);
+        body.extend(b"\r\n");
+        body.extend(format!("--{boundary}--\r\n").as_bytes());
+        body
+    }
+
+    fn multipart_without_file(boundary: &str) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend(format!("--{boundary}\r\n").as_bytes());
+        body.extend(b"Content-Disposition: form-data; name=\"name\"\r\n\r\n");
+        body.extend(b"profile-image");
+        body.extend(b"\r\n");
+        body.extend(format!("--{boundary}--\r\n").as_bytes());
+        body
+    }
+
+    async fn multipart_from_body(body: Vec<u8>, boundary: &str) -> Multipart {
+        let request = Request::builder()
+            .method("POST")
+            .header(
+                "content-type",
+                format!("multipart/form-data; boundary={boundary}"),
+            )
+            .body(Body::from(body))
+            .expect("multipart request build should succeed");
+
+        Multipart::from_request(request, &())
+            .await
+            .expect("multipart extraction should succeed")
+    }
+
+    #[tokio::test]
+    async fn parse_image_upload_success_path() {
+        let boundary = "X-BOUNDARY-OK";
+        let png = tiny_png_bytes();
+        let body = multipart_with_file(boundary, "file", "avatar.png", "image/png", &png);
+        let multipart = multipart_from_body(body, boundary).await;
+
+        let parsed = parse_image_upload(multipart, MAX_AVATAR_UPLOAD_BYTES)
+            .await
+            .expect("valid png upload should parse");
+
+        assert_eq!(parsed, png);
+    }
+
+    #[tokio::test]
+    async fn parse_image_upload_rejects_invalid_content_type() {
+        let boundary = "X-BOUNDARY-CT";
+        let png = tiny_png_bytes();
+        let body = multipart_with_file(boundary, "file", "avatar.png", "text/plain", &png);
+        let multipart = multipart_from_body(body, boundary).await;
+
+        let err = parse_image_upload(multipart, MAX_AVATAR_UPLOAD_BYTES)
+            .await
+            .expect_err("invalid content type must fail");
+
+        match err {
+            AppError::BadRequest(msg) => {
+                assert!(msg.contains("Unsupported image content type"));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn parse_image_upload_rejects_oversize_file() {
+        let boundary = "X-BOUNDARY-SIZE";
+        let huge = vec![0u8; 1025];
+        let body = multipart_with_file(boundary, "file", "avatar.png", "image/png", &huge);
+        let multipart = multipart_from_body(body, boundary).await;
+
+        let err = parse_image_upload(multipart, 1024)
+            .await
+            .expect_err("oversize file must fail");
+
+        match err {
+            AppError::BadRequest(msg) => {
+                assert!(msg.contains("Image exceeds max size"));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn parse_image_upload_rejects_missing_file_field() {
+        let boundary = "X-BOUNDARY-MISSING";
+        let body = multipart_without_file(boundary);
+        let multipart = multipart_from_body(body, boundary).await;
+
+        let err = parse_image_upload(multipart, MAX_AVATAR_UPLOAD_BYTES)
+            .await
+            .expect_err("missing file field must fail");
+
+        match err {
+            AppError::BadRequest(msg) => {
+                assert!(msg.contains("Missing `file` field"));
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn build_data_export_zip_contains_expected_json_file() {
+        let payload = br#"{"hello":"world"}"#;
+        let zip_bytes =
+            build_data_export_zip(payload).expect("zip creation for export payload should succeed");
+
+        let reader = Cursor::new(zip_bytes);
+        let mut archive =
+            zip::ZipArchive::new(reader).expect("zip archive should be readable after creation");
+        let mut file = archive
+            .by_name("yapper-data-export.json")
+            .expect("zip should contain the export json entry");
+
+        let mut extracted = Vec::new();
+        file.read_to_end(&mut extracted)
+            .expect("zip entry read should succeed");
+        assert_eq!(extracted, payload);
+    }
 }

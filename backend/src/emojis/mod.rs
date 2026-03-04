@@ -14,7 +14,6 @@
  *   5. Upload to R2 at  emojis/servers/{server_id}/{emoji_id}.webp
  *   6. Insert DB row + broadcast emoji_added WS event to all server members
  */
-
 use axum::{
     extract::{Multipart, Path, State},
     http::StatusCode,
@@ -47,8 +46,7 @@ const EMOJI_LIMIT_FREE: i64 = 50;
 /// Premium-owner servers may have this many emojis.
 const EMOJI_LIMIT_PREMIUM: i64 = 100;
 
-static EMOJI_NAME_REGEX: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^[a-z0-9_]{2,32}$").unwrap());
+static EMOJI_NAME_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^[a-z0-9_]{2,32}$").unwrap());
 
 // ─── Router ───────────────────────────────────────────────────────────────────
 
@@ -120,9 +118,11 @@ async fn upload_emoji(
     let mut name_opt: Option<String> = None;
     let mut file_bytes: Option<Vec<u8>> = None;
 
-    while let Some(field) = multipart.next_field().await.map_err(|e| {
-        AppError::BadRequest(format!("Multipart error: {e}"))
-    })? {
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| AppError::BadRequest(format!("Multipart error: {e}")))?
+    {
         match field.name() {
             Some("name") => {
                 let text = field
@@ -160,14 +160,12 @@ async fn upload_emoji(
     }
 
     // ── Check name uniqueness within server ───────────────────────────────────
-    let name_taken = sqlx::query(
-        "SELECT 1 FROM server_emojis WHERE server_id = $1 AND name = $2",
-    )
-    .bind(server_id)
-    .bind(&name)
-    .fetch_optional(state.db.pool())
-    .await?
-    .is_some();
+    let name_taken = sqlx::query("SELECT 1 FROM server_emojis WHERE server_id = $1 AND name = $2")
+        .bind(server_id)
+        .bind(&name)
+        .fetch_optional(state.db.pool())
+        .await?
+        .is_some();
 
     if name_taken {
         return Err(AppError::Conflict(format!(
@@ -177,13 +175,12 @@ async fn upload_emoji(
 
     // ── Enforce per-server emoji limit ────────────────────────────────────────
     let limit = emoji_limit_for_server(server_id, &state).await?;
-    let current_count: i64 =
-        sqlx::query("SELECT COUNT(*) FROM server_emojis WHERE server_id = $1")
-            .bind(server_id)
-            .fetch_one(state.db.pool())
-            .await
-            .map(|r| r.try_get::<i64, _>(0).unwrap_or(0))
-            .unwrap_or(0);
+    let current_count: i64 = sqlx::query("SELECT COUNT(*) FROM server_emojis WHERE server_id = $1")
+        .bind(server_id)
+        .fetch_one(state.db.pool())
+        .await
+        .map(|r| r.try_get::<i64, _>(0).unwrap_or(0))
+        .unwrap_or(0);
 
     if current_count >= limit {
         return Err(AppError::BadRequest(format!(
@@ -308,7 +305,10 @@ async fn upload_webp_to_r2(r2_key: &str, webp_bytes: Vec<u8>) -> AppResult<Strin
 
     let (Some(client), Some(bucket)) = (client, bucket) else {
         // R2 not configured — return a placeholder URL for local dev
-        tracing::warn!(r2_key, "R2 not configured; returning stub URL for emoji upload");
+        tracing::warn!(
+            r2_key,
+            "R2 not configured; returning stub URL for emoji upload"
+        );
         return Ok(format!("https://cdn.example.com/{r2_key}"));
     };
 
@@ -326,8 +326,8 @@ async fn upload_webp_to_r2(r2_key: &str, webp_bytes: Vec<u8>) -> AppResult<Strin
         })?;
 
     // Construct public URL from the R2 public custom domain if set, else fall back to bucket URL
-    let public_base = std::env::var("R2_PUBLIC_URL")
-        .unwrap_or_else(|_| format!("https://pub.r2.dev/{bucket}"));
+    let public_base =
+        std::env::var("R2_PUBLIC_URL").unwrap_or_else(|_| format!("https://pub.r2.dev/{bucket}"));
     Ok(format!("{public_base}/{r2_key}"))
 }
 
@@ -353,19 +353,14 @@ async fn delete_from_r2(r2_key: &str) -> anyhow::Result<()> {
 
 // ─── Authorisation helpers ────────────────────────────────────────────────────
 
-async fn require_server_member(
-    user_id: Uuid,
-    server_id: Uuid,
-    state: &AppState,
-) -> AppResult<()> {
-    let is_member = sqlx::query(
-        "SELECT 1 FROM server_memberships WHERE user_id = $1 AND server_id = $2",
-    )
-    .bind(user_id)
-    .bind(server_id)
-    .fetch_optional(state.db.pool())
-    .await?
-    .is_some();
+async fn require_server_member(user_id: Uuid, server_id: Uuid, state: &AppState) -> AppResult<()> {
+    let is_member =
+        sqlx::query("SELECT 1 FROM server_memberships WHERE user_id = $1 AND server_id = $2")
+            .bind(user_id)
+            .bind(server_id)
+            .fetch_optional(state.db.pool())
+            .await?
+            .is_some();
 
     if !is_member {
         return Err(AppError::Forbidden);
@@ -373,19 +368,14 @@ async fn require_server_member(
     Ok(())
 }
 
-async fn require_server_admin(
-    user_id: Uuid,
-    server_id: Uuid,
-    state: &AppState,
-) -> AppResult<()> {
-    let row = sqlx::query(
-        "SELECT role FROM server_memberships WHERE user_id = $1 AND server_id = $2",
-    )
-    .bind(user_id)
-    .bind(server_id)
-    .fetch_optional(state.db.pool())
-    .await?
-    .ok_or(AppError::Forbidden)?;
+async fn require_server_admin(user_id: Uuid, server_id: Uuid, state: &AppState) -> AppResult<()> {
+    let row =
+        sqlx::query("SELECT role FROM server_memberships WHERE user_id = $1 AND server_id = $2")
+            .bind(user_id)
+            .bind(server_id)
+            .fetch_optional(state.db.pool())
+            .await?
+            .ok_or(AppError::Forbidden)?;
 
     let role: String = row.try_get("role").unwrap_or_default();
     if !matches!(role.as_str(), "owner" | "admin") {
@@ -425,12 +415,10 @@ async fn broadcast_to_server_members(
     payload: serde_json::Value,
     state: &AppState,
 ) {
-    let rows = sqlx::query(
-        "SELECT user_id FROM server_memberships WHERE server_id = $1 LIMIT 500",
-    )
-    .bind(server_id)
-    .fetch_all(state.db.pool())
-    .await;
+    let rows = sqlx::query("SELECT user_id FROM server_memberships WHERE server_id = $1 LIMIT 500")
+        .bind(server_id)
+        .fetch_all(state.db.pool())
+        .await;
 
     let Ok(rows) = rows else { return };
 
@@ -481,11 +469,7 @@ mod tests {
     #[test]
     fn webp_conversion_produces_correct_dimensions() {
         // Create a small test PNG (8×8 red square) using image crate
-        let img = image::RgbaImage::from_pixel(
-            8,
-            8,
-            image::Rgba([255u8, 0, 0, 255]),
-        );
+        let img = image::RgbaImage::from_pixel(8, 8, image::Rgba([255u8, 0, 0, 255]));
         let mut buf = Cursor::new(Vec::new());
         image::DynamicImage::ImageRgba8(img)
             .resize_exact(EMOJI_SIZE, EMOJI_SIZE, FilterType::Lanczos3)

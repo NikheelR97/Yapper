@@ -11,7 +11,6 @@
  *   - DB stores only SHA-256(raw_token) in bot_tokens.token_hash
  *   - Bot authenticates to the WS/API using the raw token (hashed and compared server-side)
  */
-
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -49,10 +48,7 @@ pub fn router() -> Router<AppState> {
 // ─── List bots ────────────────────────────────────────────────────────────────
 
 /// GET /api/v1/bots
-async fn list_bots(
-    auth: AuthUser,
-    State(state): State<AppState>,
-) -> AppResult<impl IntoResponse> {
+async fn list_bots(auth: AuthUser, State(state): State<AppState>) -> AppResult<impl IntoResponse> {
     let rows = sqlx::query(
         "SELECT id, name, description, avatar_url, discord_bot_id, created_at
          FROM bot_applications
@@ -156,13 +152,11 @@ async fn import_discord_bot(
     let bot_name = format!("{bot_username} (Discord)");
 
     // Check if this Discord bot is already imported
-    let already_imported = sqlx::query(
-        "SELECT 1 FROM bot_applications WHERE discord_bot_id = $1",
-    )
-    .bind(&discord_bot_id)
-    .fetch_optional(state.db.pool())
-    .await?
-    .is_some();
+    let already_imported = sqlx::query("SELECT 1 FROM bot_applications WHERE discord_bot_id = $1")
+        .bind(&discord_bot_id)
+        .fetch_optional(state.db.pool())
+        .await?
+        .is_some();
 
     if already_imported {
         return Err(AppError::Conflict(
@@ -175,7 +169,10 @@ async fn import_discord_bot(
     let bot_email = format!("bot-{bot_user_id}@bots.yapper.internal");
     let bot_display = bot_username.clone();
     // Bot usernames: prefix with "bot_" and truncate to fit our 32-char limit
-    let safe_username = format!("bot_{}", &bot_username.to_lowercase().replace(['-', '.', ' '], "_"));
+    let safe_username = format!(
+        "bot_{}",
+        &bot_username.to_lowercase().replace(['-', '.', ' '], "_")
+    );
     let safe_username = safe_username.chars().take(32).collect::<String>();
 
     sqlx::query(
@@ -215,24 +212,23 @@ async fn import_discord_bot(
     getrandom::getrandom(&mut raw_bytes)
         .map_err(|e| AppError::Internal(anyhow::anyhow!("RNG error: {e}")))?;
     // Encode as hex without the hex crate (same pattern as oauth.rs sha256_hex)
-    let raw_token: String = raw_bytes
-        .iter()
-        .fold(String::with_capacity(TOKEN_BYTES * 2), |mut s, b| {
-            use std::fmt::Write;
-            write!(s, "{b:02x}").unwrap();
-            s
-        });
+    let raw_token: String =
+        raw_bytes
+            .iter()
+            .fold(String::with_capacity(TOKEN_BYTES * 2), |mut s, b| {
+                use std::fmt::Write;
+                write!(s, "{b:02x}").unwrap();
+                s
+            });
 
     // Store SHA-256 of the raw token — never store the plaintext
     let token_hash = format!("{:x}", Sha256::digest(raw_token.as_bytes()));
 
-    sqlx::query(
-        "INSERT INTO bot_tokens (bot_app_id, token_hash) VALUES ($1, $2)",
-    )
-    .bind(app_id)
-    .bind(&token_hash)
-    .execute(state.db.pool())
-    .await?;
+    sqlx::query("INSERT INTO bot_tokens (bot_app_id, token_hash) VALUES ($1, $2)")
+        .bind(app_id)
+        .bind(&token_hash)
+        .execute(state.db.pool())
+        .await?;
 
     tracing::info!(
         developer_id = %auth.user_id,
@@ -266,13 +262,12 @@ async fn delete_bot(
     State(state): State<AppState>,
     Path(app_id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
-    let result = sqlx::query(
-        "DELETE FROM bot_applications WHERE id = $1 AND developer_user_id = $2",
-    )
-    .bind(app_id)
-    .bind(auth.user_id)
-    .execute(state.db.pool())
-    .await?;
+    let result =
+        sqlx::query("DELETE FROM bot_applications WHERE id = $1 AND developer_user_id = $2")
+            .bind(app_id)
+            .bind(auth.user_id)
+            .execute(state.db.pool())
+            .await?;
 
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound(

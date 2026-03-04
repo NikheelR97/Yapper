@@ -11,7 +11,6 @@
  *   PATCH /server-joins/:id/approve             — approve pending server join
  *   PATCH /server-joins/:id/decline             — decline pending server join
  */
-
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -33,8 +32,14 @@ pub fn router() -> Router<AppState> {
         .route("/children", post(create_child).get(list_children))
         .route("/children/:child_id/overview", get(get_child_overview))
         .route("/children/:child_id/notifications", get(get_notifications))
-        .route("/friend-requests/:id/approve", patch(approve_friend_request))
-        .route("/friend-requests/:id/decline", patch(decline_friend_request))
+        .route(
+            "/friend-requests/:id/approve",
+            patch(approve_friend_request),
+        )
+        .route(
+            "/friend-requests/:id/decline",
+            patch(decline_friend_request),
+        )
         .route("/server-joins/:id/approve", patch(approve_server_join))
         .route("/server-joins/:id/decline", patch(decline_server_join))
 }
@@ -57,13 +62,12 @@ async fn create_child(
     Json(body): Json<CreateChildInput>,
 ) -> AppResult<impl IntoResponse> {
     // Caller must be standard or parent
-    let caller_row = sqlx::query(
-        "SELECT account_type FROM users WHERE id = $1 AND deleted_at IS NULL",
-    )
-    .bind(auth.user_id)
-    .fetch_optional(state.db.pool())
-    .await?
-    .ok_or_else(|| AppError::NotFound("User not found".into()))?;
+    let caller_row =
+        sqlx::query("SELECT account_type FROM users WHERE id = $1 AND deleted_at IS NULL")
+            .bind(auth.user_id)
+            .fetch_optional(state.db.pool())
+            .await?
+            .ok_or_else(|| AppError::NotFound("User not found".into()))?;
 
     let account_type: String = caller_row.try_get("account_type")?;
     if account_type == "child" || account_type == "bot" {
@@ -71,9 +75,10 @@ async fn create_child(
     }
 
     // Validate DOB — must be under 18
-    let dob: chrono::NaiveDate = body.date_of_birth.parse().map_err(|_| {
-        AppError::BadRequest("Invalid date_of_birth — use YYYY-MM-DD".into())
-    })?;
+    let dob: chrono::NaiveDate = body
+        .date_of_birth
+        .parse()
+        .map_err(|_| AppError::BadRequest("Invalid date_of_birth — use YYYY-MM-DD".into()))?;
     let today = chrono::Utc::now().date_naive();
     let age_years = today.years_since(dob).unwrap_or(99);
     if age_years >= 18 {
@@ -229,12 +234,14 @@ async fn get_child_overview(
 
     let servers: Vec<serde_json::Value> = server_rows
         .iter()
-        .map(|r| serde_json::json!({
-            "id":       r.try_get::<Uuid, _>("id").ok(),
-            "name":     r.try_get::<String, _>("name").unwrap_or_default(),
-            "slug":     r.try_get::<String, _>("slug").unwrap_or_default(),
-            "icon_url": r.try_get::<Option<String>, _>("icon_url").ok().flatten(),
-        }))
+        .map(|r| {
+            serde_json::json!({
+                "id":       r.try_get::<Uuid, _>("id").ok(),
+                "name":     r.try_get::<String, _>("name").unwrap_or_default(),
+                "slug":     r.try_get::<String, _>("slug").unwrap_or_default(),
+                "icon_url": r.try_get::<Option<String>, _>("icon_url").ok().flatten(),
+            })
+        })
         .collect();
 
     Ok(Json(serde_json::json!({
@@ -275,14 +282,16 @@ async fn get_notifications(
 
     let friend_requests: Vec<serde_json::Value> = friend_rows
         .iter()
-        .map(|r| serde_json::json!({
-            "id":             r.try_get::<Uuid, _>("id").ok(),
-            "requester_id":   r.try_get::<Uuid, _>("requester_id").ok(),
-            "requester_name": r.try_get::<String, _>("requester_name").unwrap_or_default(),
-            "status":         r.try_get::<String, _>("status").unwrap_or_default(),
-            "created_at":     r.try_get::<chrono::DateTime<chrono::Utc>, _>("created_at")
-                                .ok().map(|t| t.to_rfc3339()),
-        }))
+        .map(|r| {
+            serde_json::json!({
+                "id":             r.try_get::<Uuid, _>("id").ok(),
+                "requester_id":   r.try_get::<Uuid, _>("requester_id").ok(),
+                "requester_name": r.try_get::<String, _>("requester_name").unwrap_or_default(),
+                "status":         r.try_get::<String, _>("status").unwrap_or_default(),
+                "created_at":     r.try_get::<chrono::DateTime<chrono::Utc>, _>("created_at")
+                                    .ok().map(|t| t.to_rfc3339()),
+            })
+        })
         .collect();
 
     let join_rows = sqlx::query(
@@ -297,15 +306,17 @@ async fn get_notifications(
 
     let server_joins: Vec<serde_json::Value> = join_rows
         .iter()
-        .map(|r| serde_json::json!({
-            "id":          r.try_get::<Uuid, _>("id").ok(),
-            "server_id":   r.try_get::<Uuid, _>("server_id").ok(),
-            "server_name": r.try_get::<String, _>("server_name").unwrap_or_default(),
-            "invite_code": r.try_get::<Option<String>, _>("invite_code").ok().flatten(),
-            "status":      r.try_get::<String, _>("status").unwrap_or_default(),
-            "created_at":  r.try_get::<chrono::DateTime<chrono::Utc>, _>("created_at")
-                             .ok().map(|t| t.to_rfc3339()),
-        }))
+        .map(|r| {
+            serde_json::json!({
+                "id":          r.try_get::<Uuid, _>("id").ok(),
+                "server_id":   r.try_get::<Uuid, _>("server_id").ok(),
+                "server_name": r.try_get::<String, _>("server_name").unwrap_or_default(),
+                "invite_code": r.try_get::<Option<String>, _>("invite_code").ok().flatten(),
+                "status":      r.try_get::<String, _>("status").unwrap_or_default(),
+                "created_at":  r.try_get::<chrono::DateTime<chrono::Utc>, _>("created_at")
+                                 .ok().map(|t| t.to_rfc3339()),
+            })
+        })
         .collect();
 
     // Mark as read
@@ -412,7 +423,14 @@ async fn approve_server_join(
     .execute(state.db.pool())
     .await?;
 
-    audit(auth.user_id, child_id, "approve_server_join", join_id, &state).await;
+    audit(
+        auth.user_id,
+        child_id,
+        "approve_server_join",
+        join_id,
+        &state,
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -432,7 +450,14 @@ async fn decline_server_join(
     .execute(state.db.pool())
     .await?;
 
-    audit(auth.user_id, child_id, "decline_server_join", join_id, &state).await;
+    audit(
+        auth.user_id,
+        child_id,
+        "decline_server_join",
+        join_id,
+        &state,
+    )
+    .await;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -501,7 +526,13 @@ async fn fetch_server_join(
     Ok(row)
 }
 
-async fn audit(parent_id: Uuid, child_id: Uuid, action: &str, reference_id: Uuid, state: &AppState) {
+async fn audit(
+    parent_id: Uuid,
+    child_id: Uuid,
+    action: &str,
+    reference_id: Uuid,
+    state: &AppState,
+) {
     let _ = sqlx::query(
         "INSERT INTO parental_action_audit (parent_user_id, child_user_id, action, reference_id)
          VALUES ($1, $2, $3, $4)",

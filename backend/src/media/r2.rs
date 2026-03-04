@@ -1,15 +1,10 @@
 use anyhow::anyhow;
 use aws_config::{BehaviorVersion, Region};
-use aws_sdk_s3::{
-    config::Credentials,
-    presigning::PresigningConfig,
-    Client,
-};
+use aws_sdk_s3::{config::Credentials, presigning::PresigningConfig, Client};
 use std::{sync::OnceLock, time::Duration};
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
-
 
 /// Max pre-signed URL validity: 15 minutes.
 const PRESIGN_TTL_SECS: u64 = 15 * 60;
@@ -30,14 +25,11 @@ static R2_BUCKET: OnceLock<String> = OnceLock::new();
 ///   - `R2_SECRET_ACCESS_KEY`
 ///   - `R2_BUCKET_NAME`
 pub async fn init_r2() {
-    let account_id =
-        std::env::var("R2_ACCOUNT_ID").expect("R2_ACCOUNT_ID must be set");
-    let access_key =
-        std::env::var("R2_ACCESS_KEY_ID").expect("R2_ACCESS_KEY_ID must be set");
+    let account_id = std::env::var("R2_ACCOUNT_ID").expect("R2_ACCOUNT_ID must be set");
+    let access_key = std::env::var("R2_ACCESS_KEY_ID").expect("R2_ACCESS_KEY_ID must be set");
     let secret_key =
         std::env::var("R2_SECRET_ACCESS_KEY").expect("R2_SECRET_ACCESS_KEY must be set");
-    let bucket =
-        std::env::var("R2_BUCKET_NAME").unwrap_or_else(|_| "yapper-media".to_string());
+    let bucket = std::env::var("R2_BUCKET_NAME").unwrap_or_else(|_| "yapper-media".to_string());
 
     let endpoint = format!("https://{account_id}.r2.cloudflarestorage.com");
 
@@ -56,11 +48,15 @@ pub async fn init_r2() {
 }
 
 fn r2_client() -> &'static Client {
-    R2_CLIENT.get().expect("R2 client not initialised — call init_r2() at startup")
+    R2_CLIENT
+        .get()
+        .expect("R2 client not initialised — call init_r2() at startup")
 }
 
 fn r2_bucket() -> &'static str {
-    R2_BUCKET.get().expect("R2 bucket not initialised — call init_r2() at startup")
+    R2_BUCKET
+        .get()
+        .expect("R2 bucket not initialised — call init_r2() at startup")
 }
 
 /// Option-returning variants — used by modules that gracefully handle missing R2 config.

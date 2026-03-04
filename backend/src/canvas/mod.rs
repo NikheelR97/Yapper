@@ -9,7 +9,12 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::{auth::AuthUser, error::{AppError, AppResult}, hub::WsOutbound, AppState};
+use crate::{
+    auth::AuthUser,
+    error::{AppError, AppResult},
+    hub::WsOutbound,
+    AppState,
+};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -265,7 +270,10 @@ async fn create_poll(
     )
     .await;
 
-    Ok((StatusCode::CREATED, Json(serde_json::json!({ "id": poll_id }))))
+    Ok((
+        StatusCode::CREATED,
+        Json(serde_json::json!({ "id": poll_id })),
+    ))
 }
 
 #[derive(serde::Deserialize)]
@@ -305,14 +313,13 @@ async fn vote_poll(
         return Err(AppError::BadRequest("Invalid option_index".into()));
     }
 
-    let result = sqlx::query(
-        "INSERT INTO poll_votes (poll_id, user_id, option_index) VALUES ($1, $2, $3)",
-    )
-    .bind(poll_id)
-    .bind(auth.user_id)
-    .bind(body.option_index)
-    .execute(state.db.pool())
-    .await;
+    let result =
+        sqlx::query("INSERT INTO poll_votes (poll_id, user_id, option_index) VALUES ($1, $2, $3)")
+            .bind(poll_id)
+            .bind(auth.user_id)
+            .bind(body.option_index)
+            .execute(state.db.pool())
+            .await;
 
     if let Err(sqlx::Error::Database(ref e)) = result {
         if e.code().as_deref() == Some("23505") {
@@ -359,14 +366,13 @@ async fn vote_poll(
 
 /// Verify the calling user is a member of `server_id`.
 async fn require_member(server_id: Uuid, user_id: Uuid, state: &AppState) -> AppResult<()> {
-    let is_member = sqlx::query(
-        "SELECT 1 FROM server_memberships WHERE server_id = $1 AND user_id = $2",
-    )
-    .bind(server_id)
-    .bind(user_id)
-    .fetch_optional(state.db.pool())
-    .await?
-    .is_some();
+    let is_member =
+        sqlx::query("SELECT 1 FROM server_memberships WHERE server_id = $1 AND user_id = $2")
+            .bind(server_id)
+            .bind(user_id)
+            .fetch_optional(state.db.pool())
+            .await?
+            .is_some();
 
     if !is_member {
         return Err(AppError::Forbidden);
@@ -398,18 +404,18 @@ async fn require_channel_member(
 
 /// Broadcast a CanvasUpdate event to all connected members of a server.
 async fn broadcast_canvas(server_id: Uuid, payload: serde_json::Value, state: &AppState) {
-    let rows = sqlx::query(
-        "SELECT user_id FROM server_memberships WHERE server_id = $1 LIMIT 500",
-    )
-    .bind(server_id)
-    .fetch_all(state.db.pool())
-    .await
-    .unwrap_or_default();
+    let rows = sqlx::query("SELECT user_id FROM server_memberships WHERE server_id = $1 LIMIT 500")
+        .bind(server_id)
+        .fetch_all(state.db.pool())
+        .await
+        .unwrap_or_default();
 
     let member_ids: Vec<Uuid> = rows
         .iter()
         .filter_map(|r| r.try_get::<Uuid, _>("user_id").ok())
         .collect();
 
-    state.hub.broadcast(&member_ids, WsOutbound::CanvasUpdate { payload });
+    state
+        .hub
+        .broadcast(&member_ids, WsOutbound::CanvasUpdate { payload });
 }

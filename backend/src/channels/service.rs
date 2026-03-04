@@ -3,11 +3,11 @@ use serde::Serialize;
 use sqlx::Row;
 use uuid::Uuid;
 
+use super::handlers::ChannelResp;
 use crate::{
     error::{AppError, AppResult},
     AppState,
 };
-use super::handlers::ChannelResp;
 
 /// Max server members to fan out a channel message to in a single operation.
 const MAX_FANOUT_MEMBERS: usize = 500;
@@ -33,13 +33,12 @@ pub async fn require_member(state: &AppState, user_id: Uuid, server_id: Uuid) ->
     debug_assert!(user_id != Uuid::nil());
     debug_assert!(server_id != Uuid::nil());
 
-    let exists = sqlx::query(
-        "SELECT 1 FROM server_memberships WHERE user_id = $1 AND server_id = $2",
-    )
-    .bind(user_id)
-    .bind(server_id)
-    .fetch_optional(state.db.pool())
-    .await?;
+    let exists =
+        sqlx::query("SELECT 1 FROM server_memberships WHERE user_id = $1 AND server_id = $2")
+            .bind(user_id)
+            .bind(server_id)
+            .fetch_optional(state.db.pool())
+            .await?;
 
     if exists.is_none() {
         return Err(AppError::Forbidden);
@@ -51,13 +50,12 @@ pub async fn require_admin(state: &AppState, user_id: Uuid, server_id: Uuid) -> 
     debug_assert!(user_id != Uuid::nil());
     debug_assert!(server_id != Uuid::nil());
 
-    let row = sqlx::query(
-        "SELECT role FROM server_memberships WHERE user_id = $1 AND server_id = $2",
-    )
-    .bind(user_id)
-    .bind(server_id)
-    .fetch_optional(state.db.pool())
-    .await?;
+    let row =
+        sqlx::query("SELECT role FROM server_memberships WHERE user_id = $1 AND server_id = $2")
+            .bind(user_id)
+            .bind(server_id)
+            .fetch_optional(state.db.pool())
+            .await?;
 
     match row {
         Some(r) => {
@@ -129,7 +127,10 @@ pub async fn create_channel(
 ) -> AppResult<ChannelResp> {
     debug_assert!(user_id != Uuid::nil());
     debug_assert!(server_id != Uuid::nil());
-    debug_assert!(!name.is_empty(), "name must be non-empty (validated by handler)");
+    debug_assert!(
+        !name.is_empty(),
+        "name must be non-empty (validated by handler)"
+    );
 
     require_admin(state, user_id, server_id).await?;
 
@@ -271,7 +272,12 @@ pub async fn list_channel_members(
     .await?;
 
     rows.iter()
-        .map(|r| Ok(ChannelMember { user_id: r.try_get("user_id")?, username: r.try_get("username")? }))
+        .map(|r| {
+            Ok(ChannelMember {
+                user_id: r.try_get("user_id")?,
+                username: r.try_get("username")?,
+            })
+        })
         .collect::<Result<Vec<_>, sqlx::Error>>()
         .map_err(AppError::from)
 }
@@ -440,8 +446,16 @@ pub async fn send_message(
     let created_at: chrono::DateTime<chrono::Utc> = row.try_get("created_at")?;
 
     fanout_to_members(
-        user_id, channel_id, server_id, msg_id, created_at,
-        &ciphertext_b64, ephemeral_key_b64.as_deref(), opk_id, message_type, msg_num,
+        user_id,
+        channel_id,
+        server_id,
+        msg_id,
+        created_at,
+        &ciphertext_b64,
+        ephemeral_key_b64.as_deref(),
+        opk_id,
+        message_type,
+        msg_num,
         state,
     )
     .await?;
@@ -477,13 +491,12 @@ async fn fanout_to_members(
     debug_assert!(sender_id != Uuid::nil());
     debug_assert!(server_id != Uuid::nil());
 
-    let member_rows = sqlx::query(
-        "SELECT user_id FROM server_memberships WHERE server_id = $1 LIMIT $2",
-    )
-    .bind(server_id)
-    .bind(MAX_FANOUT_MEMBERS as i64)
-    .fetch_all(state.db.pool())
-    .await?;
+    let member_rows =
+        sqlx::query("SELECT user_id FROM server_memberships WHERE server_id = $1 LIMIT $2")
+            .bind(server_id)
+            .bind(MAX_FANOUT_MEMBERS as i64)
+            .fetch_all(state.db.pool())
+            .await?;
 
     let ws_payload = serde_json::json!({
         "type": "channel",
@@ -504,7 +517,9 @@ async fn fanout_to_members(
         if uid != sender_id {
             state.hub.send_to_user(
                 &uid,
-                crate::hub::WsOutbound::Message { payload: ws_payload.clone() },
+                crate::hub::WsOutbound::Message {
+                    payload: ws_payload.clone(),
+                },
             );
         }
     }

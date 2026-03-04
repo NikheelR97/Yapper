@@ -7,7 +7,6 @@
  *   GET /explore/trending-tags   — most-used server tags (5-min in-memory cache)
  *   GET /search?q=               — full-text search across servers + users (pg_trgm)
  */
-
 use axum::{
     extract::{Query, State},
     response::IntoResponse,
@@ -22,7 +21,11 @@ use std::{
 };
 use uuid::Uuid;
 
-use crate::{auth::AuthUser, error::{AppError, AppResult}, AppState};
+use crate::{
+    auth::AuthUser,
+    error::{AppError, AppResult},
+    AppState,
+};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -168,7 +171,10 @@ async fn get_trending_tags(
     // Update cache
     {
         let mut guard = TAG_CACHE.lock().unwrap();
-        *guard = Some(TagCache { data: tags.clone(), fetched_at: Instant::now() });
+        *guard = Some(TagCache {
+            data: tags.clone(),
+            fetched_at: Instant::now(),
+        });
     }
 
     Ok(Json(serde_json::json!({ "tags": tags })))
@@ -249,7 +255,9 @@ async fn search(
         })
         .collect();
 
-    Ok(Json(serde_json::json!({ "servers": servers, "users": users })))
+    Ok(Json(
+        serde_json::json!({ "servers": servers, "users": users }),
+    ))
 }
 
 // ─── Top yappers ─────────────────────────────────────────────────────────────
@@ -275,14 +283,16 @@ async fn get_top_yappers(
 
     let yappers: Vec<serde_json::Value> = rows
         .iter()
-        .map(|r| serde_json::json!({
-            "id":             r.try_get::<Uuid, _>("id").ok(),
-            "username":       r.try_get::<String, _>("username").unwrap_or_default(),
-            "display_name":   r.try_get::<Option<String>, _>("display_name").ok().flatten(),
-            "avatar_url":     r.try_get::<Option<String>, _>("avatar_url").ok().flatten(),
-            "is_premium":     r.try_get::<bool, _>("is_premium").unwrap_or(false),
-            "follower_count": r.try_get::<i64, _>("follower_count").unwrap_or(0),
-        }))
+        .map(|r| {
+            serde_json::json!({
+                "id":             r.try_get::<Uuid, _>("id").ok(),
+                "username":       r.try_get::<String, _>("username").unwrap_or_default(),
+                "display_name":   r.try_get::<Option<String>, _>("display_name").ok().flatten(),
+                "avatar_url":     r.try_get::<Option<String>, _>("avatar_url").ok().flatten(),
+                "is_premium":     r.try_get::<bool, _>("is_premium").unwrap_or(false),
+                "follower_count": r.try_get::<i64, _>("follower_count").unwrap_or(0),
+            })
+        })
         .collect();
 
     Ok(Json(serde_json::json!({ "yappers": yappers })))

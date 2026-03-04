@@ -59,8 +59,14 @@ pub async fn create_server(
     is_public: bool,
     state: &AppState,
 ) -> AppResult<ServerResp> {
-    debug_assert!(!name.is_empty(), "name must be non-empty (validated by handler)");
-    debug_assert!(name.len() <= 100, "name must be ≤100 chars (validated by handler)");
+    debug_assert!(
+        !name.is_empty(),
+        "name must be non-empty (validated by handler)"
+    );
+    debug_assert!(
+        name.len() <= 100,
+        "name must be ≤100 chars (validated by handler)"
+    );
 
     let base_slug = name
         .to_lowercase()
@@ -104,7 +110,10 @@ pub async fn create_server(
 
     tx.commit().await?;
 
-    debug_assert!(server_id != Uuid::nil(), "server_id must be valid after insert");
+    debug_assert!(
+        server_id != Uuid::nil(),
+        "server_id must be valid after insert"
+    );
 
     Ok(ServerResp {
         id: server_id,
@@ -152,11 +161,7 @@ pub async fn list_my_servers(user_id: Uuid, state: &AppState) -> AppResult<Vec<S
         .map_err(AppError::from)
 }
 
-pub async fn get_server(
-    user_id: Uuid,
-    server_id: Uuid,
-    state: &AppState,
-) -> AppResult<ServerResp> {
+pub async fn get_server(user_id: Uuid, server_id: Uuid, state: &AppState) -> AppResult<ServerResp> {
     debug_assert!(user_id != Uuid::nil());
     debug_assert!(server_id != Uuid::nil());
 
@@ -246,21 +251,16 @@ pub async fn join_server_public(
     do_join(user_id, server_id, None, state).await
 }
 
-pub async fn leave_server(
-    user_id: Uuid,
-    server_id: Uuid,
-    state: &AppState,
-) -> AppResult<()> {
+pub async fn leave_server(user_id: Uuid, server_id: Uuid, state: &AppState) -> AppResult<()> {
     debug_assert!(user_id != Uuid::nil());
     debug_assert!(server_id != Uuid::nil());
 
-    let row = sqlx::query(
-        "SELECT role FROM server_memberships WHERE user_id = $1 AND server_id = $2",
-    )
-    .bind(user_id)
-    .bind(server_id)
-    .fetch_optional(state.db.pool())
-    .await?;
+    let row =
+        sqlx::query("SELECT role FROM server_memberships WHERE user_id = $1 AND server_id = $2")
+            .bind(user_id)
+            .bind(server_id)
+            .fetch_optional(state.db.pool())
+            .await?;
 
     match row {
         None => return Err(AppError::NotFound("Not a member".into())),
@@ -311,7 +311,12 @@ pub async fn create_invite(
     .execute(state.db.pool())
     .await?;
 
-    Ok(InviteResp { code, server_id, max_uses: input.max_uses, expires_at })
+    Ok(InviteResp {
+        code,
+        server_id,
+        max_uses: input.max_uses,
+        expires_at,
+    })
 }
 
 pub async fn join_by_invite(
@@ -343,7 +348,9 @@ pub async fn join_by_invite(
     let max_uses: Option<i32> = invite_row.try_get("max_uses")?;
     if let Some(max) = max_uses {
         if uses >= max {
-            return Err(AppError::BadRequest("Invite link has reached its use limit".into()));
+            return Err(AppError::BadRequest(
+                "Invite link has reached its use limit".into(),
+            ));
         }
     }
 
@@ -372,25 +379,23 @@ pub(crate) async fn do_join(
 
     let mut tx = state.db.pool().begin().await?;
 
-    let already = sqlx::query(
-        "SELECT 1 FROM server_memberships WHERE user_id = $1 AND server_id = $2",
-    )
-    .bind(user_id)
-    .bind(server_id)
-    .fetch_optional(&mut *tx)
-    .await?;
+    let already =
+        sqlx::query("SELECT 1 FROM server_memberships WHERE user_id = $1 AND server_id = $2")
+            .bind(user_id)
+            .bind(server_id)
+            .fetch_optional(&mut *tx)
+            .await?;
 
     if already.is_some() {
         tx.rollback().await.ok();
         return Ok(serde_json::json!({ "status": "already_member" }));
     }
 
-    let user_row = sqlx::query(
-        "SELECT parental_controls_enabled FROM users WHERE id = $1 FOR UPDATE",
-    )
-    .bind(user_id)
-    .fetch_one(&mut *tx)
-    .await?;
+    let user_row =
+        sqlx::query("SELECT parental_controls_enabled FROM users WHERE id = $1 FOR UPDATE")
+            .bind(user_id)
+            .fetch_one(&mut *tx)
+            .await?;
 
     let parental_controls: bool = user_row.try_get("parental_controls_enabled")?;
     if parental_controls {

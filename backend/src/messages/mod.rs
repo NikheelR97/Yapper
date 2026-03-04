@@ -49,13 +49,11 @@ async fn create_or_get_conversation(
     }
 
     // Check peer exists
-    let peer_exists = sqlx::query(
-        "SELECT 1 FROM users WHERE id = $1 AND deleted_at IS NULL",
-    )
-    .bind(req.peer_id)
-    .fetch_optional(state.db.pool())
-    .await?
-    .is_some();
+    let peer_exists = sqlx::query("SELECT 1 FROM users WHERE id = $1 AND deleted_at IS NULL")
+        .bind(req.peer_id)
+        .fetch_optional(state.db.pool())
+        .await?
+        .is_some();
 
     if !peer_exists {
         return Err(AppError::NotFound("Peer user not found".into()));
@@ -90,12 +88,11 @@ async fn create_or_get_conversation(
     // Create a new conversation
     let mut tx = state.db.pool().begin().await?;
 
-    let conv_id: Uuid = sqlx::query(
-        "INSERT INTO dm_conversations DEFAULT VALUES RETURNING id, created_at",
-    )
-    .fetch_one(&mut *tx)
-    .await?
-    .try_get("id")?;
+    let conv_id: Uuid =
+        sqlx::query("INSERT INTO dm_conversations DEFAULT VALUES RETURNING id, created_at")
+            .fetch_one(&mut *tx)
+            .await?
+            .try_get("id")?;
 
     let created_at_row = sqlx::query("SELECT created_at FROM dm_conversations WHERE id = $1")
         .bind(conv_id)
@@ -103,14 +100,12 @@ async fn create_or_get_conversation(
         .await?;
     let created_at: DateTime<Utc> = created_at_row.try_get("created_at")?;
 
-    sqlx::query(
-        "INSERT INTO dm_participants (conversation_id, user_id) VALUES ($1, $2), ($1, $3)",
-    )
-    .bind(conv_id)
-    .bind(auth.user_id)
-    .bind(req.peer_id)
-    .execute(&mut *tx)
-    .await?;
+    sqlx::query("INSERT INTO dm_participants (conversation_id, user_id) VALUES ($1, $2), ($1, $3)")
+        .bind(conv_id)
+        .bind(auth.user_id)
+        .bind(req.peer_id)
+        .execute(&mut *tx)
+        .await?;
 
     tx.commit().await?;
 
@@ -208,14 +203,13 @@ async fn list_messages(
     Query(q): Query<ListMessagesQuery>,
 ) -> AppResult<Json<Vec<MessageResp>>> {
     // Verify caller is a participant
-    let is_participant = sqlx::query(
-        "SELECT 1 FROM dm_participants WHERE conversation_id = $1 AND user_id = $2",
-    )
-    .bind(conv_id)
-    .bind(auth.user_id)
-    .fetch_optional(state.db.pool())
-    .await?
-    .is_some();
+    let is_participant =
+        sqlx::query("SELECT 1 FROM dm_participants WHERE conversation_id = $1 AND user_id = $2")
+            .bind(conv_id)
+            .bind(auth.user_id)
+            .fetch_optional(state.db.pool())
+            .await?
+            .is_some();
 
     if !is_participant {
         return Err(AppError::Forbidden);
