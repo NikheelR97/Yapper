@@ -34,13 +34,16 @@ pub fn router() -> Router<AppState> {
 }
 
 /// OAuth routes — registered at top level (/auth/oauth/...) to match
-/// the redirect URIs configured in Discord and Google developer consoles.
+/// the redirect URIs configured in Discord, Google, and Apple developer consoles.
 pub fn oauth_router() -> Router<AppState> {
     Router::new()
         .route("/discord", get(oauth::discord_redirect))
         .route("/discord/callback", get(oauth::discord_callback))
         .route("/google", get(oauth::google_redirect))
         .route("/google/callback", get(oauth::google_callback))
+        .route("/apple", get(oauth::apple_redirect))
+        // Apple sends the callback as form_post (POST), not a GET redirect.
+        .route("/apple/callback", post(oauth::apple_callback))
 }
 
 /// Called by the WebSocket hub to validate the first-message auth token.

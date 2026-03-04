@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Query, State},
+    extract::{Form, Query, State},
     http::header,
     response::{IntoResponse, Redirect},
 };
@@ -509,6 +509,236 @@ fn sha256_hex(input: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(input.as_bytes());
     format!("{:x}", hasher.finalize())
+}
+
+// ─── Apple OAuth ──────────────────────────────────────────────────────────────
+
+const APPLE_AUTH_URL: &str = "https://appleid.apple.com/auth/authorize";
+const APPLE_TOKEN_URL: &str = "https://appleid.apple.com/auth/token";
+const APPLE_JWKS_URL: &str = "https://appleid.apple.com/auth/keys";
+
+#[derive(Debug, Deserialize)]
+struct AppleIdTokenClaims {
+    sub: String,
+    email: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+struct AppleClientSecretClaims {
+    iss: String,
+    aud: String,
+    sub: String,
+    iat: i64,
+    exp: i64,
+}
+
+fn generate_apple_client_secret() -> anyhow::Result<String> {
+    let team_id =
+        std::env::var("APPLE_TEAM_ID").map_err(|_| anyhow::anyhow!("APPLE_TEAM_ID not set"))?;
+    let key_id =
+        std::env::var("APPLE_KEY_ID").map_err(|_| anyhow::anyhow!("APPLE_KEY_ID not set"))?;
+    let client_id = std::env::var("APPLE_CLIENT_ID")
+        .map_err(|_| anyhow::anyhow!("APPLE_CLIENT_ID not set"))?;
+    // APPLE_PRIVATE_KEY: contents of the .p8 file (PKCS#8 PEM, -----BEGIN PRIVATE KEY-----)
+    let private_key_pem = std::env::var("APPLE_PRIVATE_KEY")
+        .map_err(|_| anyhow::anyhow!("APPLE_PRIVATE_KEY not set"))?;
+
+    let now = Utc::now().timestamp();
+    let claims = AppleClientSecretClaims {
+        iss: team_id,
+        aud: "https://appleid.apple.com".to_string(),
+        sub: client_id,
+        iat: now,
+        exp: now + 15_777_000, // ~6 months
+    };
+
+    let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::ES256);
+    header.kid = Some(key_id);
+
+    let key = jsonwebtoken::EncodingKey::from_ec_pem(private_key_pem.as_bytes())?;
+    Ok(jsonwebtoken::encode(&header, &claims, &key)?)
+}
+
+pub async fn apple_redirect(State(state): State<AppState>) -> impl IntoResponse {
+    let client_id = std::env::var("APPLE_CLIENT_ID").unwrap_or_else(|_| "missing".to_string());
+    let redirect_uri = format!("{}/auth/oauth/apple/callback", api_base());
+
+    let csrf = new_state_token();
+    gc_oauth_states(&state.oauth_states);
+    state.oauth_states.insert(csrf.clone(), Instant::now());
+
+    let auth_url = url::Url::parse_with_params(
+        APPLE_AUTH_URL,
+        &[
+            ("client_id", client_id.as_str()),
+            ("redirect_uri", redirect_uri.as_str()),
+            ("response_type", "code"),
+            ("scope", "name email"),
+            ("response_mode", "form_post"),
+            ("state", csrf.as_str()),
+        ],
+    )
+    .expect("Apple auth URL is valid");
+
+    Redirect::to(auth_url.as_str())
+}
+
+/// Apple sends callback as POST form_post (not a GET redirect like Discord/Google).
+#[derive(Debug, Deserialize)]
+pub struct AppleCallbackForm {
+    code: Option<String>,
+    state: Option<String>,
+    id_token: Option<String>,
+    /// JSON string with name info — only present on the VERY FIRST authorization.
+    user: Option<String>,
+    error: Option<String>,
+}
+
+pub async fn apple_callback(
+    State(state): State<AppState>,
+    Form(form): Form<AppleCallbackForm>,
+) -> impl IntoResponse {
+    if form.error.is_some() {
+        return oauth_error_redirect("apple_denied");
+    }
+
+    let code = match form.code {
+        Some(c) => c,
+        None => return oauth_error_redirect("missing_code"),
+    };
+    let csrf_state = match form.state {
+        Some(s) => s,
+        None => return oauth_error_redirect("missing_state"),
+    };
+
+    if state.oauth_states.remove(&csrf_state).is_none() {
+        return oauth_error_redirect("invalid_state");
+    }
+
+    let client_id = std::env::var("APPLE_CLIENT_ID").unwrap_or_default();
+    let redirect_uri = format!("{}/auth/oauth/apple/callback", api_base());
+
+    let client_secret = match generate_apple_client_secret() {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::error!("Apple client secret generation failed: {e}");
+            return oauth_error_redirect("server_error");
+        }
+    };
+
+    let http = reqwest::Client::new();
+
+    let token_res = match http
+        .post(APPLE_TOKEN_URL)
+        .form(&[
+            ("client_id", client_id.as_str()),
+            ("client_secret", client_secret.as_str()),
+            ("grant_type", "authorization_code"),
+            ("code", code.as_str()),
+            ("redirect_uri", redirect_uri.as_str()),
+        ])
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(_) => return oauth_error_redirect("token_exchange_failed"),
+    };
+
+    #[derive(Deserialize)]
+    struct AppleTokenResponse {
+        id_token: Option<String>,
+    }
+
+    let token_data: AppleTokenResponse = match token_res.json().await {
+        Ok(t) => t,
+        Err(_) => return oauth_error_redirect("token_parse_failed"),
+    };
+
+    // Prefer id_token from the token exchange; fall back to the one Apple POSTed directly.
+    let id_token_str = match token_data.id_token.or(form.id_token) {
+        Some(t) => t,
+        None => return oauth_error_redirect("no_id_token"),
+    };
+
+    let claims = match verify_apple_id_token(&http, &id_token_str, &client_id).await {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!("Apple ID token verification failed: {e}");
+            return oauth_error_redirect("id_token_invalid");
+        }
+    };
+
+    let email = match claims.email {
+        Some(e) => e,
+        None => return oauth_error_redirect("email_required"),
+    };
+
+    // Parse display name from 'user' JSON (only on first sign-in).
+    let display_name = form
+        .user
+        .as_deref()
+        .and_then(|u| serde_json::from_str::<serde_json::Value>(u).ok())
+        .and_then(|v| {
+            let first = v["name"]["firstName"].as_str().unwrap_or("").to_string();
+            let last = v["name"]["lastName"].as_str().unwrap_or("").to_string();
+            let name = format!("{first} {last}").trim().to_string();
+            if name.is_empty() { None } else { Some(name) }
+        })
+        .unwrap_or_else(|| email.split('@').next().unwrap_or("user").to_string());
+
+    let username_hint = email.split('@').next().unwrap_or("user").to_string();
+
+    match issue_oauth_session(
+        &state,
+        OAuthUserInfo {
+            provider_id: claims.sub,
+            provider: "apple",
+            email,
+            username_hint,
+            display_name,
+            avatar_url: None, // Apple does not provide avatars
+        },
+    )
+    .await
+    {
+        Ok(response) => response,
+        Err(_) => oauth_error_redirect("server_error"),
+    }
+}
+
+async fn verify_apple_id_token(
+    http: &reqwest::Client,
+    id_token: &str,
+    client_id: &str,
+) -> anyhow::Result<AppleIdTokenClaims> {
+    // Fetch Apple's public JWKS
+    let jwks: serde_json::Value = http.get(APPLE_JWKS_URL).send().await?.json().await?;
+
+    // Determine which key to use from the token header
+    let header = jsonwebtoken::decode_header(id_token)?;
+    let kid = header
+        .kid
+        .ok_or_else(|| anyhow::anyhow!("no kid in Apple ID token header"))?;
+
+    let keys = jwks["keys"]
+        .as_array()
+        .ok_or_else(|| anyhow::anyhow!("JWKS missing keys array"))?;
+
+    let jwk_val = keys
+        .iter()
+        .find(|k| k["kid"].as_str() == Some(&kid))
+        .ok_or_else(|| anyhow::anyhow!("no matching JWK for kid={kid}"))?;
+
+    let jwk: jsonwebtoken::jwk::Jwk = serde_json::from_value(jwk_val.clone())?;
+    let decoding_key = jsonwebtoken::DecodingKey::from_jwk(&jwk)?;
+
+    let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::RS256);
+    validation.set_audience(&[client_id]);
+    validation.set_issuer(&["https://appleid.apple.com"]);
+
+    let token_data =
+        jsonwebtoken::decode::<AppleIdTokenClaims>(id_token, &decoding_key, &validation)?;
+    Ok(token_data.claims)
 }
 
 fn oauth_error_redirect(reason: &str) -> axum::response::Response {
