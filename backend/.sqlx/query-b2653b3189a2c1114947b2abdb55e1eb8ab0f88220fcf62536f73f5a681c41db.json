@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO users\n                    (email, email_verified, username, display_name, avatar_url,\n                     discord_id, gdpr_consent_at)\n                VALUES ($1, TRUE, $2, $3, $4, $5, NOW())\n                RETURNING id, account_type\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "account_type",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "b2653b3189a2c1114947b2abdb55e1eb8ab0f88220fcf62536f73f5a681c41db"
+}

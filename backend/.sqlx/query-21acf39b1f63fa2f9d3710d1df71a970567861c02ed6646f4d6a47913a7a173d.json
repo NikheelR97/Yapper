@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                UPDATE sessions SET revoked_at = NOW()\n                WHERE family_id = (\n                    SELECT family_id FROM sessions WHERE token_hash = $1 AND user_id = $2 LIMIT 1\n                )\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "21acf39b1f63fa2f9d3710d1df71a970567861c02ed6646f4d6a47913a7a173d"
+}
