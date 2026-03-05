@@ -206,6 +206,9 @@ export async function encryptDm(
 		if (!identity) throw new Error('No identity key — call setupKeys() first');
 
 		const bundle = await api.get<KeyBundle>(`/api/v1/keys/${peerId}`);
+		// Track peer identity key — detect changes for safety number alerts
+		const peerFp = await fingerprintKeys(b64ToBytes(bundle.identity_dh_key), b64ToBytes(bundle.identity_sig_key));
+		checkAndStorePeerKey(peerId, peerFp);
 		const result = await x3dhInitiate(identity, bundle, conversationId);
 
 		session = result.session;
@@ -261,6 +264,9 @@ export async function decryptDm(
 
 		// Fetch sender's DH public key from server to use in X3DH
 		const senderBundle = await api.get<KeyBundle>(`/api/v1/keys/${peerId}`);
+		// Track peer identity key — detect changes for safety number alerts
+		const senderFp = await fingerprintKeys(b64ToBytes(senderBundle.identity_dh_key), b64ToBytes(senderBundle.identity_sig_key));
+		checkAndStorePeerKey(peerId, senderFp);
 		const senderDhPub = b64ToBytes(senderBundle.identity_dh_key);
 
 		session = await x3dhRespond(
@@ -440,6 +446,51 @@ export async function prepareChannel(channelId: string): Promise<void> {
 	} else {
 		await fetchPendingKeyDists(channelId);
 	}
+}
+
+// ─── Safety Numbers ───────────────────────────────────────────────────────────
+
+/**
+ * Compute a human-readable fingerprint of an identity key (6 groups of 5 decimal digits).
+ * Algorithm: SHA-256(dhPub || sigPub) → first 30 bytes → 6 × uint40 mod 100000.
+ */
+export async function fingerprintKeys(dhPub: Uint8Array, sigPub: Uint8Array): Promise<string> {
+	const combined = new Uint8Array(64);
+	combined.set(dhPub, 0);
+	combined.set(sigPub, 32);
+	const hash = await crypto.subtle.digest('SHA-256', combined);
+	const bytes = new Uint8Array(hash);
+	const groups: string[] = [];
+	for (let i = 0; i < 30; i += 5) {
+		let val = 0n;
+		for (let j = 0; j < 5; j++) val = (val << 8n) | BigInt(bytes[i + j]);
+		groups.push((val % 100000n).toString().padStart(5, '0'));
+	}
+	return groups.join(' ');
+}
+
+/** Get own identity fingerprint from local keystore. Returns null if not yet set up. */
+export async function getOwnFingerprint(): Promise<string | null> {
+	const identity = await ks.loadIdentityKeyPair();
+	if (!identity) return null;
+	return fingerprintKeys(identity.dhPublicKey, identity.sigPublicKey);
+}
+
+/** Fetch a peer's identity keys from the server and compute their fingerprint. */
+export async function fetchPeerFingerprint(peerId: string): Promise<string> {
+	const bundle = await api.get<KeyBundle>(`/api/v1/keys/${peerId}`);
+	return fingerprintKeys(b64ToBytes(bundle.identity_dh_key), b64ToBytes(bundle.identity_sig_key));
+}
+
+/** Returns 'new' | 'unchanged' | 'changed'. Persists fingerprint in localStorage. */
+function checkAndStorePeerKey(peerId: string, fp: string): 'new' | 'unchanged' | 'changed' {
+	const key = `yapper_peer_fp_${peerId}`;
+	const stored = localStorage.getItem(key);
+	localStorage.setItem(key, fp);
+	if (!stored) return 'new';
+	if (stored === fp) return 'unchanged';
+	localStorage.setItem(`yapper_key_changed_${peerId}`, '1');
+	return 'changed';
 }
 
 /**

@@ -10,6 +10,7 @@
 	} from "$stores/conversations.js";
 	import MessageList from "$lib/components/chat/MessageList.svelte";
 	import MessageInput from "$lib/components/chat/MessageInput.svelte";
+	import SafetyNumbers from "$lib/components/chat/SafetyNumbers.svelte";
 	import UserAvatar from "$lib/components/UserAvatar.svelte";
 	import { getPresence } from "$stores/presence.js";
 
@@ -26,6 +27,12 @@
 	let sending = false;
 	let loadError = false;
 	let listEl: HTMLDivElement;
+	let showSafetyNumbers = false;
+	let keyChanged = false;
+
+	$: if (conversation?.peerId) {
+		keyChanged = localStorage.getItem(`yapper_key_changed_${conversation.peerId}`) === '1';
+	}
 
 	onMount(async () => {
 		if (!conversation) return;
@@ -94,7 +101,12 @@
 				{/if}
 			</div>
 		</div>
-		<span class="e2ee-badge" title="End-to-end encrypted">
+		<button
+			class="e2ee-badge"
+			class:key-changed={keyChanged}
+			title={keyChanged ? "Security code changed — click to verify" : "End-to-end encrypted — click to verify"}
+			on:click={() => (showSafetyNumbers = true)}
+		>
 			<svg
 				width="12"
 				height="12"
@@ -109,9 +121,18 @@
 				<rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
 				<path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
 			</svg>
-			E2EE
-		</span>
+			{keyChanged ? '⚠ Verify' : 'E2EE'}
+		</button>
 	</header>
+
+	<!-- Safety Numbers modal -->
+	{#if conversation}
+		<SafetyNumbers
+			peerId={conversation.peerId}
+			peerName={conversation.peerDisplayName || conversation.peerUsername || 'them'}
+			bind:open={showSafetyNumbers}
+		/>
+	{/if}
 
 	<!-- Message area -->
 	<div class="message-area" bind:this={listEl}>
@@ -207,6 +228,20 @@
 		color: var(--color-text-muted);
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
+		background: none;
+		border: 1px solid transparent;
+		border-radius: 6px;
+		padding: 0.25rem 0.5rem;
+		cursor: pointer;
+		transition: border-color 0.15s, color 0.15s;
+	}
+	.e2ee-badge:hover {
+		border-color: var(--color-border);
+		color: var(--color-text-secondary);
+	}
+	.e2ee-badge.key-changed {
+		color: #fbbf24;
+		border-color: rgba(234, 179, 8, 0.4);
 	}
 
 	.message-area {
