@@ -175,6 +175,7 @@ async fn list_conversations(
 // ─── List Messages (paginated, cursor-based) ──────────────────────────────────
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ListMessagesQuery {
     /// Fetch messages created before this cursor (UUID of last known message).
     before: Option<Uuid>,

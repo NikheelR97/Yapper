@@ -32,6 +32,7 @@ pub fn router() -> Router<AppState> {
 // ─── Music state ─────────────────────────────────────────────────────────────
 
 #[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct MusicInput {
     artist: String,
     title: String,
@@ -203,6 +204,7 @@ async fn get_clips(
 // ─── Polls ────────────────────────────────────────────────────────────────────
 
 #[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct PollInput {
     question: String,
     /// Plain-text option labels (2–10)
@@ -277,6 +279,7 @@ async fn create_poll(
 }
 
 #[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct VoteInput {
     option_index: i32,
 }

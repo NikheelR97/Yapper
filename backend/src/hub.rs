@@ -25,6 +25,8 @@ use crate::AppState;
 const MAX_WS_FRAME_SIZE: usize = 64 * 1024;
 /// Max server members to fan out a channel message to (Rule 2 / Rule 3).
 const MAX_FANOUT_MEMBERS: i64 = 500;
+/// Max concurrent WebSocket connections per user (prevents memory exhaustion).
+const MAX_CONNECTIONS_PER_USER: usize = 5;
 
 /// Per-user WebSocket message rate limiter (5 msg/sec, burst of 20).
 type MsgRateLimiter = Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>;
@@ -82,11 +84,15 @@ impl Hub {
         limiter.check().is_ok()
     }
 
-    pub fn register(&self, user_id: Uuid, conn_id: ConnectionId, tx: ConnTx) {
-        self.connections
-            .entry(user_id)
-            .or_default()
-            .insert(conn_id, tx);
+    /// Register a new connection. Returns `false` if the user already has
+    /// `MAX_CONNECTIONS_PER_USER` active connections (caller should close).
+    pub fn register(&self, user_id: Uuid, conn_id: ConnectionId, tx: ConnTx) -> bool {
+        let user_conns = self.connections.entry(user_id).or_default();
+        if user_conns.len() >= MAX_CONNECTIONS_PER_USER {
+            return false;
+        }
+        user_conns.insert(conn_id, tx);
+        true
     }
 
     pub fn unregister(&self, user_id: &Uuid, conn_id: &ConnectionId) {
@@ -288,7 +294,11 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         }
     };
 
-    state.hub.register(user_id, conn_id.clone(), tx.clone());
+    if !state.hub.register(user_id, conn_id.clone(), tx.clone()) {
+        send_ws_error(&tx, 4008, "Too many connections");
+        send_task.abort();
+        return;
+    }
     let _ = tx.send(WsOutbound::Ready { user_id });
     deliver_offline_messages(&user_id, &state, &tx).await;
     deliver_pending_key_dists(&user_id, &state, &tx).await;
@@ -988,6 +998,14 @@ async fn handle_mark_read(message_id: Uuid, channel_id: Uuid, user_id: Uuid, sta
     debug_assert!(user_id != Uuid::nil());
     debug_assert!(message_id != Uuid::nil());
 
+    // Verify channel membership before processing read receipt
+    let Some(member_ids) = fetch_channel_member_ids(channel_id, state).await else {
+        return;
+    };
+    if !member_ids.contains(&user_id) {
+        return; // Silently drop — user is not a channel member
+    }
+
     let ok = sqlx::query(
         "INSERT INTO message_read_receipts (message_id, user_id) \
          VALUES ($1, $2) ON CONFLICT (message_id, user_id) DO NOTHING",
@@ -1001,9 +1019,6 @@ async fn handle_mark_read(message_id: Uuid, channel_id: Uuid, user_id: Uuid, sta
         return;
     }
 
-    let Some(member_ids) = fetch_channel_member_ids(channel_id, state).await else {
-        return;
-    };
     for uid in member_ids.iter().take(MAX_FANOUT_MEMBERS as usize) {
         state.hub.send_to_user(
             uid,
@@ -1027,10 +1042,25 @@ mod tests {
         let (tx, _rx) = mpsc::unbounded_channel();
 
         assert!(!hub.is_online(&user_id));
-        hub.register(user_id, conn_id.clone(), tx);
+        assert!(hub.register(user_id, conn_id.clone(), tx));
         assert!(hub.is_online(&user_id));
         hub.unregister(&user_id, &conn_id);
         assert!(!hub.is_online(&user_id));
+    }
+
+    #[test]
+    fn test_hub_max_connections_per_user() {
+        let hub = Hub::new();
+        let user_id = Uuid::new_v4();
+        for _ in 0..MAX_CONNECTIONS_PER_USER {
+            let conn_id = ConnectionId::new();
+            let (tx, _rx) = mpsc::unbounded_channel();
+            assert!(hub.register(user_id, conn_id, tx));
+        }
+        // One more should be rejected
+        let conn_id = ConnectionId::new();
+        let (tx, _rx) = mpsc::unbounded_channel();
+        assert!(!hub.register(user_id, conn_id, tx));
     }
 
     #[test]

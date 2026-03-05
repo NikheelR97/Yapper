@@ -18,7 +18,7 @@
 		registerDmHandler,
 		fetchConversations,
 	} from "$stores/conversations.js";
-	import { registerChannelHandler, fetchServers } from "$stores/servers.js";
+	import { registerChannelHandler, registerEmojiHandler, fetchServers } from "$stores/servers.js";
 	import { registerPresenceHandler } from "$stores/presence.js";
 	import { registerCanvasHandler } from "$stores/canvas.js";
 	import {
@@ -43,6 +43,7 @@
 	let unregisterChannelHandler: (() => void) | null = null;
 	let unregisterPresenceHandler: (() => void) | null = null;
 	let unregisterCanvasHandler: (() => void) | null = null;
+	let unregisterEmojiHandler: (() => void) | null = null;
 	let stopScreenTimeTracker: (() => void) | null = null;
 
 	onMount(async () => {
@@ -78,6 +79,7 @@
 		unregisterChannelHandler = registerChannelHandler();
 		unregisterPresenceHandler = registerPresenceHandler();
 		unregisterCanvasHandler = registerCanvasHandler();
+		unregisterEmojiHandler = registerEmojiHandler();
 		fetchConversations().catch(() => {});
 		fetchServers().catch(() => {});
 
@@ -98,6 +100,7 @@
 		unregisterChannelHandler?.();
 		unregisterPresenceHandler?.();
 		unregisterCanvasHandler?.();
+		unregisterEmojiHandler?.();
 		stopScreenTimeTracker?.();
 		reportScreenTimeUsage().catch(() => {});
 		wsDisconnect();

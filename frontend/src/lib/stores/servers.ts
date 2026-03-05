@@ -11,6 +11,7 @@ import { decryptChannel, encryptChannel, prepareChannel } from '$signal/index.js
 import { onWsMessage, sendChannelMessage as wsSendChannel } from '$stores/ws.js';
 import { authStore } from '$stores/auth.js';
 import type { Message } from '$stores/conversations.js';
+import { getCachedEmojis, setCachedEmojis } from '$signal/keystore.js';
 
 export type { Message };
 
@@ -316,8 +317,27 @@ export async function joinByInvite(code: string): Promise<void> {
 
 // ─── Server Emojis ────────────────────────────────────────────────────────────
 
-/** Load custom emojis for a server and cache them in the store. */
+function applyEmojisToStore(serverId: string, emojis: ServerEmoji[]): void {
+	serversStore.update((s) => ({
+		...s,
+		servers: s.servers.map((srv) =>
+			srv.id === serverId ? { ...srv, customEmojis: emojis } : srv,
+		),
+	}));
+}
+
+/** Load custom emojis for a server. Serves from IndexedDB cache immediately,
+ *  then always refreshes from the API and persists the result. */
 export async function fetchServerEmojis(serverId: string): Promise<void> {
+	// Serve cached emojis instantly (no loading flicker)
+	try {
+		const cached = await getCachedEmojis(serverId);
+		if (cached) applyEmojisToStore(serverId, cached);
+	} catch {
+		// Non-fatal — proceed to API fetch
+	}
+
+	// Always refresh from API to pick up new emojis
 	try {
 		const res = await api.get<{
 			emojis: { id: string; name: string; image_url: string }[];
@@ -329,13 +349,17 @@ export async function fetchServerEmojis(serverId: string): Promise<void> {
 			imageUrl: e.image_url,
 		}));
 
-		serversStore.update((s) => ({
-			...s,
-			servers: s.servers.map((srv) =>
-				srv.id === serverId ? { ...srv, customEmojis: emojis } : srv,
-			),
-		}));
+		applyEmojisToStore(serverId, emojis);
+		setCachedEmojis(serverId, emojis).catch(() => {});
 	} catch {
-		// Non-fatal — emoji picker will just show no custom emojis
+		// Non-fatal — cached or empty emoji list shown
 	}
+}
+
+/** Register a WS handler that refreshes the emoji cache when a new emoji is added. */
+export function registerEmojiHandler(): () => void {
+	return onWsMessage('emoji_added', (payload) => {
+		const p = payload as { emoji?: { server_id?: string } };
+		if (p.emoji?.server_id) fetchServerEmojis(p.emoji.server_id).catch(() => {});
+	});
 }

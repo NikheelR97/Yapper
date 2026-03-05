@@ -1268,18 +1268,34 @@ fn build_data_export_zip(json_bytes: &[u8]) -> AppResult<Vec<u8>> {
 
 /// DELETE /api/v1/account
 ///
-/// Soft-deletes the account. The user immediately cannot log in.
-/// A background job (scheduled separately) handles full PII purge after 30 days.
+/// Soft-deletes the account and immediately anonymizes PII.
+/// The user cannot log in after this. Username and email are replaced
+/// with non-identifying placeholders to satisfy GDPR data minimization.
 async fn delete_account(
     auth: AuthUser,
     State(state): State<AppState>,
 ) -> AppResult<impl IntoResponse> {
-    // Soft-delete the user
-    let result =
-        sqlx::query("UPDATE users SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL")
-            .bind(auth.user_id)
-            .execute(state.db.pool())
-            .await?;
+    let anon_suffix = &auth.user_id.to_string()[..8];
+    let anon_username = format!("[deleted_{anon_suffix}]");
+    let anon_email = format!("deleted+{anon_suffix}@yapperhq.com");
+
+    // Soft-delete + anonymize PII in one atomic UPDATE
+    let result = sqlx::query(
+        "UPDATE users SET \
+            deleted_at = NOW(), \
+            username = $2, \
+            email = $3, \
+            display_name = NULL, \
+            avatar_url = NULL, \
+            banner_url = NULL, \
+            about_me = NULL \
+         WHERE id = $1 AND deleted_at IS NULL",
+    )
+    .bind(auth.user_id)
+    .bind(&anon_username)
+    .bind(&anon_email)
+    .execute(state.db.pool())
+    .await?;
 
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound(
@@ -1297,7 +1313,7 @@ async fn delete_account(
             e
         })?;
 
-    tracing::info!(user_id = %auth.user_id, "Account soft-deleted");
+    tracing::info!(user_id = %auth.user_id, "Account soft-deleted and PII anonymized");
     Ok(StatusCode::NO_CONTENT)
 }
 

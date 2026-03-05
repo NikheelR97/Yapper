@@ -47,6 +47,7 @@ pub fn router() -> Router<AppState> {
 // ─── Create child account ────────────────────────────────────────────────────
 
 #[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct CreateChildInput {
     username: String,
     display_name: String,

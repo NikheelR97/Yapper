@@ -11,6 +11,7 @@
  *   sessions       — Map<conversationId, Session>
  *   sender_keys    — Map<channelId, SenderKey>        (v2, our own key per channel)
  *   receiver_keys  — Map<channelId:senderId, SenderKeyRecord>  (v2, received keys)
+ *   emojis         — Map<serverId, ServerEmoji[]>     (v3, custom emoji cache)
  */
 
 import { openDB, type IDBPDatabase } from 'idb';
@@ -24,7 +25,7 @@ import type {
 } from './types.js';
 
 const DB_NAME = 'yapper-signal';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 let _db: IDBPDatabase | null = null;
 let _dbPromise: Promise<IDBPDatabase> | null = null;
@@ -43,6 +44,10 @@ async function getDB(): Promise<IDBPDatabase> {
 				if (oldVersion < 2) {
 					db.createObjectStore('sender_keys', { keyPath: 'channelId' });
 					db.createObjectStore('receiver_keys'); // keyed externally as `${channelId}:${senderId}`
+				}
+				// v3 — Custom emoji cache (keyed by serverId)
+				if (oldVersion < 3) {
+					db.createObjectStore('emojis');
 				}
 			},
 		}).then((db) => {
@@ -159,4 +164,22 @@ export async function loadReceiverKey(channelId: string, senderId: string): Prom
 export async function deleteReceiverKey(channelId: string, senderId: string): Promise<void> {
 	const db = await getDB();
 	await db.delete('receiver_keys', receiverKeyId(channelId, senderId));
+}
+
+// ─── Emoji Cache (v3) ─────────────────────────────────────────────────────────
+
+export interface CachedEmoji {
+	id: string;
+	name: string;
+	imageUrl: string;
+}
+
+export async function getCachedEmojis(serverId: string): Promise<CachedEmoji[] | null> {
+	const db = await getDB();
+	return (await db.get('emojis', serverId)) ?? null;
+}
+
+export async function setCachedEmojis(serverId: string, emojis: CachedEmoji[]): Promise<void> {
+	const db = await getDB();
+	await db.put('emojis', emojis, serverId);
 }
