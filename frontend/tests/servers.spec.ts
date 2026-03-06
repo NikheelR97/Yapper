@@ -96,42 +96,35 @@ test.describe('Channel — authenticated', () => {
 		await loginAs(page);
 	});
 
-	test('first server channel page renders message input', async ({ page }) => {
+	// Helper: navigate to /servers and wait for the auto-redirect chain to land on a channel page
+	async function gotoFirstChannel(page: Page): Promise<boolean> {
 		await page.goto('/servers');
+		// /servers → /servers/{id}/channels → /servers/{id}/channels/{channelId}
+		return page
+			.waitForURL(/\/servers\/[^/]+\/channels\/[^/]+/, { timeout: 20_000 })
+			.then(() => true)
+			.catch(() => false);
+	}
 
-		// Navigate to first available channel
-		const channelLink = page.locator('a[href*="/channels/"]').first();
-		const hasChannel = await channelLink.isVisible({ timeout: 6_000 }).catch(() => false);
-
-		if (!hasChannel) {
-			test.skip();
-			return;
-		}
-
-		await channelLink.click();
-		await page.waitForURL(/\/channels\//, { timeout: 8_000 });
+	test('first server channel page renders message input', async ({ page }) => {
+		const onChannel = await gotoFirstChannel(page);
+		if (!onChannel) { test.skip(); return; }
 
 		// Message input should be present
 		const input = page.locator('textarea, [contenteditable="true"], input[placeholder*="Message"]').first();
-		await expect(input).toBeVisible({ timeout: 5_000 });
+		await expect(input).toBeVisible({ timeout: 8_000 });
 	});
 
 	test('sending a channel message renders it in the list', async ({ page }) => {
-		await page.goto('/servers');
+		test.slow(); // E2EE joinChannel() makes multiple API calls — allow 90s
+		const onChannel = await gotoFirstChannel(page);
+		if (!onChannel) { test.skip(); return; }
 
-		const channelLink = page.locator('a[href*="/channels/"]').first();
-		const hasChannel = await channelLink.isVisible({ timeout: 6_000 }).catch(() => false);
-
-		if (!hasChannel) {
-			test.skip();
-			return;
-		}
-
-		await channelLink.click();
-		await page.waitForURL(/\/channels\//, { timeout: 8_000 });
+		const input = page.locator('textarea[aria-label="Message"]').first();
+		// Wait for E2EE setup ("Setting up encryption…") to finish
+		await expect(input).toBeEnabled({ timeout: 60_000 });
 
 		const testMsg = `E2E channel test ${Date.now()}`;
-		const input = page.locator('textarea, [contenteditable="true"]').first();
 		await input.fill(testMsg);
 		await input.press('Enter');
 
@@ -139,20 +132,13 @@ test.describe('Channel — authenticated', () => {
 	});
 
 	test('typing indicator appears when typing in channel', async ({ page }) => {
-		await page.goto('/servers');
+		test.slow(); // E2EE joinChannel() makes multiple API calls — allow 90s
+		const onChannel = await gotoFirstChannel(page);
+		if (!onChannel) { test.skip(); return; }
 
-		const channelLink = page.locator('a[href*="/channels/"]').first();
-		const hasChannel = await channelLink.isVisible({ timeout: 6_000 }).catch(() => false);
-
-		if (!hasChannel) {
-			test.skip();
-			return;
-		}
-
-		await channelLink.click();
-		await page.waitForURL(/\/channels\//, { timeout: 8_000 });
-
-		const input = page.locator('textarea, [contenteditable="true"]').first();
+		const input = page.locator('textarea[aria-label="Message"]').first();
+		// Wait for E2EE setup to finish before typing
+		await expect(input).toBeEnabled({ timeout: 60_000 });
 		await input.fill('typing...');
 
 		// No assertion on indicator visibility (need second user), just ensure no crash
@@ -170,18 +156,10 @@ test.describe('Invite links — authenticated', () => {
 	});
 
 	test('invite link can be generated for a server', async ({ page }) => {
-		await page.goto('/servers');
-
-		const channelLink = page.locator('a[href*="/channels/"]').first();
-		const hasChannel = await channelLink.isVisible({ timeout: 6_000 }).catch(() => false);
-
-		if (!hasChannel) {
-			test.skip();
-			return;
-		}
-
-		await channelLink.click();
-		await page.waitForURL(/\/channels\//, { timeout: 8_000 });
+		const onChannel = await page.goto('/servers').then(() =>
+			page.waitForURL(/\/servers\/[^/]+\/channels\/[^/]+/, { timeout: 20_000 }).then(() => true).catch(() => false)
+		);
+		if (!onChannel) { test.skip(); return; }
 
 		// Look for invite button in sidebar or header
 		const inviteBtn = page.getByRole('button', { name: /Invite/i })

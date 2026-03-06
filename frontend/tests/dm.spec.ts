@@ -118,7 +118,7 @@ test.describe('Two-user DM flow', () => {
 		// Get list of existing DM conversations
 		await pageA.goto('/dm');
 
-		const firstConvo = pageA.locator('a[href*="/dm/"]').first();
+		const firstConvo = pageA.locator('button.conv-btn').first();
 		const hasConvo = await firstConvo.isVisible({ timeout: 5_000 }).catch(() => false);
 
 		if (hasConvo) {
@@ -135,9 +135,10 @@ test.describe('Two-user DM flow', () => {
 		const pageA = contextA.pages()[0];
 
 		await pageA.goto('/dm');
-
-		const firstConvo = pageA.locator('a[href*="/dm/"]').first();
-		const hasConvo = await firstConvo.isVisible({ timeout: 5_000 }).catch(() => false);
+		// Wait for conversations to load before checking for conv-btn
+		await pageA.waitForSelector('button.conv-btn, .empty-dm', { timeout: 15_000 }).catch(() => {});
+		const firstConvo = pageA.locator('button.conv-btn').first();
+		const hasConvo = await firstConvo.isVisible({ timeout: 3_000 }).catch(() => false);
 
 		if (!hasConvo) {
 			test.skip();

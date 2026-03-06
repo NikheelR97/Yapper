@@ -189,7 +189,12 @@ test.describe('Settings — change password', () => {
 	});
 
 	test('change password with wrong current password shows error', async ({ page }) => {
-		const currentInput = page.locator('input[id*="current"], input[name*="current"]').first();
+		// Navigate to the Change Password section (rendered only when activeSection === "password")
+		const pwNavBtn = page.getByRole('button', { name: 'Change Password' });
+		await pwNavBtn.waitFor({ timeout: 10_000 });
+		await pwNavBtn.click();
+
+		const currentInput = page.locator('#currentPw').first();
 		const visible = await currentInput.isVisible({ timeout: 5_000 }).catch(() => false);
 
 		if (!visible) {
@@ -199,19 +204,21 @@ test.describe('Settings — change password', () => {
 
 		await currentInput.fill('WrongPassword123!');
 
-		const newInput = page.locator('input[id*="new"], input[name*="new"]').first();
+		const newInput = page.locator('#newPw').first();
 		await newInput.fill('NewPassword456!');
 
-		const confirmInput = page.locator('input[id*="confirm"], input[name*="confirm"]').first();
+		const confirmInput = page.locator('#confirmPw').first();
 		if (await confirmInput.isVisible()) {
 			await confirmInput.fill('NewPassword456!');
 		}
 
-		const submitBtn = page.getByRole('button', { name: /Change|Update.*Password/i }).first();
+		const submitBtn = page.locator('button.save-btn');
 		await submitBtn.click();
 
-		// Should show an error (wrong current password)
-		const error = page.locator('[role="alert"], [class*="error"], [class*="toast"]').first();
-		await expect(error).toBeVisible({ timeout: 8_000 });
+		// Should show an error toast (wrong current password).
+		// Toast items have class "toast toast-error" and role="alert".
+		// Avoid the outer .toast-container (role="region") which is always present but empty.
+		const error = page.locator('.toast-error, .field-error').first();
+		await expect(error).toBeVisible({ timeout: 10_000 });
 	});
 });

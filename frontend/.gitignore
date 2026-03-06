@@ -15,6 +15,9 @@ build/
 test-results/
 playwright-report/
 playwright/.cache/
+# Playwright saved auth — contains real session tokens, never commit
+tests/auth-data.json
+tests/auth-state.json
 
 # Tauri build output
 src-tauri/target/

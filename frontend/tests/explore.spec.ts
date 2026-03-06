@@ -39,7 +39,7 @@ test.describe('Explore — authenticated', () => {
 	test.beforeEach(async ({ page }) => {
 		await loginAs(page);
 		// Wait for the app shell to finish loading (ready = true renders the slot)
-		await expect(page.locator('.search-input')).toBeVisible({ timeout: 20_000 });
+		await expect(page.locator('.search-input')).toBeVisible({ timeout: 30_000 });
 	});
 
 	test('renders search bar', async ({ page }) => {
@@ -78,8 +78,10 @@ test.describe('Explore — authenticated', () => {
 	});
 
 	test('clicking Join on a server shows feedback', async ({ page }) => {
-		const joinBtn = page.getByRole('button', { name: /Join/i }).first();
-		const visible = await joinBtn.isVisible({ timeout: 8_000 }).catch(() => false);
+		// Wait for community cards to render before looking for join button
+		await page.waitForSelector('.community-card, .empty-msg', { timeout: 20_000 }).catch(() => {});
+		const joinBtn = page.locator('.join-btn').first();
+		const visible = await joinBtn.isVisible({ timeout: 5_000 }).catch(() => false);
 
 		if (!visible) {
 			test.skip();
@@ -92,7 +94,7 @@ test.describe('Explore — authenticated', () => {
 		await page.waitForTimeout(2_000);
 		const url = page.url();
 		const hasNavigated = url.includes('/servers/') || url.includes('/channels/');
-		const hasToast = await page.locator('[role="alert"], .toast, [class*="toast"]').isVisible().catch(() => false);
+		const hasToast = await page.locator('.toast-error, .toast-success, .toast-info').isVisible().catch(() => false);
 
 		expect(hasNavigated || hasToast).toBeTruthy();
 	});

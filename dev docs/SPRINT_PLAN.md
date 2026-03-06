@@ -870,6 +870,65 @@ These prerequisite UI components were built across S7–S11 FE work and wired in
 | Over-sharing data to CRM | Compliance/security risk | Strict payload schema + allowlist fields |
 
 ---
+## B3 - S3 Intelligent-Tiering Attachment Migration (Post-Launch / Any Time)
+
+**Goal:** Move encrypted user attachments to private AWS S3 with Intelligent-Tiering while preserving instant cross-device access and Yapper's E2EE boundary.
+**Plan:** Store new ciphertext attachments `>= 128 KB` in `INTELLIGENT_TIERING`, keep smaller objects in `STANDARD`, and defer optional archive tiers until Yapper has an explicit restore flow.
+**No core dependency** - design can start during S11, but production rollout should happen after launch so it does not destabilize auth, messaging, or app-store submission work.
+**Reference docs:** `dev docs/s3-intelligent-tiering-migration.md`, `dev docs/attachment-storage-api.md`
+
+### Week 1: AWS Foundation + Backend Abstraction
+
+| # | Task | Owner | Done |
+|---|------|-------|------|
+| 1 | Create private S3 bucket for prod attachments with Block Public Access, versioning, default encryption, and owner-enforced object ownership | FS | [ ] |
+| 2 | Create dedicated backend AWS principal with least-privilege S3 policy; store keys in Fly secrets only | FS | [ ] |
+| 3 | Add cost guardrails: AWS Budgets alerts at 50/80/100 percent of monthly cap | FS | [ ] |
+| 4 | Extend `backend/src/media/` with storage-provider abstraction (`r2`, `s3`) | BE | [ ] |
+| 5 | Add attachment metadata persistence (`storage_provider`, `bucket`, `object_key`, `storage_class`, `ciphertext_sha256`, `size_bytes`, `upload_status`) | BE | [ ] |
+| 6 | Implement presign + complete + download URL endpoints for attachment blobs | BE | [ ] |
+| 7 | Enforce server-side limits: size caps, MIME allowlist, randomized object keys, short-lived presigned URLs | BE | [ ] |
+| 8 | Add unit + integration tests for upload authorization, download authorization, and provider fallback | BE | [ ] |
+
+### Week 2: Client Upload Flow + Gradual Migration
+
+| # | Task | Owner | Done |
+|---|------|-------|------|
+| 1 | Encrypt attachments client-side before upload; keep keys inside Signal-encrypted message payload | FE | [ ] |
+| 2 | Route new uploads `>= 128 KB` to S3 Intelligent-Tiering and smaller blobs to Standard | FE/BE | [ ] |
+| 3 | Add dual-read path: download from S3 first, fall back to legacy object store while migration is incomplete | BE | [ ] |
+| 4 | Build background backfill job: copy legacy blobs to S3, verify checksum + size, then mark metadata migrated | BE | [ ] |
+| 5 | Add operator runbook for key rotation, failed backfill retries, and temporary rollback to legacy storage | FS | [ ] |
+| 6 | Add dashboards/alerts for storage growth, object count, request rate, and egress | FS | [ ] |
+| 7 | Verify cross-device attachment open/download flows on desktop, web, and mobile clients | FE | [ ] |
+
+### Acceptance Criteria
+
+- [ ] New eligible attachments are written to private S3 with `INTELLIGENT_TIERING` storage class.
+- [ ] Objects under `128 KB` remain in `STANDARD` to avoid ineffective tiering charges.
+- [ ] Bucket is private and only accessible through short-lived presigned URLs issued after auth + authz checks.
+- [ ] Attachment blobs remain ciphertext at rest; the API service never receives attachment plaintext.
+- [ ] Existing attachment links continue to work during migration via dual-read fallback.
+- [ ] Backfill verifies checksum + size before switching metadata to S3.
+- [ ] Budget alerts and storage dashboards are active before production cutover.
+
+### Data Boundaries (Non-Negotiable)
+
+- Never upload plaintext attachment bodies from the client; only encrypted ciphertext may be stored in S3.
+- Never expose AWS credentials to clients; all browser/desktop/mobile uploads use short-lived presigned URLs.
+- Never make the bucket or any attachment prefix public.
+- Never enable Glacier-style archive tiers until the product has an explicit restore UX and status model.
+
+### Risks
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| S3 internet egress exceeds budget | Monthly bill spikes | Budget alerts, download metrics, and keep previews/originals strategy available if needed |
+| Large counts of tiny objects in Intelligent-Tiering | Monitoring charges outweigh savings | Keep objects `< 128 KB` in `STANDARD` |
+| Missing authorization check before presign | Unauthorized attachment access | Require message/channel membership or ownership check on every presign/download path |
+| Aggressive archive transitions break attachment UX | Delayed or failed attachment opens | Keep optional archive tiers disabled until restore UX exists |
+
+---
 ## Dependency Graph (Critical Path)
 
 ```

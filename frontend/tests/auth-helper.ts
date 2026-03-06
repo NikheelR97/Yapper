@@ -54,4 +54,24 @@ export async function mockAuthEndpoints(page: Page): Promise<void> {
 			body: JSON.stringify(user),
 		});
 	});
+
+	// Mock signal key upload endpoints so setupKeys() completes instantly.
+	// Without this, POST /api/v1/keys/one-time-prekeys takes ~17s (uploads 100 keys),
+	// which occupies browser HTTP connections and delays fetchServers() by ~19s.
+	for (const path of [
+		`${API_URL}/api/v1/keys/identity`,
+		`${API_URL}/api/v1/keys/signed-prekey`,
+		`${API_URL}/api/v1/keys/one-time-prekeys`,
+		`${API_URL}/api/v1/keys/one-time-prekey-count`,
+	]) {
+		await page.route(path, async (route) => {
+			if (route.request().method() === 'GET') {
+				// one-time-prekey-count — return healthy count so no replenish needed
+				await route.fulfill({ status: 200, contentType: 'application/json', body: '{"count":100}' });
+			} else {
+				// POST uploads — acknowledge instantly
+				await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+			}
+		});
+	}
 }
