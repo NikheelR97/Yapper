@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { tick } from 'svelte';
 	import { getOwnFingerprint, fetchPeerFingerprint } from '$signal/index.js';
 
 	export let peerId: string;
@@ -11,11 +11,20 @@
 	let loading = true;
 	let keyChanged = false;
 	let verified = false;
+	let dialogBackdrop: HTMLDivElement | null = null;
 
 	$: verifiedKey = `yapper_verified_${peerId}`;
 	$: changedKey = `yapper_key_changed_${peerId}`;
 
 	$: if (open && peerId) loadFingerprints();
+	$: if (open) {
+		void focusDialog();
+	}
+
+	async function focusDialog() {
+		await tick();
+		dialogBackdrop?.focus();
+	}
 
 	async function loadFingerprints() {
 		loading = true;
@@ -52,11 +61,25 @@
 	function handleBackdrop(e: MouseEvent) {
 		if (e.target === e.currentTarget) dismiss();
 	}
+
+	function handleDialogKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape') {
+			dismiss();
+		}
+	}
 </script>
 
 {#if open}
-	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-	<div class="backdrop" on:click={handleBackdrop} role="dialog" aria-modal="true" aria-label="Safety numbers">
+	<div
+		class="backdrop"
+		bind:this={dialogBackdrop}
+		on:click={handleBackdrop}
+		on:keydown={handleDialogKeydown}
+		role="dialog"
+		aria-modal="true"
+		aria-label="Safety numbers"
+		tabindex="-1"
+	>
 		<div class="modal">
 			<header class="modal-header">
 				<div class="header-left">

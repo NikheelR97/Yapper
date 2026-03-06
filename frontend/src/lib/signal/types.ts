@@ -90,6 +90,12 @@ export interface SenderKeyRecord {
 	chainKey: Uint8Array;
 	signingPubKey: Uint8Array;
 	iteration: number;
+	/**
+	 * Optional immutable seed state from the original distribution.
+	 * Used to decrypt historical messages after local ratchet state advanced.
+	 */
+	initialChainKey?: Uint8Array;
+	initialIteration?: number;
 }
 
 /** What gets ECIES-encrypted and sent to each recipient during key distribution. */

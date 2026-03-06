@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import {
 		serversStore,
@@ -21,6 +21,7 @@
 	let showCreateModal = false;
 	let newServerName = '';
 	let creating = false;
+	let createServerInput: HTMLInputElement | null = null;
 
 	// Invite state
 	let inviteCode = '';
@@ -43,6 +44,15 @@
 	// Reload channels when the active server changes
 	$: if (activeServerId) {
 		loadChannels(activeServerId);
+	}
+
+	$: if (showCreateModal) {
+		void focusCreateServerInput();
+	}
+
+	async function focusCreateServerInput() {
+		await tick();
+		createServerInput?.focus();
 	}
 
 	async function loadChannels(serverId: string) {
@@ -220,16 +230,23 @@
 {#if showCreateModal}
 	<!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
 	<div class="modal-backdrop" on:click={() => (showCreateModal = false)}>
-		<div class="modal" role="dialog" aria-modal="true" aria-label="Create server" on:click|stopPropagation>
+		<div
+			class="modal"
+			role="dialog"
+			aria-modal="true"
+			aria-label="Create server"
+			tabindex="-1"
+			on:click|stopPropagation
+		>
 			<h2 class="modal-title">Create a Server</h2>
 			<form on:submit|preventDefault={handleCreateServer}>
 				<input
+					bind:this={createServerInput}
 					bind:value={newServerName}
 					placeholder="Server name"
 					class="modal-input"
 					maxlength="100"
 					required
-					autofocus
 				/>
 				<div class="modal-actions">
 					<button type="button" class="modal-cancel" on:click={() => (showCreateModal = false)}>

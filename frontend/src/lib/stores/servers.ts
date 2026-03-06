@@ -174,7 +174,7 @@ export async function loadChannelMessages(channelId: string): Promise<void> {
 				const text = await decryptChannel(m.channel_id, m.sender_id, {
 					ciphertext: m.ciphertext,
 					msg_num: m.msg_num,
-				});
+				}, { allowHistorical: true });
 				return {
 					id: m.id,
 					conversationId: m.channel_id,

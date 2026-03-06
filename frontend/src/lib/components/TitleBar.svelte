@@ -3,7 +3,8 @@
 
 	// Only show in Tauri
 	const isTauri =
-		typeof window !== "undefined" && !!(window as any).__TAURI__;
+		typeof window !== "undefined" &&
+		!!((window as any).__TAURI_INTERNALS__ || (window as any).__TAURI__);
 
 	$: channelName = $page.url.pathname.includes("/channels/")
 		? "#" + ($page.url.pathname.split("/").pop() ?? "general")
@@ -32,7 +33,7 @@
 </script>
 
 {#if isTauri}
-	<div class="title-bar" data-tauri-drag-region>
+	<div class="title-bar">
 		<div class="title-left" data-tauri-drag-region>
 			<div class="app-icon" data-tauri-drag-region></div>
 			<span class="app-name" data-tauri-drag-region>Yapper</span>

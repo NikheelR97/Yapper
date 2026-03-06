@@ -34,7 +34,9 @@ test.describe('Login page', () => {
 
 		await page.fill('#email', 'nobody@nowhere.invalid');
 		await page.fill('#password', 'wrongpassword');
-		await page.getByRole('button', { name: /Sign In/i }).click();
+		const submitBtn = page.getByRole('button', { name: /Sign In/i });
+		await expect(submitBtn).toBeEnabled();
+		await submitBtn.click();
 
 		await expect(page.locator('[role="alert"]')).toBeVisible({ timeout: 8_000 });
 	});
@@ -90,8 +92,9 @@ test.describe('Register page', () => {
 		await page.goto('/register');
 
 		await page.fill('#password', 'weak');
-		// Strength fill bar appears once password is non-empty
-		await expect(page.locator('.strength-fill')).toBeVisible();
+		// The strength bar container and label are always visible once password is non-empty
+		await expect(page.locator('.strength-bar')).toBeVisible();
+		await expect(page.locator('.strength-label')).toBeVisible();
 	});
 
 	test('navigates to /login via sign-in link', async ({ page }) => {

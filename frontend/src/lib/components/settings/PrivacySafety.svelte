@@ -13,7 +13,8 @@
 
 	// Detect if running in Tauri
 	const isTauri =
-		typeof window !== "undefined" && !!(window as any).__TAURI__;
+		typeof window !== "undefined" &&
+		!!((window as any).__TAURI_INTERNALS__ || (window as any).__TAURI__);
 
 	// Pre-populate from the API
 	onMount(async () => {

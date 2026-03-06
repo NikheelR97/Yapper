@@ -179,13 +179,15 @@
 					/>
 				</div>
 
-				<div class="field">
-					<label class="field-label">Choose a Vibe</label>
+				<fieldset class="field vibe-field">
+					<legend class="field-label">Choose a Vibe</legend>
 					<div class="vibe-grid">
 						{#each vibes as vibe, i}
 							<button
+								type="button"
 								class="vibe-card"
 								class:selected={selectedVibe === i}
+								aria-pressed={selectedVibe === i}
 								on:click={() => (selectedVibe = i)}
 							>
 								<span class="vibe-emoji">{vibe.emoji}</span>
@@ -196,7 +198,7 @@
 							</button>
 						{/each}
 					</div>
-				</div>
+				</fieldset>
 			</div>
 
 		<!-- Step 2: Date of birth -->

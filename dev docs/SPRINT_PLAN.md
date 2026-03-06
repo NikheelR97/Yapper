@@ -20,8 +20,8 @@
 | **S7** | W15–W16 | Phase 9 + Phase 10 | Profiles + Parental Controls | ✅ Complete (BE + FE) |
 | **S8** | W17–W18 | Phase 11 + Phase 12 | Screen Time + Discord Integration | ✅ Complete (BE + FE) |
 | **S9** | W19–W20 | Phase 13 + Phase 14 | Emojis + Settings | ✅ Complete (BE + FE) |
-| **S10** | W21–W22 | Phase 15 + Phase 16 | Desktop Polish + Security Audit | FE Partial — Security Audit Pending |
-| **S11** | W23–W24 | Phase 17 + Phase 18 | Premium Prep + Launch | Premium BE ✅ — E2E Testing + Launch Pending |
+| **S10** | W21–W22 | Phase 15 + Phase 16 | Desktop Polish + Security Audit | ✅ Complete |
+| **S11** | W23–W24 | Phase 17 + Phase 18 | Premium Prep + Launch | In Progress — Desktop deployed, E2E Testing + Launch Pending |
 | **B1** | Any time | Business | Startup Cloud Credits | ⏳ Not started — apply basic tracks immediately |
 
 **Total: ~24 weeks (6 months) to MVP launch.**
@@ -619,15 +619,15 @@ These prerequisite UI components were built across S7–S11 FE work and wired in
 
 | # | Task | Owner | Done |
 |---|------|-------|------|
-| 1 | Implement system tray: Tauri v2 tray plugin, minimize to tray, unread badge | FE | [ ] |
-| 2 | Implement native notifications: Tauri notification plugin | FE | [ ] |
+| 1 | Implement system tray: Tauri v2 tray plugin, minimize to tray, unread badge | FE | [x] |
+| 2 | Implement native notifications: Tauri notification plugin | FE | [x] |
 | 3 | Implement secure key storage: Tauri `stronghold` plugin for Signal keys | FE | [ ] |
-| 4 | Implement auto-updater: Tauri updater plugin with update manifest | FE | [ ] |
+| 4 | Implement auto-updater: Tauri updater plugin with update manifest | FE | [x] |
 | 5 | Implement keyboard shortcuts: `Ctrl+/` help modal, `Ctrl+K`, `Ctrl+,`, `Ctrl+Y`, `Ctrl+M` | FE | [x] |
 | 6 | Build custom title bar: `TitleBar.svelte` (Tauri-only, drag region, minimize/maximize/close) | FE | [x] |
-| 7 | Implement deep links: `yapper://` protocol registration | FE | [ ] |
-| 8 | Create `src/lib/plugins/tauri-compat.ts`: unified interface for Tauri + Capacitor | FE | [ ] |
-| 9 | Configure Windows NSIS installer | FS | [ ] |
+| 7 | Implement deep links: `yapper://` protocol registration | FE | [x] |
+| 8 | Create `src/lib/plugins/tauri-compat.ts`: unified interface for Tauri + Capacitor | FE | [x] |
+| 9 | Configure Windows NSIS installer | FS | [x] |
 | 10 | Configure macOS DMG + .app bundle | FS | [ ] |
 | 11 | Configure Linux AppImage + `.deb` | FS | [ ] |
 | 12 | Test on all 3 desktop platforms | FE/FS | [ ] |
@@ -644,7 +644,7 @@ These prerequisite UI components were built across S7–S11 FE work and wired in
 | 6 | Audit WebSocket: verify first-message auth, max frame 64KB, max 5 connections/user | BE | [x] |
 | 7 | Audit password handling: verify Argon2id params (`m=65536, t=3, p=4`), reject > 1KB | BE | [x] |
 | 8 | Audit JWT: verify RS256 + `kid` rotation, 15-min TTL | BE | [x] |
-| 9 | Implement safety numbers: SHA-256 fingerprint display of identity keys + change alert | FE | [ ] |
+| 9 | Implement safety numbers: SHA-256 fingerprint display of identity keys + change alert | FE | [x] |
 | 10 | Verify GDPR data export: no plaintext in ZIP | BE | [x] |
 | 11 | Verify right to erasure: soft delete → PII purge job → username anonymized to `[deleted]` | BE | [x] |
 | 12 | Verify COPPA: age gate, consent flow, no behavioral analytics for child accounts | BE | [x] |
@@ -656,17 +656,19 @@ These prerequisite UI components were built across S7–S11 FE work and wired in
 
 - [x] Custom title bar: `TitleBar.svelte` (Tauri-only, drag region, minimize/maximize/close red hover)
 - [x] Keyboard shortcuts modal: `Ctrl+/` opens `KeyboardShortcutsModal.svelte` (4 sections, `<kbd>` style)
-- [ ] System tray: minimize to tray, unread badge (Tauri plugin pending)
-- [ ] Native notifications (Tauri plugin pending)
-- [ ] Auto-updater checks for updates on launch (Tauri updater pending)
-- [ ] Deep links: `yapper://invite/CODE` opens app and processes invite
-- [ ] All 3 desktop installers build successfully
+- [x] System tray: left-click shows window, "Open"/"Quit" menu, unread badge via tooltip
+- [x] Native notifications: DM + @mention, DND schedule, permission request on mount
+- [x] Auto-updater: silent background check on launch, `UpdateBanner.svelte` on update found
+- [x] Deep links: `yapper://dm/*`, `yapper://server/*`, `yapper://invite/*` — all wired
+- [x] Windows NSIS + MSI installers build successfully (`Yapper_0.1.0_x64-setup.exe`, `Yapper_0.1.0_x64_en-US.msi`)
+- [ ] macOS DMG + Linux AppImage build successfully (requires Mac)
 - [x] Security audit: all items pass or have documented mitigations
 - [x] `cargo audit` + `npm audit`: zero high/critical vulnerabilities (remaining are transitive/build-only)
 - [x] GDPR: data export works, PII anonymized on delete, COPPA consent enforced
 - [x] `SECURITY_AUDIT.md` completed and reviewed
 
-> **S10 Security Audit complete** (2026-03-05). 20-item audit: 14 PASS, 5 FIXED (WS max connections, read receipt auth, PII anonymization, deny_unknown_fields, CORS verified), dependency scans run. `SECURITY_AUDIT.md` written. `TitleBar.svelte` + `KeyboardShortcutsModal.svelte` done earlier. Deferred: safety numbers FE (W22.9), Playwright security smoke tests (W22.14), system tray, auto-updater, deep links, desktop installers.
+> **S10 Security Audit complete** (2026-03-05). 20-item audit: 14 PASS, 5 FIXED. `SECURITY_AUDIT.md` written. Cookie SameSite changed from `Strict` to `None` (production only) to support cross-origin Tauri v2 WebView2 (`http://tauri.localhost` → `https://api.yapperhq.com`).
+> **S10 Desktop Polish complete** (2026-03-06). System tray (minimize-to-tray, badge tooltip, `TrayBadgeUpdater` state), native notifications (DM + @mention + DND), auto-updater (silent check + `UpdateBanner`), deep links (`yapper://`), `TitleBar.svelte`, `KeyboardShortcutsModal.svelte`, `tauri-compat.ts` (unified Tauri/Capacitor/Web abstraction), safety numbers FE (SHA-256 fingerprint modal, key-change alert, verified badge). **Windows NSIS installer built and tested** (`Yapper_0.1.0_x64-setup.exe`). Tauri v2 fixes: `withGlobalTauri: true` in tauri.conf.json, all 6 files updated to check `__TAURI_INTERNALS__` (Tauri v2) alongside `__TAURI__`, `.env.production` created with production API URLs, CORS origins updated on Fly.io to include `http://tauri.localhost`. Migration files normalized to LF (`.gitattributes` added). Deferred: Stronghold secure key storage (post-MVP), macOS DMG, Linux AppImage, Playwright smoke tests.
 
 ---
 
@@ -705,9 +707,9 @@ These prerequisite UI components were built across S7–S11 FE work and wired in
 | 10 | Test: bot import → bot sends message | BE | [ ] |
 | 11 | Test: custom emoji → renders in messages | FE | [ ] |
 | 12 | Test: data export → no plaintext; account deletion → PII purge | BE | [ ] |
-| 13 | Deploy final production build to Fly.io | FS | [ ] |
-| 14 | Deploy frontend to Cloudflare Pages (production) | FS | [ ] |
-| 15 | Configure custom domains: `api.yapperhq.com`, `app.yapperhq.com` | FS | [ ] |
+| 13 | Deploy final production build to Fly.io | FS | [x] |
+| 14 | Deploy frontend to Cloudflare Pages (production) | FS | [x] |
+| 15 | Configure custom domains: `api.yapperhq.com`, `app.yapperhq.com` | FS | [x] |
 | 16 | Submit to Apple App Store (requires Mac + Xcode + signing) | FS | [ ] |
 | 17 | Submit to Google Play Store | FS | [ ] |
 | 18 | Update marketing site: remove "Coming soon", add download links | FE | [ ] |
@@ -721,14 +723,15 @@ These prerequisite UI components were built across S7–S11 FE work and wired in
 - [x] Premium gating enforced server-side: `premium_since` column, promo code activation, Stripe webhook, emoji 50/100 limit
 - [x] Sentry captures errors in both backend (`sentry-rust`) and frontend (`@sentry/sveltekit`)
 - [ ] All 13 E2E testing checklist items pass
-- [ ] Production backend accessible at `api.yapperhq.com`
-- [ ] Production frontend accessible at `app.yapperhq.com`
+- [x] Production backend accessible at `api.yapperhq.com` (Fly.io, health returns `{"db":true,"status":"ok"}`)
+- [x] Production frontend accessible at `app.yapperhq.com` (Cloudflare Pages, 95 files deployed)
 - [ ] iOS app submitted to App Store (or TestFlight)
 - [ ] Android app submitted to Google Play
 - [ ] Marketing site updated with download links
 - [ ] Wishlist notification email sent
 
-> **S11 W23 Complete** (BE + FE, 2026-03-05). Premium BE: `src/premium/mod.rs` (promo code activation, Stripe webhook HMAC-SHA256, `GET/DELETE /api/v1/premium`), `migration 000020` (`premium_since TIMESTAMPTZ`). Sentry integrated (`sentry-rust` + `@sentry/sveltekit`). CI/CD and production secrets all configured. GoproLock, Premium.svelte, AppLoadingScreen done (2026-03-03). Apple OAuth BE implemented (2026-03-05). Playwright scaffolding done. **Deferred:** full E2E testing checklist (W24), production domain config, app store submissions, `SECURITY_AUDIT.md`.
+> **S11 W23 Complete** (BE + FE, 2026-03-05). Premium BE: `src/premium/mod.rs` (promo code activation, Stripe webhook HMAC-SHA256, `GET/DELETE /api/v1/premium`), `migration 000020` (`premium_since TIMESTAMPTZ`). Sentry integrated (`sentry-rust` + `@sentry/sveltekit`). CI/CD and production secrets all configured. GoproLock, Premium.svelte, AppLoadingScreen done (2026-03-03). Apple OAuth BE implemented (2026-03-05). Playwright scaffolding done.
+> **S11 W24 In Progress** (2026-03-06). Production backend live at `api.yapperhq.com` (Fly.io, 2 machines jnb). Frontend deployed to Cloudflare Pages at `app.yapperhq.com`. Windows NSIS desktop installer built and tested (`Yapper_0.1.0_x64-setup.exe`). Custom domains configured (api → Fly.io, app → Pages). **Remaining:** full E2E testing checklist, macOS DMG + iOS build (requires Mac), Google Play submission, marketing site update, wishlist blast email.
 
 ---
 

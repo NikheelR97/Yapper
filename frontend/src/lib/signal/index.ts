@@ -57,6 +57,14 @@ function b64ToBytes(b64: string): Uint8Array {
 	return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 }
 
+function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
+	if (a.length !== b.length) return false;
+	for (let i = 0; i < a.length; i++) {
+		if (a[i] !== b[i]) return false;
+	}
+	return true;
+}
+
 // ─── Key Generation ───────────────────────────────────────────────────────────
 
 /**
@@ -319,13 +327,14 @@ export async function encryptChannel(
 export async function decryptChannel(
 	channelId: string,
 	senderId: string,
-	msg: { ciphertext: string; msg_num: number | null }
+	msg: { ciphertext: string; msg_num: number | null },
+	opts: { allowHistorical?: boolean } = {}
 ): Promise<string> {
 	const record = await ks.loadReceiverKey(channelId, senderId);
 	if (!record) throw new Error(`No SenderKey for sender ${senderId} in channel ${channelId}`);
 
 	const encrypted = unpackChannelMessage(msg.ciphertext, msg.msg_num ?? 0);
-	const { plaintext, updatedRecord } = await decryptWithSenderKey(record, encrypted);
+	const { plaintext, updatedRecord } = await decryptWithSenderKey(record, encrypted, opts);
 	await ks.storeReceiverKey(updatedRecord);
 	return new TextDecoder().decode(plaintext);
 }
@@ -419,12 +428,27 @@ async function fetchAndStorePendingDists(
 			const ct = b64ToBytes(dist.ciphertext);
 			const ek = b64ToBytes(dist.ek_public);
 			const payload = await decryptSenderKeyDist(ct, ek, identity.dhPrivateKey, identity.dhPublicKey);
+			const incomingChainKey = b64ToBytes(payload.chainKey);
+			const incomingSigningKey = b64ToBytes(payload.signingPubKey);
+			const existing = await ks.loadReceiverKey(payload.channelId, dist.from_user);
+
+			if (existing && bytesEqual(existing.signingPubKey, incomingSigningKey) && existing.iteration > payload.iteration) {
+				await ks.storeReceiverKey({
+					...existing,
+					initialChainKey: existing.initialChainKey ?? incomingChainKey,
+					initialIteration: existing.initialIteration ?? payload.iteration,
+				});
+				continue;
+			}
+
 			const record: SenderKeyRecord = {
 				channelId: payload.channelId,
 				senderId: dist.from_user,
-				chainKey: b64ToBytes(payload.chainKey),
-				signingPubKey: b64ToBytes(payload.signingPubKey),
+				chainKey: incomingChainKey,
+				signingPubKey: incomingSigningKey,
 				iteration: payload.iteration,
+				initialChainKey: incomingChainKey,
+				initialIteration: payload.iteration,
 			};
 			await ks.storeReceiverKey(record);
 		} catch (e) {
@@ -510,12 +534,28 @@ export async function receiveSenderKeyDist(event: {
 		const ct = b64ToBytes(event.ciphertext);
 		const ek = b64ToBytes(event.ek_public);
 		const payload = await decryptSenderKeyDist(ct, ek, identity.dhPrivateKey, identity.dhPublicKey);
+		const incomingChainKey = b64ToBytes(payload.chainKey);
+		const incomingSigningKey = b64ToBytes(payload.signingPubKey);
+		const existing = await ks.loadReceiverKey(payload.channelId, event.from_user);
+
+		if (existing && bytesEqual(existing.signingPubKey, incomingSigningKey) && existing.iteration > payload.iteration) {
+			await ks.storeReceiverKey({
+				...existing,
+				initialChainKey: existing.initialChainKey ?? incomingChainKey,
+				initialIteration: existing.initialIteration ?? payload.iteration,
+			});
+			console.debug(`[Signal] Refreshed SenderKey seed for ${event.from_user} in channel ${event.channel_id}`);
+			return;
+		}
+
 		const record: SenderKeyRecord = {
 			channelId: payload.channelId,
 			senderId: event.from_user,
-			chainKey: b64ToBytes(payload.chainKey),
-			signingPubKey: b64ToBytes(payload.signingPubKey),
+			chainKey: incomingChainKey,
+			signingPubKey: incomingSigningKey,
 			iteration: payload.iteration,
+			initialChainKey: incomingChainKey,
+			initialIteration: payload.iteration,
 		};
 		await ks.storeReceiverKey(record);
 		console.debug(`[Signal] Received SenderKey from ${event.from_user} for channel ${event.channel_id}`);

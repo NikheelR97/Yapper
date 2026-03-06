@@ -275,11 +275,12 @@
 	</div>
 
 	<!-- Profile theme -->
-	<div class="field">
-		<label class="field-label">Profile Theme</label>
+	<fieldset class="field theme-field">
+		<legend class="field-label">Profile Theme</legend>
 		<div class="theme-swatches">
 			{#each themes as color}
 				<button
+					type="button"
 					class="swatch"
 					class:active={selectedTheme === color}
 					style="background: {color}"
@@ -291,6 +292,7 @@
 				></button>
 			{/each}
 			<button
+				type="button"
 				class="swatch custom-swatch"
 				class:active={!themes.includes(selectedTheme)}
 				style="background: {customColor}"
@@ -308,7 +310,7 @@
 				on:input={() => (selectedTheme = customColor)}
 			/>
 		{/if}
-	</div>
+	</fieldset>
 
 	<button class="save-btn" on:click={save} disabled={saving}>
 		{saving ? "Saving…" : "Save Changes"}
@@ -320,6 +322,12 @@
 		display: flex;
 		flex-direction: column;
 		gap: 24px;
+	}
+
+	.theme-field {
+		border: 0;
+		padding: 0;
+		min-inline-size: 0;
 	}
 
 	/* Preview */

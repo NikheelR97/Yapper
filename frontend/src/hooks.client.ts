@@ -2,7 +2,11 @@ import * as Sentry from '@sentry/sveltekit';
 
 const dsn = import.meta.env.VITE_SENTRY_DSN as string | undefined;
 
-if (dsn) {
+export function init() {
+	if (!dsn) {
+		return;
+	}
+
 	Sentry.init({
 		dsn,
 		environment: import.meta.env.MODE,

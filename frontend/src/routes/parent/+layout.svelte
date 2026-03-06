@@ -297,10 +297,6 @@
 		border: 2px solid #0f1117;
 	}
 
-	.status-dot.online {
-		background: #22c55e;
-	}
-
 	.child-name {
 		font-size: 14px;
 		color: #f9fafb;

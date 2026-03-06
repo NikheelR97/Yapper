@@ -1,12 +1,36 @@
 <script lang="ts">
+	import { tick } from 'svelte';
+
 	export let open = false;
+	let modalOverlay: HTMLDivElement | null = null;
 
 	function close() {
 		open = false;
 	}
 
+	$: if (open) {
+		void focusModal();
+	}
+
+	async function focusModal() {
+		await tick();
+		modalOverlay?.focus();
+	}
+
 	function handleKeydown(e: KeyboardEvent) {
 		if (e.key === 'Escape' && open) close();
+	}
+
+	function handleOverlayClick(e: MouseEvent) {
+		if (e.target === e.currentTarget) {
+			close();
+		}
+	}
+
+	function handleOverlayKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape') {
+			close();
+		}
 	}
 
 	const sections = [
@@ -47,8 +71,17 @@
 <svelte:window on:keydown={handleKeydown} />
 
 {#if open}
-	<div class="modal-overlay" on:click={close} role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
-		<div class="modal-card" on:click|stopPropagation>
+	<div
+		class="modal-overlay"
+		bind:this={modalOverlay}
+		on:click={handleOverlayClick}
+		on:keydown={handleOverlayKeydown}
+		role="dialog"
+		aria-modal="true"
+		aria-label="Keyboard shortcuts"
+		tabindex="-1"
+	>
+		<div class="modal-card">
 			<div class="modal-header">
 				<h2 class="modal-title">Keyboard Shortcuts</h2>
 				<button class="close-btn" on:click={close} aria-label="Close">✕</button>

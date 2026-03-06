@@ -115,29 +115,67 @@ export async function encryptWithSenderKey(
  * Saves message keys for skipped messages (up to MAX_SKIP steps ahead).
  */
 const MAX_SKIP = 100;
+const MAX_HISTORY_SKIP = 100_000;
+
+function deriveForIteration(
+	startChainKey: Uint8Array,
+	startIteration: number,
+	targetIteration: number
+): { messageKey: Uint8Array; nextChainKey: Uint8Array } {
+	let chainKey = startChainKey;
+	let messageKey: Uint8Array | null = null;
+	for (let i = startIteration; i <= targetIteration; i++) {
+		const { messageKey: mk, nextChainKey } = advanceChain(chainKey);
+		if (i === targetIteration) messageKey = mk;
+		chainKey = nextChainKey;
+	}
+	if (!messageKey) throw new Error('[SenderKey] Failed to derive message key');
+	return { messageKey, nextChainKey: chainKey };
+}
 
 export async function decryptWithSenderKey(
 	record: SenderKeyRecord,
 	encrypted: EncryptedChannelMessage,
+	opts: { allowHistorical?: boolean } = {}
 ): Promise<{ plaintext: Uint8Array; updatedRecord: SenderKeyRecord }> {
 	const { iteration } = encrypted;
+	const allowHistorical = opts.allowHistorical === true;
+
+	let messageKey: Uint8Array;
+	let nextChainKey = record.chainKey;
+	let nextIteration = record.iteration;
 
 	if (iteration < record.iteration) {
-		throw new Error(`[SenderKey] Message iteration ${iteration} already consumed (at ${record.iteration})`);
-	}
-	if (iteration - record.iteration > MAX_SKIP) {
-		throw new Error(`[SenderKey] Message iteration ${iteration} too far ahead (at ${record.iteration})`);
-	}
+		if (!allowHistorical) {
+			throw new Error(`[SenderKey] Message iteration ${iteration} already consumed (at ${record.iteration})`);
+		}
 
-	// Advance chain key to reach the message's iteration
-	let chainKey = record.chainKey;
-	let messageKey: Uint8Array | null = null;
-	for (let i = record.iteration; i <= iteration; i++) {
-		const { messageKey: mk, nextChainKey } = advanceChain(chainKey);
-		if (i === iteration) messageKey = mk;
-		chainKey = nextChainKey;
+		const initialChainKey = record.initialChainKey;
+		const initialIteration = record.initialIteration ?? 0;
+		if (!initialChainKey || iteration < initialIteration) {
+			throw new Error(`[SenderKey] No historical key material for iteration ${iteration}`);
+		}
+		if (iteration - initialIteration > MAX_HISTORY_SKIP) {
+			throw new Error(
+				`[SenderKey] Historical iteration ${iteration} too far from seed (at ${initialIteration})`
+			);
+		}
+
+		const derived = deriveForIteration(initialChainKey, initialIteration, iteration);
+		messageKey = derived.messageKey;
+		// Keep current ratchet state intact when decrypting old history.
+		nextChainKey = record.chainKey;
+		nextIteration = record.iteration;
+	} else {
+		if (iteration - record.iteration > MAX_SKIP) {
+			throw new Error(`[SenderKey] Message iteration ${iteration} too far ahead (at ${record.iteration})`);
+		}
+
+		const derived = deriveForIteration(record.chainKey, record.iteration, iteration);
+		messageKey = derived.messageKey;
+		nextChainKey = derived.nextChainKey;
+		nextIteration = iteration + 1;
 	}
-	if (!messageKey) throw new Error('[SenderKey] Failed to derive message key');
 
 	// Verify Ed25519 signature
 	const ciphertextBytes = b64ToBytes(encrypted.ciphertext);
@@ -159,8 +197,8 @@ export async function decryptWithSenderKey(
 
 	const updatedRecord: SenderKeyRecord = {
 		...record,
-		chainKey,
-		iteration: iteration + 1,
+		chainKey: nextChainKey,
+		iteration: nextIteration,
 	};
 
 	return { plaintext: new Uint8Array(plain), updatedRecord };

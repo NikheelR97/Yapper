@@ -1,5 +1,5 @@
 use tauri::{AppHandle, Manager, Runtime, State};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 /// Shared app state — persists for the lifetime of the process.
 #[derive(Default)]
@@ -9,6 +9,20 @@ pub struct AppSettings {
 }
 
 pub type AppSettingsState = Mutex<AppSettings>;
+
+// ─── Tray badge state ─────────────────────────────────────────────────────────
+
+/// Callback installed during setup that updates the system tray tooltip with
+/// the current unread count. Stored as a boxed fn so commands don't need to
+/// carry the Wry runtime generic.
+pub struct TrayBadgeUpdater(pub Arc<dyn Fn(u32) + Send + Sync>);
+
+/// Update the system tray tooltip to reflect unread message count.
+/// `count = 0` resets the tooltip to "Yapper".
+#[tauri::command]
+pub fn set_tray_badge(count: u32, updater: State<'_, TrayBadgeUpdater>) {
+    (updater.0)(count);
+}
 
 // ─── Window commands ──────────────────────────────────────────────────────────
 

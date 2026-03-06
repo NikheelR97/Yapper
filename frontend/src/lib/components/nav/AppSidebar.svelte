@@ -12,7 +12,7 @@
     import type { Channel } from "$stores/servers.js";
     import { conversationsStore } from "$stores/conversations.js";
     import UserAvatar from "$lib/components/UserAvatar.svelte";
-    import { onMount } from "svelte";
+    import { onMount, tick } from "svelte";
 
     $: path = $page.url.pathname;
     $: serverId = $page.params.id ?? "";
@@ -34,6 +34,7 @@
     let showCreateModal = false;
     let newServerName = "";
     let creating = false;
+    let createServerInput: HTMLInputElement | null = null;
 
     // ── Invite panel ──
     let inviteCode = "";
@@ -52,6 +53,15 @@
 
     $: if (serverId && mode === "server") {
         loadChannels(serverId);
+    }
+
+    $: if (showCreateModal) {
+        void focusCreateServerInput();
+    }
+
+    async function focusCreateServerInput() {
+        await tick();
+        createServerInput?.focus();
     }
 
     async function loadChannels(sid: string) {
@@ -523,17 +533,18 @@
             role="dialog"
             aria-modal="true"
             aria-label="Create server"
+            tabindex="-1"
             on:click|stopPropagation
         >
             <h2 class="modal-title">Create a Server</h2>
             <form on:submit|preventDefault={handleCreateServer}>
                 <input
+                    bind:this={createServerInput}
                     bind:value={newServerName}
                     placeholder="Server name"
                     class="modal-input"
                     maxlength="100"
                     required
-                    autofocus
                 />
                 <div class="modal-actions">
                     <button

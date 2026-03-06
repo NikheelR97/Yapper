@@ -75,7 +75,12 @@ pub fn csrf_cookie_header(token: &str) -> String {
     } else {
         ""
     };
-    format!("csrf_token={token}; SameSite=Strict; Path=/; Max-Age=86400{secure_flag}")
+    let same_site = if should_use_secure_cookie() {
+        "None"
+    } else {
+        "Strict"
+    };
+    format!("csrf_token={token}; SameSite={same_site}; Path=/; Max-Age=86400{secure_flag}")
 }
 
 /// Clear CSRF cookie on logout.
@@ -85,10 +90,15 @@ pub fn clear_csrf_cookie() -> String {
     } else {
         ""
     };
-    format!("csrf_token=; SameSite=Strict; Path=/; Max-Age=0{secure_flag}")
+    let same_site = if should_use_secure_cookie() {
+        "None"
+    } else {
+        "Strict"
+    };
+    format!("csrf_token=; SameSite={same_site}; Path=/; Max-Age=0{secure_flag}")
 }
 
-fn should_use_secure_cookie() -> bool {
+pub fn should_use_secure_cookie() -> bool {
     std::env::var("COOKIE_SECURE")
         .map(|value| {
             let normalized = value.trim().to_ascii_lowercase();

@@ -5,7 +5,8 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager, WindowEvent,
 };
-use tauri_commands::AppSettingsState;
+use tauri_commands::{AppSettingsState, TrayBadgeUpdater};
+use std::sync::Arc;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -40,7 +41,7 @@ pub fn run() {
                 let tray_menu = Menu::with_items(app, &[&open_item, &quit_item])?;
 
                 let tray_handle = handle.clone();
-                TrayIconBuilder::new()
+                let tray_icon = TrayIconBuilder::with_id("main-tray")
                     .icon(app.default_window_icon().cloned().unwrap())
                     .tooltip("Yapper")
                     .menu(&tray_menu)
@@ -74,6 +75,18 @@ pub fn run() {
                         }
                     })
                     .build(app)?;
+
+                // Badge updater — captures a clone of the tray icon handle.
+                // set_tray_badge() Tauri command calls this closure.
+                let badge_icon = tray_icon.clone();
+                app.manage(TrayBadgeUpdater(Arc::new(move |count: u32| {
+                    let tooltip = if count > 0 {
+                        format!("Yapper ({count})")
+                    } else {
+                        "Yapper".to_string()
+                    };
+                    let _ = badge_icon.set_tooltip(Some(&tooltip));
+                })));
             }
 
             // ── Deep links ────────────────────────────────────────────────
@@ -122,6 +135,7 @@ pub fn run() {
             tauri_commands::hide_window,
             tauri_commands::set_minimize_to_tray,
             tauri_commands::get_minimize_to_tray,
+            tauri_commands::set_tray_badge,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tauri application");
