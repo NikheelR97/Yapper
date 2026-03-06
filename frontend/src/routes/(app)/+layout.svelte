@@ -45,6 +45,16 @@
 	let unregisterCanvasHandler: (() => void) | null = null;
 	let unregisterEmojiHandler: (() => void) | null = null;
 	let stopScreenTimeTracker: (() => void) | null = null;
+	const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8080";
+	async function initializeSignalKeys() {
+		try {
+			await setupKeys();
+			await replenishPreKeysIfNeeded();
+		} catch (e) {
+			console.error("[Signal] Key setup failed:", e);
+			toast.error("Encryption setup failed � try refreshing.");
+		}
+	}
 
 	onMount(async () => {
 		const state = get(authStore);
@@ -55,7 +65,14 @@
 				const res = await api.post<{ access_token: string; csrf_token: string }>(
 					"/api/v1/auth/refresh",
 				);
-				const user = await api.get<User>("/api/v1/users/me");
+				const userRes = await fetch(`${BASE_URL}/api/v1/users/me`, {
+					headers: { Authorization: `Bearer ${res.access_token}` },
+					credentials: "include",
+				});
+				if (!userRes.ok) {
+					throw new Error("Unable to restore session user");
+				}
+				const user = (await userRes.json()) as User;
 				setAuth(user, res.access_token, res.csrf_token);
 			} catch {
 				toast.error("Session expired. Please sign in again.");
@@ -64,14 +81,8 @@
 			}
 		}
 
-		// Signal Protocol setup (idempotent — no-op if keys already exist)
-		try {
-			await setupKeys();
-			await replenishPreKeysIfNeeded();
-		} catch (e) {
-			console.error("[Signal] Key setup failed:", e);
-			toast.error("Encryption setup failed — try refreshing.");
-		}
+		// Signal setup can take noticeable time on first run; do not block the app shell.
+		void initializeSignalKeys();
 
 		// WebSocket + message handlers
 		wsConnect();
@@ -178,3 +189,4 @@
 		font-size: 12px;
 	}
 </style>
+

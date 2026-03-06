@@ -1,7 +1,7 @@
 use axum::{
     extract::{Query, State},
     http::{header, HeaderMap, StatusCode},
-    response::IntoResponse,
+    response::{AppendHeaders, IntoResponse},
     Json,
 };
 use chrono::Utc;
@@ -139,7 +139,7 @@ pub async fn register(
     let (cookies, csrf_token) = auth_cookies(&refresh_token);
     Ok((
         StatusCode::CREATED,
-        cookies,
+        append_set_cookie_headers(&cookies),
         Json(AuthResponse {
             access_token,
             csrf_token,
@@ -224,7 +224,7 @@ pub async fn login(
 
     let (cookies, csrf_token) = refresh_cookie(&refresh_token);
     Ok((
-        cookies,
+        append_set_cookie_headers(&cookies),
         Json(AuthResponse {
             access_token,
             csrf_token,
@@ -303,7 +303,7 @@ pub async fn refresh(
 
     let (cookies, csrf_token) = refresh_cookie(&new_refresh);
     Ok((
-        cookies,
+        append_set_cookie_headers(&cookies),
         Json(serde_json::json!({ "access_token": new_access, "csrf_token": csrf_token })),
     ))
 }
@@ -333,7 +333,8 @@ pub async fn logout(
         }
     }
 
-    Ok((clear_auth_cookies(), StatusCode::NO_CONTENT))
+    let cookies = clear_auth_cookies();
+    Ok((append_set_cookie_headers(&cookies), StatusCode::NO_CONTENT))
 }
 
 // ─── Email verification ───────────────────────────────────────────────────────
@@ -459,39 +460,26 @@ fn sha256_hex(input: &str) -> String {
 /// Returns both the refresh cookie headers and the new CSRF token value.
 /// The CSRF token is included in the JSON response body so cross-origin frontends
 /// (Tauri, Capacitor) can read it — they can't access Set-Cookie from a different origin.
-fn auth_cookies(refresh_token: &str) -> ([(header::HeaderName, String); 2], String) {
+fn auth_cookies(refresh_token: &str) -> ([String; 2], String) {
     let csrf_token = Uuid::new_v4().to_string();
+    let use_secure_cookie = crate::csrf::should_use_secure_cookie();
     let cookies = [
-        (
-            header::SET_COOKIE,
-            format!(
-                "refresh_token={refresh_token}; HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth/refresh; Max-Age={REFRESH_TTL_SECS}"
-            ),
-        ),
-        (
-            header::SET_COOKIE,
-            crate::csrf::csrf_cookie_header(&csrf_token),
-        ),
+        refresh_cookie_header(refresh_token, REFRESH_TTL_SECS, use_secure_cookie),
+        crate::csrf::csrf_cookie_header(&csrf_token),
     ];
     (cookies, csrf_token)
 }
 
 /// Refresh endpoint: rotate refresh token, issue fresh CSRF token.
-fn refresh_cookie(token: &str) -> ([(header::HeaderName, String); 2], String) {
+fn refresh_cookie(token: &str) -> ([String; 2], String) {
     auth_cookies(token)
 }
 
-fn clear_auth_cookies() -> [(header::HeaderName, String); 2] {
+fn clear_auth_cookies() -> [String; 2] {
+    let use_secure_cookie = crate::csrf::should_use_secure_cookie();
     [
-        (
-            header::SET_COOKIE,
-            "refresh_token=; HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth/refresh; Max-Age=0"
-                .to_string(),
-        ),
-        (
-            header::SET_COOKIE,
-            crate::csrf::clear_csrf_cookie(),
-        ),
+        refresh_cookie_header("", 0, use_secure_cookie),
+        crate::csrf::clear_csrf_cookie(),
     ]
 }
 
@@ -501,6 +489,23 @@ fn extract_refresh_cookie(headers: &HeaderMap) -> Option<String> {
         .split(';')
         .find(|s| s.trim().starts_with("refresh_token="))
         .map(|s| s.trim().trim_start_matches("refresh_token=").to_string())
+}
+
+fn refresh_cookie_header(refresh_token: &str, max_age: i64, use_secure_cookie: bool) -> String {
+    let secure_flag = if use_secure_cookie { "; Secure" } else { "" };
+    let same_site = if use_secure_cookie { "None" } else { "Strict" };
+    format!(
+        "refresh_token={refresh_token}; HttpOnly{secure_flag}; SameSite={same_site}; Path=/api/v1/auth/refresh; Max-Age={max_age}"
+    )
+}
+
+fn append_set_cookie_headers(
+    cookies: &[String; 2],
+) -> AppendHeaders<[(header::HeaderName, String); 2]> {
+    AppendHeaders([
+        (header::SET_COOKIE, cookies[0].clone()),
+        (header::SET_COOKIE, cookies[1].clone()),
+    ])
 }
 
 fn extract_ip(headers: &HeaderMap) -> IpAddr {
@@ -680,5 +685,31 @@ pub async fn change_password(
     .execute(pool)
     .await?;
 
-    Ok((clear_auth_cookies(), StatusCode::NO_CONTENT))
+    let cookies = clear_auth_cookies();
+    Ok((append_set_cookie_headers(&cookies), StatusCode::NO_CONTENT))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::refresh_cookie_header;
+
+    #[test]
+    fn refresh_cookie_header_omits_secure_flag_for_local_http() {
+        let header = refresh_cookie_header("token", 60, false);
+
+        assert!(header.contains("refresh_token=token"));
+        assert!(header.contains("HttpOnly"));
+        assert!(header.contains("SameSite=Strict"));
+        assert!(!header.contains("; Secure"));
+    }
+
+    #[test]
+    fn refresh_cookie_header_includes_secure_flag_for_https() {
+        let header = refresh_cookie_header("token", 60, true);
+
+        assert!(header.contains("refresh_token=token"));
+        assert!(header.contains("HttpOnly"));
+        assert!(header.contains("; Secure"));
+        assert!(header.contains("SameSite=None"));
+    }
 }

@@ -1,7 +1,7 @@
 use axum::{
     extract::{Form, Query, State},
     http::header,
-    response::{IntoResponse, Redirect},
+    response::{AppendHeaders, IntoResponse, Redirect},
 };
 use chrono::Utc;
 use serde::Deserialize;
@@ -420,8 +420,11 @@ async fn issue_oauth_session(
     .execute(pool)
     .await?;
 
+    let use_secure_cookie = crate::csrf::should_use_secure_cookie();
+    let secure_flag = if use_secure_cookie { "; Secure" } else { "" };
+    let same_site = if use_secure_cookie { "None" } else { "Lax" };
     let refresh_cookie = format!(
-        "refresh_token={refresh_token}; HttpOnly; Secure; SameSite=Lax; Path=/auth/oauth; Max-Age={REFRESH_TTL_SECS}"
+        "refresh_token={refresh_token}; HttpOnly{secure_flag}; SameSite={same_site}; Path=/auth/oauth; Max-Age={REFRESH_TTL_SECS}"
     );
 
     // Generate a CSRF token so that state-mutating POSTs (e.g. Signal key upload)
@@ -439,10 +442,10 @@ async fn issue_oauth_session(
     );
 
     Ok((
-        [
+        AppendHeaders([
             (header::SET_COOKIE, refresh_cookie),
             (header::SET_COOKIE, csrf_cookie),
-        ],
+        ]),
         Redirect::to(&redirect_url),
     )
         .into_response())
