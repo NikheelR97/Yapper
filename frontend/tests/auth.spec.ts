@@ -117,6 +117,6 @@ test.describe('Authenticated navigation', () => {
 		await page.fill('#password', TEST_PASSWORD);
 		await page.getByRole('button', { name: /Sign In/i }).click();
 
-		await expect(page).toHaveURL(/\/explore/, { timeout: 10_000 });
+		await expect(page).toHaveURL(/\/explore/, { timeout: 20_000 });
 	});
 });

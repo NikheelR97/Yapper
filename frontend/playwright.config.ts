@@ -1,4 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
+import { existsSync } from 'fs';
+
+const authStateFile = 'tests/auth-state.json';
 
 /**
  * Playwright E2E test configuration.
@@ -15,6 +18,8 @@ import { defineConfig, devices } from '@playwright/test';
  */
 export default defineConfig({
 	testDir: './tests',
+	// Log in once; all authenticated tests reuse the saved refresh cookie
+	globalSetup: process.env.E2E_EMAIL ? './tests/global-setup.ts' : undefined,
 	fullyParallel: false,
 	forbidOnly: !!process.env.CI,
 	retries: process.env.CI ? 1 : 0,
@@ -25,6 +30,10 @@ export default defineConfig({
 		baseURL: process.env.BASE_URL ?? 'http://localhost:5173',
 		trace: 'on-first-retry',
 		screenshot: 'only-on-failure',
+		// Reuse saved session so tests don't call POST /login individually
+		storageState: process.env.E2E_EMAIL && existsSync(authStateFile)
+			? authStateFile
+			: undefined,
 	},
 
 	projects: [

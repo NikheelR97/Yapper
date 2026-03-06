@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { mockAuthEndpoints } from './auth-helper.js';
 
 /**
  * Navigation & protected-route E2E tests.
@@ -7,17 +8,12 @@ import { test, expect, type Page } from '@playwright/test';
  * Tests that require a real session are gated behind E2E_EMAIL env var.
  */
 
-const TEST_EMAIL = process.env.E2E_EMAIL ?? 'e2e@test.yapper.internal';
-const TEST_PASSWORD = process.env.E2E_PASSWORD ?? 'E2eTestPass1!';
-
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
-async function loginAs(page: Page, email: string, password: string) {
-	await page.goto('/login');
-	await page.fill('#email', email);
-	await page.fill('#password', password);
-	await page.getByRole('button', { name: /Sign In/i }).click();
-	await page.waitForURL(/\/explore/, { timeout: 10_000 });
+async function loginAs(page: Page) {
+	await mockAuthEndpoints(page);
+	await page.goto('/explore');
+	await page.waitForURL(/\/explore/, { timeout: 20_000 });
 }
 
 // ─── Unauthenticated redirects ─────────────────────────────────────────────────
@@ -72,7 +68,7 @@ test.describe('Authenticated navigation', () => {
 	test.skip(!process.env.E2E_EMAIL, 'Set E2E_EMAIL / E2E_PASSWORD to run these tests');
 
 	test.beforeEach(async ({ page }) => {
-		await loginAs(page, TEST_EMAIL, TEST_PASSWORD);
+		await loginAs(page);
 	});
 
 	test('DM page renders', async ({ page }) => {

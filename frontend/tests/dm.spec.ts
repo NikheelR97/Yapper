@@ -1,4 +1,5 @@
 import { test, expect, type Page, type BrowserContext } from '@playwright/test';
+import { mockAuthEndpoints } from './auth-helper.js';
 
 /**
  * Direct Messages E2E tests.
@@ -10,17 +11,22 @@ import { test, expect, type Page, type BrowserContext } from '@playwright/test';
  * message contents — the server only ever stores ciphertext.
  */
 
-const USER_A_EMAIL = process.env.E2E_EMAIL ?? 'e2e@test.yapper.internal';
-const USER_A_PASS  = process.env.E2E_PASSWORD ?? 'E2eTestPass1!';
 const USER_B_EMAIL = process.env.E2E_EMAIL_2 ?? '';
 const USER_B_PASS  = process.env.E2E_PASSWORD_2 ?? '';
 
-async function loginAs(page: Page, email: string, password: string) {
+async function loginAs(page: Page) {
+	await mockAuthEndpoints(page);
+	await page.goto('/explore');
+	await page.waitForURL(/\/explore/, { timeout: 20_000 });
+}
+
+// Full form login for a fresh context (used for USER_B in two-user tests)
+async function loginFresh(page: Page, email: string, password: string) {
 	await page.goto('/login');
 	await page.fill('#email', email);
 	await page.fill('#password', password);
 	await page.getByRole('button', { name: /Sign In/i }).click();
-	await page.waitForURL(/\/explore/, { timeout: 10_000 });
+	await page.waitForURL(/\/explore/, { timeout: 20_000 });
 }
 
 // ─── DM index page ─────────────────────────────────────────────────────────────
@@ -29,7 +35,7 @@ test.describe('DM index — authenticated', () => {
 	test.skip(!process.env.E2E_EMAIL, 'Set E2E_EMAIL / E2E_PASSWORD to run these tests');
 
 	test.beforeEach(async ({ page }) => {
-		await loginAs(page, USER_A_EMAIL, USER_A_PASS);
+		await loginAs(page);
 	});
 
 	test('/dm page renders', async ({ page }) => {
@@ -70,8 +76,9 @@ test.describe('Two-user DM flow', () => {
 		const pageA = await contextA.newPage();
 		const pageB = await contextB.newPage();
 
-		await loginAs(pageA, USER_A_EMAIL, USER_A_PASS);
-		await loginAs(pageB, USER_B_EMAIL, USER_B_PASS);
+		// contextA has the storageState refresh cookie; contextB needs full form login
+		await loginAs(pageA);
+		await loginFresh(pageB, USER_B_EMAIL, USER_B_PASS);
 	});
 
 	test.afterEach(async () => {

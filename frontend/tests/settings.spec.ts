@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { mockAuthEndpoints } from './auth-helper.js';
 
 /**
  * Settings & GDPR E2E tests.
@@ -8,15 +9,11 @@ import { test, expect, type Page } from '@playwright/test';
  * Requires E2E_EMAIL / E2E_PASSWORD.
  */
 
-const TEST_EMAIL    = process.env.E2E_EMAIL ?? 'e2e@test.yapper.internal';
-const TEST_PASSWORD = process.env.E2E_PASSWORD ?? 'E2eTestPass1!';
 
-async function loginAs(page: Page, email: string, password: string) {
-	await page.goto('/login');
-	await page.fill('#email', email);
-	await page.fill('#password', password);
-	await page.getByRole('button', { name: /Sign In/i }).click();
-	await page.waitForURL(/\/explore/, { timeout: 10_000 });
+async function loginAs(page: Page) {
+	await mockAuthEndpoints(page);
+	await page.goto('/settings');
+	await page.waitForURL(/\/settings/, { timeout: 20_000 });
 }
 
 // ─── Settings page structure ───────────────────────────────────────────────────
@@ -25,10 +22,8 @@ test.describe('Settings — structure', () => {
 	test.skip(!process.env.E2E_EMAIL, 'Set E2E_EMAIL / E2E_PASSWORD to run these tests');
 
 	test.beforeEach(async ({ page }) => {
-		await loginAs(page, TEST_EMAIL, TEST_PASSWORD);
-		await page.goto('/settings');
-		await expect(page).toHaveURL(/\/settings/, { timeout: 10_000 });
-		await expect(page.locator('.settings-page')).toBeVisible({ timeout: 10_000 });
+		await loginAs(page);
+		await expect(page.getByRole('button', { name: 'My Profile' })).toBeVisible({ timeout: 20_000 });
 	});
 
 	test('settings page renders', async ({ page }) => {
@@ -36,26 +31,19 @@ test.describe('Settings — structure', () => {
 	});
 
 	test('Profile section is visible', async ({ page }) => {
-		const section = page.getByRole('button', { name: /My Profile/i });
-		await expect(section).toBeVisible({ timeout: 5_000 });
+		await expect(page.getByRole('button', { name: 'My Profile' })).toBeVisible({ timeout: 5_000 });
 	});
 
 	test('Privacy & Safety section is accessible', async ({ page }) => {
-		await expect(
-			page.getByRole('button', { name: /Privacy & Safety/i }),
-		).toBeVisible({ timeout: 5_000 });
+		await expect(page.getByRole('button', { name: 'Privacy & Safety' })).toBeVisible({ timeout: 5_000 });
 	});
 
 	test('Appearance section is accessible', async ({ page }) => {
-		await expect(
-			page.getByRole('button', { name: /Appearance/i }),
-		).toBeVisible({ timeout: 5_000 });
+		await expect(page.getByRole('button', { name: 'Appearance' })).toBeVisible({ timeout: 5_000 });
 	});
 
 	test('Notifications section is accessible', async ({ page }) => {
-		await expect(
-			page.getByRole('button', { name: /Notifications/i }),
-		).toBeVisible({ timeout: 5_000 });
+		await expect(page.getByRole('button', { name: 'Notifications' })).toBeVisible({ timeout: 5_000 });
 	});
 });
 
@@ -65,8 +53,8 @@ test.describe('Settings — Profile', () => {
 	test.skip(!process.env.E2E_EMAIL, 'Set E2E_EMAIL / E2E_PASSWORD to run these tests');
 
 	test.beforeEach(async ({ page }) => {
-		await loginAs(page, TEST_EMAIL, TEST_PASSWORD);
-		await page.goto('/settings');
+		await loginAs(page);
+		await expect(page.getByRole('button', { name: 'My Profile' })).toBeVisible({ timeout: 20_000 });
 	});
 
 	test('display name field is pre-populated', async ({ page }) => {
@@ -109,13 +97,13 @@ test.describe('Settings — GDPR data export', () => {
 	test.skip(!process.env.E2E_EMAIL, 'Set E2E_EMAIL / E2E_PASSWORD to run these tests');
 
 	test.beforeEach(async ({ page }) => {
-		await loginAs(page, TEST_EMAIL, TEST_PASSWORD);
-		await page.goto('/settings');
+		await loginAs(page);
+		await expect(page.getByRole('button', { name: 'My Profile' })).toBeVisible({ timeout: 20_000 });
 	});
 
 	test('data export button is visible', async ({ page }) => {
 		const exportBtn = page.getByRole('button', { name: /Export My Data/i });
-		await expect(exportBtn).toBeVisible({ timeout: 8_000 });
+		await expect(exportBtn).toBeVisible({ timeout: 5_000 });
 	});
 
 	test('data export triggers a download', async ({ page }) => {
@@ -148,13 +136,13 @@ test.describe('Settings — account deletion UI', () => {
 	test.skip(!process.env.E2E_EMAIL, 'Set E2E_EMAIL / E2E_PASSWORD to run these tests');
 
 	test.beforeEach(async ({ page }) => {
-		await loginAs(page, TEST_EMAIL, TEST_PASSWORD);
-		await page.goto('/settings');
+		await loginAs(page);
+		await expect(page.getByRole('button', { name: 'My Profile' })).toBeVisible({ timeout: 20_000 });
 	});
 
 	test('danger zone section is visible', async ({ page }) => {
 		const danger = page.getByText(/Danger Zone/i).first();
-		await expect(danger).toBeVisible({ timeout: 8_000 });
+		await expect(danger).toBeVisible({ timeout: 5_000 });
 	});
 
 	test('delete account requires confirmation — does NOT actually delete', async ({ page }) => {
@@ -191,8 +179,8 @@ test.describe('Settings — change password', () => {
 	test.skip(!process.env.E2E_EMAIL, 'Set E2E_EMAIL / E2E_PASSWORD to run these tests');
 
 	test.beforeEach(async ({ page }) => {
-		await loginAs(page, TEST_EMAIL, TEST_PASSWORD);
-		await page.goto('/settings');
+		await loginAs(page);
+		await expect(page.getByRole('button', { name: 'My Profile' })).toBeVisible({ timeout: 20_000 });
 	});
 
 	test('change password form is accessible', async ({ page }) => {

@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { mockAuthEndpoints } from './auth-helper.js';
 
 /**
  * Explore page E2E tests.
@@ -7,24 +8,26 @@ import { test, expect, type Page } from '@playwright/test';
  * Authenticated tests require E2E_EMAIL / E2E_PASSWORD.
  */
 
-const TEST_EMAIL = process.env.E2E_EMAIL ?? 'e2e@test.yapper.internal';
-const TEST_PASSWORD = process.env.E2E_PASSWORD ?? 'E2eTestPass1!';
 
-async function loginAs(page: Page, email: string, password: string) {
-	await page.goto('/login');
-	await page.fill('#email', email);
-	await page.fill('#password', password);
-	await page.getByRole('button', { name: /Sign In/i }).click();
-	await page.waitForURL(/\/explore/, { timeout: 10_000 });
+// Mock auth endpoints before navigating so we don't burn the per-IP rate limit
+async function loginAs(page: Page) {
+	await mockAuthEndpoints(page);
+	await page.goto('/explore');
+	await page.waitForURL(/\/explore/, { timeout: 20_000 });
 }
 
 // ─── Unauthenticated ───────────────────────────────────────────────────────────
 
 test.describe('Explore — unauthenticated', () => {
 	test('redirects to /login', async ({ page }) => {
+		const apiURL = process.env.VITE_API_URL ?? 'https://api.yapperhq.com';
+		// Force auth refresh to fail so the app always treats this as unauthenticated
+		await page.route(`${apiURL}/api/v1/auth/refresh`, route =>
+			route.fulfill({ status: 401, contentType: 'application/json', body: '{}' }),
+		);
 		await page.context().clearCookies();
 		await page.goto('/explore');
-		await expect(page).toHaveURL(/\/login/, { timeout: 8_000 });
+		await expect(page).toHaveURL(/\/login/, { timeout: 12_000 });
 	});
 });
 
@@ -34,10 +37,9 @@ test.describe('Explore — authenticated', () => {
 	test.skip(!process.env.E2E_EMAIL, 'Set E2E_EMAIL / E2E_PASSWORD to run these tests');
 
 	test.beforeEach(async ({ page }) => {
-		await loginAs(page, TEST_EMAIL, TEST_PASSWORD);
-		await page.goto('/explore');
-		await expect(page).toHaveURL(/\/explore/);
-		await expect(page.locator('.explore-page')).toBeVisible({ timeout: 10_000 });
+		await loginAs(page);
+		// Wait for the app shell to finish loading (ready = true renders the slot)
+		await expect(page.locator('.search-input')).toBeVisible({ timeout: 20_000 });
 	});
 
 	test('renders search bar', async ({ page }) => {

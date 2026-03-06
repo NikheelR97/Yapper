@@ -71,3 +71,6 @@ psi-result.json
 
 # Build artifacts
 *.wasm
+
+# Local planning and handoff docs
+/dev docs/

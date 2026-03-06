@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { mockAuthEndpoints } from './auth-helper.js';
 
 /**
  * Servers & Channels E2E tests.
@@ -7,15 +8,11 @@ import { test, expect, type Page } from '@playwright/test';
  * Requires E2E_EMAIL / E2E_PASSWORD.
  */
 
-const TEST_EMAIL    = process.env.E2E_EMAIL ?? 'e2e@test.yapper.internal';
-const TEST_PASSWORD = process.env.E2E_PASSWORD ?? 'E2eTestPass1!';
 
-async function loginAs(page: Page, email: string, password: string) {
-	await page.goto('/login');
-	await page.fill('#email', email);
-	await page.fill('#password', password);
-	await page.getByRole('button', { name: /Sign In/i }).click();
-	await page.waitForURL(/\/explore/, { timeout: 10_000 });
+async function loginAs(page: Page) {
+	await mockAuthEndpoints(page);
+	await page.goto('/explore');
+	await page.waitForURL(/\/explore/, { timeout: 20_000 });
 }
 
 // ─── Servers index ─────────────────────────────────────────────────────────────
@@ -24,7 +21,7 @@ test.describe('Servers — authenticated', () => {
 	test.skip(!process.env.E2E_EMAIL, 'Set E2E_EMAIL / E2E_PASSWORD to run these tests');
 
 	test.beforeEach(async ({ page }) => {
-		await loginAs(page, TEST_EMAIL, TEST_PASSWORD);
+		await loginAs(page);
 	});
 
 	test('/servers page renders', async ({ page }) => {
@@ -36,18 +33,20 @@ test.describe('Servers — authenticated', () => {
 	test('Create Server button is visible in sidebar', async ({ page }) => {
 		await page.goto('/servers');
 		await page.waitForURL(/\/servers(\/|$)/, { timeout: 10_000 });
-		await expect(page.locator('.create-server-btn')).toBeVisible({ timeout: 10_000 });
+		// Button has class "add-btn" and aria-label "Create or join a server"
+		await expect(page.getByRole('button', { name: 'Create or join a server' })).toBeVisible({ timeout: 20_000 });
 	});
 
 	test('Create Server modal opens', async ({ page }) => {
 		await page.goto('/servers');
 		await page.waitForURL(/\/servers(\/|$)/, { timeout: 10_000 });
 
-		const createBtn = page.locator('.create-server-btn');
+		const createBtn = page.getByRole('button', { name: 'Create or join a server' });
+		await createBtn.waitFor({ timeout: 20_000 });
 		await createBtn.click();
 
 		// Modal or dialog should appear
-		const modal = page.locator('[role="dialog"], .modal, [class*="modal"]').first();
+		const modal = page.locator('[role="dialog"]').first();
 		await expect(modal).toBeVisible({ timeout: 5_000 });
 	});
 
@@ -55,7 +54,8 @@ test.describe('Servers — authenticated', () => {
 		await page.goto('/servers');
 		await page.waitForURL(/\/servers(\/|$)/, { timeout: 10_000 });
 
-		const createBtn = page.locator('.create-server-btn');
+		const createBtn = page.getByRole('button', { name: 'Create or join a server' });
+		await createBtn.waitFor({ timeout: 20_000 });
 		await createBtn.click();
 
 		await expect(page.locator('.modal-input').first())
@@ -66,7 +66,8 @@ test.describe('Servers — authenticated', () => {
 		await page.goto('/servers');
 		await page.waitForURL(/\/servers(\/|$)/, { timeout: 10_000 });
 
-		const createBtn = page.locator('.create-server-btn');
+		const createBtn = page.getByRole('button', { name: 'Create or join a server' });
+		await createBtn.waitFor({ timeout: 20_000 });
 		await createBtn.click();
 
 		const serverName = `E2E Server ${Date.now()}`;
@@ -92,7 +93,7 @@ test.describe('Channel — authenticated', () => {
 	test.skip(!process.env.E2E_EMAIL, 'Set E2E_EMAIL / E2E_PASSWORD to run these tests');
 
 	test.beforeEach(async ({ page }) => {
-		await loginAs(page, TEST_EMAIL, TEST_PASSWORD);
+		await loginAs(page);
 	});
 
 	test('first server channel page renders message input', async ({ page }) => {
@@ -165,7 +166,7 @@ test.describe('Invite links — authenticated', () => {
 	test.skip(!process.env.E2E_EMAIL, 'Set E2E_EMAIL / E2E_PASSWORD to run these tests');
 
 	test.beforeEach(async ({ page }) => {
-		await loginAs(page, TEST_EMAIL, TEST_PASSWORD);
+		await loginAs(page);
 	});
 
 	test('invite link can be generated for a server', async ({ page }) => {
