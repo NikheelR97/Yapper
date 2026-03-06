@@ -49,10 +49,16 @@
 	async function initializeSignalKeys() {
 		try {
 			await setupKeys();
-			await replenishPreKeysIfNeeded();
 		} catch (e) {
 			console.error("[Signal] Key setup failed:", e);
 			toast.error("Encryption setup failed — try refreshing.");
+			return;
+		}
+
+		try {
+			await replenishPreKeysIfNeeded();
+		} catch (e) {
+			console.warn("[Signal] PreKey replenish failed; will retry on next app start:", e);
 		}
 	}
 
@@ -189,4 +195,3 @@
 		font-size: 12px;
 	}
 </style>
-

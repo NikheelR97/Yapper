@@ -25,7 +25,8 @@ import type {
 } from './types.js';
 
 const DB_NAME = 'yapper-signal';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
+const BOOTSTRAP_COMPLETE_KEY = 'bootstrap-complete';
 
 let _db: IDBPDatabase | null = null;
 let _dbPromise: Promise<IDBPDatabase> | null = null;
@@ -48,6 +49,10 @@ async function getDB(): Promise<IDBPDatabase> {
 				// v3 — Custom emoji cache (keyed by serverId)
 				if (oldVersion < 3) {
 					db.createObjectStore('emojis');
+				}
+				// v4 - Signal bootstrap metadata
+				if (oldVersion < 4) {
+					db.createObjectStore('meta');
 				}
 			},
 		}).then((db) => {
@@ -90,6 +95,11 @@ export async function deletePreKey(keyId: number): Promise<void> {
 export async function countPreKeys(): Promise<number> {
 	const db = await getDB();
 	return db.count('prekeys');
+}
+
+export async function listPreKeys(): Promise<PreKeyPair[]> {
+	const db = await getDB();
+	return db.getAll('prekeys');
 }
 
 // ─── Signed PreKey ────────────────────────────────────────────────────────────
@@ -183,3 +193,14 @@ export async function setCachedEmojis(serverId: string, emojis: CachedEmoji[]): 
 	const db = await getDB();
 	await db.put('emojis', emojis, serverId);
 }
+
+export async function loadSignalBootstrapComplete(): Promise<boolean> {
+	const db = await getDB();
+	return (await db.get('meta', BOOTSTRAP_COMPLETE_KEY)) === true;
+}
+
+export async function storeSignalBootstrapComplete(value: boolean): Promise<void> {
+	const db = await getDB();
+	await db.put('meta', value, BOOTSTRAP_COMPLETE_KEY);
+}
+

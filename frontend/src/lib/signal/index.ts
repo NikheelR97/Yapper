@@ -47,6 +47,8 @@ export type {
 };
 export { backupKeys, restoreKeys } from './backup.js';
 
+const OPK_BATCH_SIZE = 100;
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function bytesToB64(bytes: Uint8Array): string {
@@ -110,6 +112,28 @@ export async function generateOneTimePreKeys(
 	});
 }
 
+async function ensureLocalSignedPreKey(identity: IdentityKeyPair): Promise<SignedPreKey> {
+	const existing = await ks.loadLatestSignedPreKey();
+	if (existing) return existing;
+
+	const spk = await generateSignedPreKey(identity, 1);
+	await ks.storeSignedPreKey(spk);
+	return spk;
+}
+
+async function ensureLocalPreKeys(targetCount = OPK_BATCH_SIZE): Promise<PreKeyPair[]> {
+	const existing = await ks.listPreKeys();
+	if (existing.length >= targetCount) return existing;
+
+	const nextId =
+		existing.reduce((maxId, prekey) => Math.max(maxId, prekey.keyId), 0) + 1;
+	const newKeys = await generateOneTimePreKeys(targetCount - existing.length, nextId);
+	for (const pk of newKeys) {
+		await ks.storePreKey(pk);
+	}
+	return existing.concat(newKeys);
+}
+
 // ─── Key Upload ───────────────────────────────────────────────────────────────
 
 /** Upload identity key to the server. Call once after generateIdentityKey(). */
@@ -150,23 +174,23 @@ export async function uploadOneTimePreKeys(prekeys: PreKeyPair[]): Promise<void>
  */
 export async function setupKeys(): Promise<void> {
 	let identity = await ks.loadIdentityKeyPair();
-	if (identity) return; // Already set up
+	const bootstrapComplete = await ks.loadSignalBootstrapComplete();
+	if (identity && bootstrapComplete) return;
 
-	identity = await generateIdentityKey();
-	await ks.storeIdentityKeyPair(identity);
-
-	const spk = await generateSignedPreKey(identity, 1);
-	await ks.storeSignedPreKey(spk);
-
-	const prekeys = await generateOneTimePreKeys(100, 1);
-	for (const pk of prekeys) {
-		await ks.storePreKey(pk);
+	if (!identity) {
+		identity = await generateIdentityKey();
+		await ks.storeIdentityKeyPair(identity);
 	}
 
-	// Upload all keys to server
+	const spk = await ensureLocalSignedPreKey(identity);
+	const prekeys = await ensureLocalPreKeys();
+
 	await uploadIdentityKey(identity);
 	await uploadSignedPreKey(spk);
-	await uploadOneTimePreKeys(prekeys);
+	if (prekeys.length > 0) {
+		await uploadOneTimePreKeys(prekeys);
+	}
+	await ks.storeSignalBootstrapComplete(true);
 }
 
 /**
@@ -182,13 +206,16 @@ export async function replenishPreKeysIfNeeded(): Promise<void> {
 	const identity = await ks.loadIdentityKeyPair();
 	if (!identity) return;
 
-	const existing = await ks.countPreKeys();
-	const startId = existing + 1;
-	const newKeys = await generateOneTimePreKeys(100, startId);
+	const existing = await ks.listPreKeys();
+	const startId =
+		existing.reduce((maxId, prekey) => Math.max(maxId, prekey.keyId), 0) + 1;
+	const newKeys = await generateOneTimePreKeys(OPK_BATCH_SIZE, startId);
 	for (const pk of newKeys) {
 		await ks.storePreKey(pk);
 	}
+	await ks.storeSignalBootstrapComplete(false);
 	await uploadOneTimePreKeys(newKeys);
+	await ks.storeSignalBootstrapComplete(true);
 	console.debug(`[Signal] Replenished ${newKeys.length} OPKs (was ${count})`);
 }
 
