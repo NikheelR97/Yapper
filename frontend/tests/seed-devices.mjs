@@ -124,6 +124,55 @@ async function revokeDevice(session, deviceId) {
 	return res.json();
 }
 
+async function ensureTrustedPrimarySession(email, password, primarySession) {
+	if (primarySession.device.trust_state === 'trusted') {
+		return primarySession;
+	}
+
+	const devices = await listDevices(primarySession);
+	const controller = devices.find(
+		(device) =>
+			device.id !== primarySession.device.id &&
+			device.trust_state === 'trusted' &&
+			device.installation_id != null,
+	);
+
+	if (!controller) {
+		throw new Error(
+			[
+				'Primary device is pending_trust, but no reusable trusted device exists to approve it.',
+				'This account needs one trusted installation before multi-device seeding can recycle devices deterministically.',
+			].join(' '),
+		);
+	}
+
+	console.log(
+		`Reusing trusted controller ${controller.id} (${controller.label}) to approve the primary device...`,
+	);
+	const controllerSession = await loginV2(
+		email,
+		password,
+		controller.installation_id,
+		controller.label,
+	);
+
+	await approveDevice(controllerSession, primarySession.device.id);
+
+	const refreshedPrimary = await loginV2(
+		email,
+		password,
+		PRIMARY_INSTALLATION_ID,
+		'E2E Primary Browser',
+	);
+	if (refreshedPrimary.device.trust_state !== 'trusted') {
+		throw new Error(
+			`Primary device ${refreshedPrimary.device.id} should be trusted after approval but is ${refreshedPrimary.device.trust_state}.`,
+		);
+	}
+
+	return refreshedPrimary;
+}
+
 function printDevices(devices) {
 	for (const device of devices) {
 		console.log(
@@ -146,12 +195,13 @@ async function main() {
 	await assertV2AuthAvailable();
 
 	console.log(`Logging in primary device for ${email}...`);
-	const primarySession = await loginV2(
+	let primarySession = await loginV2(
 		email,
 		password,
 		PRIMARY_INSTALLATION_ID,
 		'E2E Primary Browser',
 	);
+	primarySession = await ensureTrustedPrimarySession(email, password, primarySession);
 	console.log(
 		`  Primary device: ${primarySession.device.id} state=${primarySession.device.trust_state}`,
 	);
