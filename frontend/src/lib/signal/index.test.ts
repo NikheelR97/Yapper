@@ -66,11 +66,11 @@ describe('signal bootstrap', () => {
 
 		await setupKeys();
 
-		expect(api.post).toHaveBeenNthCalledWith(1, '/api/v1/keys/identity', expect.any(Object));
-		expect(api.post).toHaveBeenNthCalledWith(2, '/api/v1/keys/signed-prekey', expect.any(Object));
+		expect(api.post).toHaveBeenNthCalledWith(1, '/api/v2/keys/identity', expect.any(Object));
+		expect(api.post).toHaveBeenNthCalledWith(2, '/api/v2/keys/signed-prekey', expect.any(Object));
 		expect(api.post).toHaveBeenNthCalledWith(
 			3,
-			'/api/v1/keys/one-time-prekeys',
+			'/api/v2/keys/one-time-prekeys',
 			expect.objectContaining({
 				device_id: 1,
 				keys: expect.arrayContaining([
@@ -92,7 +92,7 @@ describe('signal bootstrap', () => {
 
 		expect(ks.storeSignalBootstrapComplete).toHaveBeenNthCalledWith(1, false);
 		expect(api.post).toHaveBeenCalledWith(
-			'/api/v1/keys/one-time-prekeys',
+			'/api/v2/keys/one-time-prekeys',
 			expect.objectContaining({
 				device_id: 1,
 				keys: expect.arrayContaining([

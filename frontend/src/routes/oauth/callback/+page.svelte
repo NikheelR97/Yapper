@@ -5,6 +5,7 @@
 	import { get } from 'svelte/store';
 	import { setAuth } from '$stores/auth.js';
 	import type { User } from '$stores/auth.js';
+	import { getDeviceBootstrap, normalizeServerDevice } from '$lib/device/bootstrap.js';
 
 	let error = '';
 
@@ -30,19 +31,44 @@
 		}
 
 		try {
-			const res = await fetch(`${API_URL}/api/v1/users/me`, {
-				headers: { Authorization: `Bearer ${accessToken}` },
+			const attachRes = await fetch(`${API_URL}/api/v2/auth/attach-device`, {
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${accessToken}`,
+					'Content-Type': 'application/json',
+					...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
+				},
+				body: JSON.stringify(getDeviceBootstrap()),
 				credentials: 'include',
 			});
 
-			if (!res.ok) throw new Error('Failed to fetch user');
+			if (!attachRes.ok) throw new Error('Failed to attach OAuth session to device');
 
-			const user: User = await res.json();
-			setAuth(user, accessToken, csrfToken);
+			const attached = await attachRes.json();
+			const user: User = attached.user;
+			setAuth(
+				user,
+				attached.access_token,
+				attached.csrf_token,
+				normalizeServerDevice(attached.device),
+			);
 			await goto(isNew ? '/onboarding' : '/explore');
 		} catch {
-			error = 'Failed to load your account. Please try again.';
-			setTimeout(() => goto('/login'), 3000);
+			try {
+				const res = await fetch(`${API_URL}/api/v1/users/me`, {
+					headers: { Authorization: `Bearer ${accessToken}` },
+					credentials: 'include',
+				});
+
+				if (!res.ok) throw new Error('Failed to fetch user');
+
+				const user: User = await res.json();
+				setAuth(user, accessToken, csrfToken);
+				await goto(isNew ? '/onboarding' : '/explore');
+			} catch {
+				error = 'Failed to load your account. Please try again.';
+				setTimeout(() => goto('/login'), 3000);
+			}
 		}
 	});
 </script>

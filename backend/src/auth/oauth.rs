@@ -402,8 +402,9 @@ async fn issue_oauth_session(
         }
     };
 
-    let access_token = generate_access_token(user_id, &account_type, &state.jwt_keys)?;
-    let refresh_token = generate_refresh_token(user_id, Uuid::new_v4(), &state.jwt_keys)?;
+    let access_token = generate_access_token(user_id, &account_type, None, &state.jwt_keys)?;
+    let refresh_token =
+        generate_refresh_token(user_id, Uuid::new_v4(), None, &state.jwt_keys)?;
 
     // Store session
     let claims = super::service::validate_refresh_token(&refresh_token, &state.jwt_keys)?.claims;

@@ -16,6 +16,8 @@
 
 import { x25519, ed25519 } from '@noble/curves/ed25519.js';
 import { api } from '$api/client.js';
+import { authStore } from '$stores/auth.js';
+import { get } from 'svelte/store';
 import * as ks from './keystore.js';
 import { x3dhInitiate, x3dhRespond } from './x3dh.js';
 import { encryptRatchet, decryptRatchet } from './ratchet.js';
@@ -49,6 +51,19 @@ export { backupKeys, restoreKeys } from './backup.js';
 
 const OPK_BATCH_SIZE = 100;
 
+interface KeyBundleV2Response {
+	user_id: string;
+	device_id: string;
+	signal_device_id: number;
+	identity_dh_key: string;
+	identity_sig_key: string;
+	signed_prekey_id: number;
+	signed_prekey: string;
+	signed_prekey_sig: string;
+	one_time_prekey_id: number | null;
+	one_time_prekey: string | null;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function bytesToB64(bytes: Uint8Array): string {
@@ -65,6 +80,65 @@ function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
 		if (a[i] !== b[i]) return false;
 	}
 	return true;
+}
+
+function currentSignalDeviceId(): number {
+	return get(authStore).device?.signalDeviceId ?? 1;
+}
+
+function normalizeKeyBundle(bundle: KeyBundleV2Response): KeyBundle {
+	return {
+		userId: bundle.user_id,
+		deviceId: bundle.device_id,
+		signalDeviceId: bundle.signal_device_id,
+		identity_dh_key: bundle.identity_dh_key,
+		identity_sig_key: bundle.identity_sig_key,
+		signed_prekey_id: bundle.signed_prekey_id,
+		signed_prekey: bundle.signed_prekey,
+		signed_prekey_sig: bundle.signed_prekey_sig,
+		one_time_prekey_id: bundle.one_time_prekey_id,
+		one_time_prekey: bundle.one_time_prekey,
+	};
+}
+
+export function dmSessionId(
+	conversationId: string,
+	peerId: string,
+	peerDeviceId: string
+): string {
+	return `${conversationId}:${peerId}:${peerDeviceId}`;
+}
+
+function stripOneTimePreKey(bundle: KeyBundle): KeyBundle {
+	return {
+		...bundle,
+		one_time_prekey: null,
+		one_time_prekey_id: null,
+	};
+}
+
+async function fetchKeyBundles(
+	userId: string,
+	opts: { consumeOpk?: boolean; deviceIds?: string[] } = {}
+): Promise<KeyBundle[]> {
+	const query = new URLSearchParams();
+	if (opts.consumeOpk) {
+		query.set('consume_opk', 'true');
+	}
+	if (opts.deviceIds?.length) {
+		query.set('device_ids', opts.deviceIds.join(','));
+	}
+	const suffix = query.size > 0 ? `?${query.toString()}` : '';
+	const bundles = await api.get<KeyBundleV2Response[]>(`/api/v2/keys/${userId}/bundles${suffix}`);
+	if (!bundles.length) {
+		throw new Error(`No trusted device bundles for user ${userId}`);
+	}
+	return bundles.map(normalizeKeyBundle);
+}
+
+async function fetchPrimaryKeyBundle(userId: string): Promise<KeyBundle> {
+	const bundles = await fetchKeyBundles(userId);
+	return bundles[0];
 }
 
 // ─── Key Generation ───────────────────────────────────────────────────────────
@@ -138,8 +212,8 @@ async function ensureLocalPreKeys(targetCount = OPK_BATCH_SIZE): Promise<PreKeyP
 
 /** Upload identity key to the server. Call once after generateIdentityKey(). */
 export async function uploadIdentityKey(identity: IdentityKeyPair): Promise<void> {
-	await api.post('/api/v1/keys/identity', {
-		device_id: 1,
+	await api.post('/api/v2/keys/identity', {
+		device_id: currentSignalDeviceId(),
 		dh_public_key: bytesToB64(identity.dhPublicKey),
 		signing_public_key: bytesToB64(identity.sigPublicKey),
 	});
@@ -147,8 +221,8 @@ export async function uploadIdentityKey(identity: IdentityKeyPair): Promise<void
 
 /** Upload a signed prekey to the server. */
 export async function uploadSignedPreKey(spk: SignedPreKey): Promise<void> {
-	await api.post('/api/v1/keys/signed-prekey', {
-		device_id: 1,
+	await api.post('/api/v2/keys/signed-prekey', {
+		device_id: currentSignalDeviceId(),
 		key_id: spk.keyId,
 		public_key: bytesToB64(spk.publicKey),
 		signature: bytesToB64(spk.signature),
@@ -157,8 +231,8 @@ export async function uploadSignedPreKey(spk: SignedPreKey): Promise<void> {
 
 /** Upload a batch of one-time prekeys to the server. */
 export async function uploadOneTimePreKeys(prekeys: PreKeyPair[]): Promise<void> {
-	await api.post('/api/v1/keys/one-time-prekeys', {
-		device_id: 1,
+	await api.post('/api/v2/keys/one-time-prekeys', {
+		device_id: currentSignalDeviceId(),
 		keys: prekeys.map((k) => ({
 			key_id: k.keyId,
 			public_key: bytesToB64(k.publicKey),
@@ -199,7 +273,7 @@ export async function setupKeys(): Promise<void> {
  */
 export async function replenishPreKeysIfNeeded(): Promise<void> {
 	const { count, low } = await api.get<{ count: number; low: boolean }>(
-		'/api/v1/keys/one-time-prekey-count'
+		'/api/v2/keys/one-time-prekey-count'
 	);
 	if (!low) return;
 
@@ -223,48 +297,147 @@ export async function replenishPreKeysIfNeeded(): Promise<void> {
 
 /**
  * Encrypt a plaintext message for a DM conversation.
- * If no session exists yet, initiates X3DH and returns ephemeral key info.
+ * Emits one envelope per active peer device plus one envelope for every
+ * trusted sender device so sent history survives across the account's devices.
  */
 export async function encryptDm(
 	conversationId: string,
 	peerId: string,
 	plaintext: string
-): Promise<EncryptedMessage> {
-	let session = await ks.loadSession(conversationId);
-
-	let ephemeralKey: string | undefined;
-	let opkId: number | undefined;
-
-	if (!session) {
-		// No session — initiate X3DH
-		const identity = await ks.loadIdentityKeyPair();
-		if (!identity) throw new Error('No identity key — call setupKeys() first');
-
-		const bundle = await api.get<KeyBundle>(`/api/v1/keys/${peerId}`);
-		// Track peer identity key — detect changes for safety number alerts
-		const peerFp = await fingerprintKeys(b64ToBytes(bundle.identity_dh_key), b64ToBytes(bundle.identity_sig_key));
-		checkAndStorePeerKey(peerId, peerFp);
-		const result = await x3dhInitiate(identity, bundle, conversationId);
-
-		session = result.session;
-		ephemeralKey = bytesToB64(result.ephemeralPublicKey);
-		opkId = result.usedOpkId ?? undefined;
+): Promise<{
+	envelopes: Array<{
+		recipientUserId: string;
+		recipientDeviceId: string;
+		ciphertext: string;
+		ephemeralKey?: string;
+		opkId?: number;
+		msgNum: number;
+	}>;
+}> {
+	interface DmTarget {
+		userId: string;
+		deviceId: string;
+		initBundle?: KeyBundle;
 	}
 
-	const plainBytes = new TextEncoder().encode(plaintext);
-	const { ciphertext, msgNum, updatedSession } = await encryptRatchet(session, plainBytes);
+	const auth = get(authStore);
+	const myUserId = auth.user?.id;
+	const myDeviceId = auth.device?.id;
+	if (!myUserId || !myDeviceId) {
+		throw new Error('No active trusted device');
+	}
 
-	await ks.storeSession(updatedSession);
+	const existingPeerSessions = await ks.listSessionsForPeer(conversationId, peerId);
+	const existingOwnSessions = await ks.listSessionsForPeer(conversationId, myUserId);
+	const existingPeerDevices = new Set(existingPeerSessions.map((session) => session.peerDeviceId));
+	const existingOwnDevices = new Set(existingOwnSessions.map((session) => session.peerDeviceId));
+	const advertisedPeerBundles = await fetchKeyBundles(peerId);
+	const missingPeerDevices = advertisedPeerBundles
+		.filter((bundle) => !existingPeerDevices.has(bundle.deviceId))
+		.map((bundle) => bundle.deviceId);
 
-	return {
-		ciphertext: bytesToB64(ciphertext),
-		ephemeralKey,
-		opkId,
-		msgNum,
-	};
+	let initPeerBundleMap = new Map<string, KeyBundle>();
+	if (missingPeerDevices.length > 0) {
+		const initBundles = await fetchKeyBundles(peerId, {
+			consumeOpk: true,
+			deviceIds: missingPeerDevices,
+		});
+		initPeerBundleMap = new Map(initBundles.map((bundle) => [bundle.deviceId, bundle]));
+	}
+
+	const advertisedOwnBundles = await fetchKeyBundles(myUserId);
+	const missingOwnDevices = advertisedOwnBundles
+		.filter(
+			(bundle) => bundle.deviceId !== myDeviceId && !existingOwnDevices.has(bundle.deviceId)
+		)
+		.map((bundle) => bundle.deviceId);
+
+	let initOwnBundleMap = new Map<string, KeyBundle>();
+	if (missingOwnDevices.length > 0) {
+		const initBundles = await fetchKeyBundles(myUserId, {
+			consumeOpk: true,
+			deviceIds: missingOwnDevices,
+		});
+		initOwnBundleMap = new Map(initBundles.map((bundle) => [bundle.deviceId, bundle]));
+	}
+
+	const targets: DmTarget[] = advertisedPeerBundles.map((bundle) => ({
+		userId: bundle.userId,
+		deviceId: bundle.deviceId,
+		initBundle: existingPeerDevices.has(bundle.deviceId)
+			? undefined
+			: initPeerBundleMap.get(bundle.deviceId) ?? stripOneTimePreKey(bundle),
+	}));
+
+	targets.push(
+		...advertisedOwnBundles.map((bundle) => ({
+			userId: bundle.userId,
+			deviceId: bundle.deviceId,
+			initBundle: existingOwnDevices.has(bundle.deviceId)
+				? undefined
+				: bundle.deviceId === myDeviceId
+					? stripOneTimePreKey(bundle)
+					: initOwnBundleMap.get(bundle.deviceId) ?? stripOneTimePreKey(bundle),
+		}))
+	);
+
+	if (targets.length > 16) {
+		throw new Error('Too many trusted device targets for DM envelope fanout');
+	}
+
+	const envelopes: Array<{
+		recipientUserId: string;
+		recipientDeviceId: string;
+		ciphertext: string;
+		ephemeralKey?: string;
+		opkId?: number;
+		msgNum: number;
+	}> = [];
+
+	for (const target of targets) {
+		const sessionKey = dmSessionId(conversationId, target.userId, target.deviceId);
+		let session = await ks.loadSession(sessionKey);
+
+		let ephemeralKey: string | undefined;
+		let opkId: number | undefined;
+
+		if (!session) {
+			const identity = await ks.loadIdentityKeyPair();
+			if (!identity) throw new Error('No identity key - call setupKeys() first');
+			if (!target.initBundle) {
+				throw new Error('Missing initial bundle for device ' + target.deviceId);
+			}
+
+			if (target.userId !== myUserId) {
+				const peerFp = await fingerprintKeys(
+					b64ToBytes(target.initBundle.identity_dh_key),
+					b64ToBytes(target.initBundle.identity_sig_key)
+				);
+				checkAndStorePeerKey(target.userId, target.deviceId, peerFp);
+			}
+
+			const result = await x3dhInitiate(identity, target.initBundle, sessionKey, conversationId);
+			session = result.session;
+			ephemeralKey = bytesToB64(result.ephemeralPublicKey);
+			opkId = result.usedOpkId ?? undefined;
+		}
+
+		const plainBytes = new TextEncoder().encode(plaintext);
+		const { ciphertext, msgNum, updatedSession } = await encryptRatchet(session, plainBytes);
+		await ks.storeSession(updatedSession);
+
+		envelopes.push({
+			recipientUserId: target.userId,
+			recipientDeviceId: target.deviceId,
+			ciphertext: bytesToB64(ciphertext),
+			ephemeralKey,
+			opkId,
+			msgNum,
+		});
+	}
+
+	return { envelopes };
 }
-
-// ─── Decrypt DM ───────────────────────────────────────────────────────────────
 
 /**
  * Decrypt a received DM message.
@@ -273,19 +446,21 @@ export async function encryptDm(
 export async function decryptDm(
 	conversationId: string,
 	peerId: string,
+	peerDeviceId: string,
+	peerSignalDeviceId: number,
 	msg: {
 		ciphertext: string;
 		ephemeral_key?: string | null;
 		opk_id?: number | null;
 	}
 ): Promise<string> {
-	let session = await ks.loadSession(conversationId);
+	const sessionKey = dmSessionId(conversationId, peerId, peerDeviceId);
+	let session = await ks.loadSession(sessionKey);
 	const cipherBytes = b64ToBytes(msg.ciphertext);
 
 	if (!session) {
-		// First message — perform X3DH responder role
 		if (!msg.ephemeral_key) {
-			throw new Error('No session and no ephemeral key — cannot decrypt');
+			throw new Error('No session and no ephemeral key - cannot decrypt');
 		}
 
 		const identity = await ks.loadIdentityKeyPair();
@@ -296,12 +471,16 @@ export async function decryptDm(
 
 		const opk = msg.opk_id != null ? await ks.loadPreKey(msg.opk_id) : null;
 		const ephemeralPubKey = b64ToBytes(msg.ephemeral_key);
-
-		// Fetch sender's DH public key from server to use in X3DH
-		const senderBundle = await api.get<KeyBundle>(`/api/v1/keys/${peerId}`);
-		// Track peer identity key — detect changes for safety number alerts
-		const senderFp = await fingerprintKeys(b64ToBytes(senderBundle.identity_dh_key), b64ToBytes(senderBundle.identity_sig_key));
-		checkAndStorePeerKey(peerId, senderFp);
+		const senderBundles = await fetchKeyBundles(peerId);
+		const senderBundle =
+			senderBundles.find((bundle) => bundle.deviceId === peerDeviceId) ??
+			senderBundles.find((bundle) => bundle.signalDeviceId === peerSignalDeviceId) ??
+			senderBundles[0];
+		const senderFp = await fingerprintKeys(
+			b64ToBytes(senderBundle.identity_dh_key),
+			b64ToBytes(senderBundle.identity_sig_key)
+		);
+		checkAndStorePeerKey(peerId, senderBundle.deviceId, senderFp);
 		const senderDhPub = b64ToBytes(senderBundle.identity_dh_key);
 
 		session = await x3dhRespond(
@@ -310,11 +489,13 @@ export async function decryptDm(
 			opk,
 			ephemeralPubKey,
 			senderDhPub,
+			sessionKey,
 			conversationId,
-			peerId
+			peerId,
+			peerDeviceId,
+			peerSignalDeviceId
 		);
 
-		// Delete consumed OPK
 		if (msg.opk_id != null) {
 			await ks.deletePreKey(msg.opk_id);
 		}
@@ -322,11 +503,8 @@ export async function decryptDm(
 
 	const { plaintext, updatedSession } = await decryptRatchet(session, cipherBytes);
 	await ks.storeSession(updatedSession);
-
 	return new TextDecoder().decode(plaintext);
 }
-
-// ─── Channel (group) E2EE ─────────────────────────────────────────────────────
 
 /**
  * Encrypt a message for a channel using the Sender Key ratchet.
@@ -354,11 +532,14 @@ export async function encryptChannel(
 export async function decryptChannel(
 	channelId: string,
 	senderId: string,
+	senderDeviceId: string,
 	msg: { ciphertext: string; msg_num: number | null },
 	opts: { allowHistorical?: boolean } = {}
 ): Promise<string> {
-	const record = await ks.loadReceiverKey(channelId, senderId);
-	if (!record) throw new Error(`No SenderKey for sender ${senderId} in channel ${channelId}`);
+	const record = await ks.loadReceiverKey(channelId, senderId, senderDeviceId);
+	if (!record) {
+		throw new Error(`No SenderKey for sender ${senderId}/${senderDeviceId} in channel ${channelId}`);
+	}
 
 	const encrypted = unpackChannelMessage(msg.ciphertext, msg.msg_num ?? 0);
 	const { plaintext, updatedRecord } = await decryptWithSenderKey(record, encrypted, opts);
@@ -367,25 +548,25 @@ export async function decryptChannel(
 }
 
 /**
- * Join a channel: generate a SenderKey, distribute it to all existing members,
+ * Join a channel: generate a SenderKey, distribute it to all existing member devices,
  * and fetch any pending SenderKey distributions from other members.
  *
  * Call this once when the user first joins (or after a server restart wipes local keys).
  */
 export async function joinChannel(channelId: string): Promise<void> {
 	const identity = await ks.loadIdentityKeyPair();
-	if (!identity) throw new Error('No identity key — call setupKeys() first');
+	if (!identity) throw new Error('No identity key - call setupKeys() first');
+	const myUserId = get(authStore).user?.id;
+	const myDeviceId = get(authStore).device?.id;
+	if (!myUserId || !myDeviceId) throw new Error('No active trusted device');
 
-	// Generate and persist our SenderKey for this channel
 	const senderKey = generateSenderKey(channelId);
 	await ks.storeSenderKey(senderKey);
 
-	// Fetch all channel members
 	const members = await api.get<Array<{ user_id: string; username: string }>>(
-		`/api/v1/channels/${channelId}/members`
+		'/api/v1/channels/' + channelId + '/members'
 	);
 
-	// Build the distribution payload
 	const distPayload: SenderKeyDistPayload = {
 		channelId,
 		chainKey: bytesToB64(senderKey.chainKey),
@@ -393,40 +574,42 @@ export async function joinChannel(channelId: string): Promise<void> {
 		iteration: senderKey.iteration,
 	};
 
-	// Resolve own user_id once — used to skip self in the distribution loop
-	const me = await api.get<{ user_id: string }>('/api/v1/users/me');
-	const myUserId = me.user_id;
-
-	// Encrypt for each member (except ourselves) using ECIES
-	const distributions: Array<{ to_user_id: string; ciphertext: string; ek_public: string }> = [];
+	const distributions: Array<{
+		to_user_id: string;
+		to_device_id: string;
+		ciphertext: string;
+		ek_public: string;
+	}> = [];
 
 	for (const member of members) {
-		if (member.user_id === myUserId) continue;
-
-		// Fetch recipient's DH public key
-		let recipientBundle: KeyBundle;
+		let recipientBundles: KeyBundle[];
 		try {
-			recipientBundle = await api.get<KeyBundle>(`/api/v1/keys/${member.user_id}`);
+			recipientBundles = await fetchKeyBundles(member.user_id);
 		} catch {
-			console.warn(`[Signal] Could not fetch key bundle for ${member.user_id} — skipping`);
+			console.warn('[Signal] Could not fetch key bundles for ' + member.user_id + ' - skipping');
 			continue;
 		}
 
-		const recipientDhPub = b64ToBytes(recipientBundle.identity_dh_key);
-		const { ciphertext, ephemeralKey } = await encryptSenderKeyDist(distPayload, recipientDhPub);
+		for (const recipientBundle of recipientBundles) {
+			if (member.user_id === myUserId && recipientBundle.deviceId === myDeviceId) {
+				continue;
+			}
 
-		distributions.push({
-			to_user_id: member.user_id,
-			ciphertext: bytesToB64(ciphertext),
-			ek_public: bytesToB64(ephemeralKey),
-		});
+			const recipientDhPub = b64ToBytes(recipientBundle.identity_dh_key);
+			const { ciphertext, ephemeralKey } = await encryptSenderKeyDist(distPayload, recipientDhPub);
+			distributions.push({
+				to_user_id: member.user_id,
+				to_device_id: recipientBundle.deviceId,
+				ciphertext: bytesToB64(ciphertext),
+				ek_public: bytesToB64(ephemeralKey),
+			});
+		}
 	}
 
 	if (distributions.length > 0) {
-		await api.post(`/api/v1/channels/${channelId}/sender-key-dist`, { distributions });
+		await api.post('/api/v1/channels/' + channelId + '/sender-key-dist', { distributions });
 	}
 
-	// Fetch pending distributions addressed to us (from members who joined before us)
 	await fetchAndStorePendingDists(channelId, identity);
 }
 
@@ -445,10 +628,23 @@ async function fetchAndStorePendingDists(
 	identity: IdentityKeyPair
 ): Promise<void> {
 	const dists = await api
-		.get<Array<{ from_user: string; ciphertext: string; ek_public: string }>>(
-			`/api/v1/channels/${channelId}/sender-key-dist`
-		)
-		.catch(() => [] as Array<{ from_user: string; ciphertext: string; ek_public: string }>);
+		.get<
+			Array<{
+				from_user: string;
+				from_device_id?: string | null;
+				ciphertext: string;
+				ek_public: string;
+			}>
+		>('/api/v1/channels/' + channelId + '/sender-key-dist')
+		.catch(
+			() =>
+				[] as Array<{
+					from_user: string;
+					from_device_id?: string | null;
+					ciphertext: string;
+					ek_public: string;
+				}>
+		);
 
 	for (const dist of dists) {
 		try {
@@ -457,7 +653,8 @@ async function fetchAndStorePendingDists(
 			const payload = await decryptSenderKeyDist(ct, ek, identity.dhPrivateKey, identity.dhPublicKey);
 			const incomingChainKey = b64ToBytes(payload.chainKey);
 			const incomingSigningKey = b64ToBytes(payload.signingPubKey);
-			const existing = await ks.loadReceiverKey(payload.channelId, dist.from_user);
+			const senderDeviceId = dist.from_device_id ?? 'legacy';
+			const existing = await ks.loadReceiverKey(payload.channelId, dist.from_user, senderDeviceId);
 
 			if (existing && bytesEqual(existing.signingPubKey, incomingSigningKey) && existing.iteration > payload.iteration) {
 				await ks.storeReceiverKey({
@@ -471,6 +668,7 @@ async function fetchAndStorePendingDists(
 			const record: SenderKeyRecord = {
 				channelId: payload.channelId,
 				senderId: dist.from_user,
+				senderDeviceId,
 				chainKey: incomingChainKey,
 				signingPubKey: incomingSigningKey,
 				iteration: payload.iteration,
@@ -479,7 +677,7 @@ async function fetchAndStorePendingDists(
 			};
 			await ks.storeReceiverKey(record);
 		} catch (e) {
-			console.warn(`[Signal] Failed to decrypt SenderKey dist from ${dist.from_user}:`, e);
+			console.warn('[Signal] Failed to decrypt SenderKey dist from ' + dist.from_user + ':', e);
 		}
 	}
 }
@@ -529,13 +727,13 @@ export async function getOwnFingerprint(): Promise<string | null> {
 
 /** Fetch a peer's identity keys from the server and compute their fingerprint. */
 export async function fetchPeerFingerprint(peerId: string): Promise<string> {
-	const bundle = await api.get<KeyBundle>(`/api/v1/keys/${peerId}`);
+	const bundle = await fetchPrimaryKeyBundle(peerId);
 	return fingerprintKeys(b64ToBytes(bundle.identity_dh_key), b64ToBytes(bundle.identity_sig_key));
 }
 
 /** Returns 'new' | 'unchanged' | 'changed'. Persists fingerprint in localStorage. */
-function checkAndStorePeerKey(peerId: string, fp: string): 'new' | 'unchanged' | 'changed' {
-	const key = `yapper_peer_fp_${peerId}`;
+function checkAndStorePeerKey(peerId: string, peerDeviceId: string, fp: string): 'new' | 'unchanged' | 'changed' {
+	const key = `yapper_peer_fp_${peerId}_${peerDeviceId}`;
 	const stored = localStorage.getItem(key);
 	localStorage.setItem(key, fp);
 	if (!stored) return 'new';
@@ -551,6 +749,7 @@ function checkAndStorePeerKey(peerId: string, fp: string): 'new' | 'unchanged' |
 export async function receiveSenderKeyDist(event: {
 	channel_id: string;
 	from_user: string;
+	from_device_id?: string | null;
 	ciphertext: string;
 	ek_public: string;
 }): Promise<void> {
@@ -563,7 +762,8 @@ export async function receiveSenderKeyDist(event: {
 		const payload = await decryptSenderKeyDist(ct, ek, identity.dhPrivateKey, identity.dhPublicKey);
 		const incomingChainKey = b64ToBytes(payload.chainKey);
 		const incomingSigningKey = b64ToBytes(payload.signingPubKey);
-		const existing = await ks.loadReceiverKey(payload.channelId, event.from_user);
+		const senderDeviceId = event.from_device_id ?? 'legacy';
+		const existing = await ks.loadReceiverKey(payload.channelId, event.from_user, senderDeviceId);
 
 		if (existing && bytesEqual(existing.signingPubKey, incomingSigningKey) && existing.iteration > payload.iteration) {
 			await ks.storeReceiverKey({
@@ -571,13 +771,14 @@ export async function receiveSenderKeyDist(event: {
 				initialChainKey: existing.initialChainKey ?? incomingChainKey,
 				initialIteration: existing.initialIteration ?? payload.iteration,
 			});
-			console.debug(`[Signal] Refreshed SenderKey seed for ${event.from_user} in channel ${event.channel_id}`);
+			console.debug('[Signal] Refreshed SenderKey seed for ' + event.from_user + '/' + senderDeviceId + ' in channel ' + event.channel_id);
 			return;
 		}
 
 		const record: SenderKeyRecord = {
 			channelId: payload.channelId,
 			senderId: event.from_user,
+			senderDeviceId,
 			chainKey: incomingChainKey,
 			signingPubKey: incomingSigningKey,
 			iteration: payload.iteration,
@@ -585,8 +786,8 @@ export async function receiveSenderKeyDist(event: {
 			initialIteration: payload.iteration,
 		};
 		await ks.storeReceiverKey(record);
-		console.debug(`[Signal] Received SenderKey from ${event.from_user} for channel ${event.channel_id}`);
+		console.debug('[Signal] Received SenderKey from ' + event.from_user + '/' + senderDeviceId + ' for channel ' + event.channel_id);
 	} catch (e) {
-		console.warn(`[Signal] Failed to process key_dist from ${event.from_user}:`, e);
+		console.warn('[Signal] Failed to process key_dist from ' + event.from_user + ':', e);
 	}
 }

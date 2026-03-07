@@ -7,7 +7,11 @@ use dashmap::DashMap;
 use std::{net::IpAddr, time::Instant};
 
 use super::service::validate_access_token;
-use crate::{error::AppError, AppState};
+use crate::{
+    devices::{self, DeviceTrustState},
+    error::AppError,
+    AppState,
+};
 
 // ─── JWT Extractor ────────────────────────────────────────────────────────────
 
@@ -15,6 +19,8 @@ use crate::{error::AppError, AppState};
 #[derive(Debug, Clone)]
 pub struct AuthUser {
     pub user_id: uuid::Uuid,
+    #[allow(dead_code)]
+    pub device_id: Option<uuid::Uuid>,
     #[allow(dead_code)]
     pub account_type: String,
 }
@@ -42,7 +48,59 @@ impl FromRequestParts<AppState> for AuthUser {
 
         Ok(AuthUser {
             user_id: claims.claims.sub,
+            device_id: claims.claims.device_id,
             account_type: claims.claims.account_type,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct AuthDevice {
+    pub user_id: uuid::Uuid,
+    pub device_id: uuid::Uuid,
+    pub signal_device_id: i32,
+    pub trust_state: DeviceTrustState,
+    #[allow(dead_code)]
+    pub account_type: String,
+}
+
+impl AuthDevice {
+    pub fn require_trusted(&self) -> Result<(), AppError> {
+        if self.trust_state == DeviceTrustState::Trusted {
+            Ok(())
+        } else {
+            Err(AppError::Forbidden)
+        }
+    }
+}
+
+#[axum::async_trait]
+impl FromRequestParts<AppState> for AuthDevice {
+    type Rejection = Response;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        let auth = AuthUser::from_request_parts(parts, state).await?;
+        let device_id = auth
+            .device_id
+            .ok_or_else(|| AppError::Unauthorized.into_response())?;
+
+        let device = devices::get_device_for_user(auth.user_id, device_id, state)
+            .await
+            .map_err(|e| e.into_response())?;
+
+        if device.revoked_at.is_some() || device.trust_state == DeviceTrustState::Revoked {
+            return Err(AppError::Unauthorized.into_response());
+        }
+
+        Ok(Self {
+            user_id: auth.user_id,
+            device_id,
+            signal_device_id: device.signal_device_id,
+            trust_state: device.trust_state,
+            account_type: auth.account_type,
         })
     }
 }
@@ -79,6 +137,7 @@ impl FromRequestParts<AppState> for OptionalAuthUser {
 
         Ok(OptionalAuthUser(Some(AuthUser {
             user_id: claims.claims.sub,
+            device_id: claims.claims.device_id,
             account_type: claims.claims.account_type,
         })))
     }

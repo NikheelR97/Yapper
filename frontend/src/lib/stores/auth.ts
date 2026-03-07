@@ -9,8 +9,22 @@ export interface User {
 	isPremium: boolean;
 }
 
+export interface AuthDevice {
+	id: string;
+	signalDeviceId: number;
+	installationId: string | null;
+	platform: 'web' | 'tauri' | 'capacitor';
+	label: string;
+	trustState: 'trusted' | 'pending_trust' | 'revoked';
+	createdAt: string;
+	lastSeenAt: string | null;
+	approvedAt: string | null;
+	revokedAt: string | null;
+}
+
 interface AuthState {
 	user: User | null;
+	device: AuthDevice | null;
 	accessToken: string | null;
 	csrfToken: string | null;
 	loading: boolean;
@@ -18,6 +32,7 @@ interface AuthState {
 
 const initial: AuthState = {
 	user: null,
+	device: null,
 	accessToken: null,
 	csrfToken: null,
 	loading: true,
@@ -25,10 +40,16 @@ const initial: AuthState = {
 
 export const authStore = writable<AuthState>(initial);
 
-export function setAuth(user: User, accessToken: string, csrfToken?: string | null) {
+export function setAuth(
+	user: User,
+	accessToken: string,
+	csrfToken?: string | null,
+	device?: AuthDevice | null
+) {
 	authStore.update((s) => ({
 		...s,
 		user,
+		device: device ?? s.device,
 		accessToken,
 		csrfToken: csrfToken ?? s.csrfToken,
 		loading: false,
@@ -36,7 +57,13 @@ export function setAuth(user: User, accessToken: string, csrfToken?: string | nu
 }
 
 export function clearAuth() {
-	authStore.set({ user: null, accessToken: null, csrfToken: null, loading: false });
+	authStore.set({
+		user: null,
+		device: null,
+		accessToken: null,
+		csrfToken: null,
+		loading: false,
+	});
 }
 
 export function setPremiumStatus(isPremium: boolean) {

@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { goto } from "$app/navigation";
+	import { onMount } from "svelte";
 	import { authStore, clearAuth } from "$stores/auth.js";
 	import { api } from "$api/client.js";
 	import { toast } from "$stores/toast.js";
 	import { get } from "svelte/store";
+	import { clearCurrentSignalStore } from "$signal/keystore.js";
 	import ProfileForm from "$components/settings/ProfileForm.svelte";
 	import PrivacySafety from "$components/settings/PrivacySafety.svelte";
 	import Appearance from "$components/settings/Appearance.svelte";
@@ -28,9 +30,19 @@
 	let activeSection: Section = "profile";
 	let showDeleteConfirm = false;
 	let deleting = false;
+	let devicesLoading = false;
+	let devices: Array<{
+		id: string;
+		label: string;
+		platform: string;
+		trust_state: "trusted" | "pending_trust" | "revoked";
+		last_seen_at: string | null;
+	}> = [];
+	let revokingDeviceId: string | null = null;
 	const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8080";
 
 	$: user = $authStore.user;
+	$: currentDevice = $authStore.device;
 	$: isPremium = user?.isPremium ?? false;
 
 	const navItems: { id: Section; label: string; badge?: string }[] = [
@@ -51,10 +63,50 @@
 
 	async function logout() {
 		try {
-			await api.post("/api/v1/auth/logout");
+			await api.delete("/api/v2/auth/logout");
 		} catch {}
 		clearAuth();
 		await goto("/login");
+	}
+
+	async function loadDevices() {
+		if (!get(authStore).accessToken) return;
+		devicesLoading = true;
+		try {
+			devices = await api.get<
+				Array<{
+					id: string;
+					label: string;
+					platform: string;
+					trust_state: "trusted" | "pending_trust" | "revoked";
+					last_seen_at: string | null;
+				}>
+			>("/api/v2/devices");
+		} catch {
+			devices = [];
+		} finally {
+			devicesLoading = false;
+		}
+	}
+
+	async function revokeDevice(deviceId: string) {
+		if (revokingDeviceId === deviceId) return;
+		revokingDeviceId = deviceId;
+		try {
+			await api.delete(`/api/v2/devices/${deviceId}`);
+			if (deviceId === currentDevice?.id) {
+				await clearCurrentSignalStore().catch(() => {});
+				clearAuth();
+				await goto("/login");
+				return;
+			}
+			toast.success("Device revoked.");
+			await loadDevices();
+		} catch (e: any) {
+			toast.error(e.message ?? "Failed to revoke device");
+		} finally {
+			revokingDeviceId = null;
+		}
 	}
 
 	async function exportData() {
@@ -104,6 +156,10 @@
 			deleting = false;
 		}
 	}
+
+	onMount(() => {
+		void loadDevices();
+	});
 </script>
 
 <svelte:head>
@@ -169,6 +225,51 @@
 				<button class="action-btn" on:click={logout}>
 					🚪 Log Out
 				</button>
+			</div>
+		</div>
+
+		<div class="sidebar-card">
+			<h3 class="sidebar-card-title">Devices</h3>
+			<div class="device-list">
+				{#if devicesLoading}
+					<p class="device-empty">Loading devices...</p>
+				{:else if devices.length === 0}
+					<p class="device-empty">No registered devices found.</p>
+				{:else}
+					{#each devices as device}
+						<div class="device-item">
+							<div>
+								<div class="device-name">
+									{device.label}
+									{#if device.id === currentDevice?.id}
+										<span class="device-current">This device</span>
+									{/if}
+								</div>
+								<div class="device-meta">
+									{device.platform} · {device.trust_state}
+									{#if device.last_seen_at}
+										· Last seen {new Date(device.last_seen_at).toLocaleString()}
+									{/if}
+								</div>
+							</div>
+							{#if device.id === currentDevice?.id || currentDevice?.trustState === "trusted"}
+								<button
+									class="device-action"
+									on:click={() => revokeDevice(device.id)}
+									disabled={revokingDeviceId === device.id}
+								>
+									{#if revokingDeviceId === device.id}
+										Working...
+									{:else if device.id === currentDevice?.id}
+										Forget
+									{:else}
+										Revoke
+									{/if}
+								</button>
+							{/if}
+						</div>
+					{/each}
+				{/if}
 			</div>
 		</div>
 
@@ -360,6 +461,68 @@
 		display: flex;
 		flex-direction: column;
 		gap: 6px;
+	}
+
+	.device-list {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+	}
+
+	.device-item {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+		padding: 10px 12px;
+		border-radius: 10px;
+		background: rgba(255, 255, 255, 0.04);
+		border: 1px solid rgba(255, 255, 255, 0.06);
+	}
+
+	.device-name {
+		font-size: 13px;
+		font-weight: 600;
+		color: #f3f4f6;
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex-wrap: wrap;
+	}
+
+	.device-current {
+		font-size: 10px;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: #a78bfa;
+	}
+
+	.device-meta {
+		font-size: 11px;
+		color: #9ca3af;
+		margin-top: 4px;
+	}
+
+	.device-action {
+		padding: 8px 10px;
+		border-radius: 8px;
+		border: 1px solid rgba(239, 68, 68, 0.25);
+		background: rgba(239, 68, 68, 0.08);
+		color: #fca5a5;
+		font-size: 12px;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	.device-action:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.device-empty {
+		margin: 0;
+		font-size: 12px;
+		color: #9ca3af;
 	}
 
 	.action-btn {

@@ -11,7 +11,13 @@ import { decryptChannel, encryptChannel, prepareChannel } from '$signal/index.js
 import { onWsMessage, sendChannelMessage as wsSendChannel } from '$stores/ws.js';
 import { authStore } from '$stores/auth.js';
 import type { Message } from '$stores/conversations.js';
-import { getCachedEmojis, setCachedEmojis } from '$signal/keystore.js';
+import {
+	getCachedEmojis,
+	listChannelHistoryMessages,
+	setCachedEmojis,
+	storeChannelHistoryMessages,
+	type CachedChannelHistoryMessage,
+} from '$signal/keystore.js';
 
 export type { Message };
 
@@ -44,6 +50,22 @@ export interface Channel {
 interface ServersState {
 	servers: Server[];
 	loading: boolean;
+}
+
+function mergeChannelHistoryMessages(
+	remoteMessages: CachedChannelHistoryMessage[],
+	cachedMessages: CachedChannelHistoryMessage[]
+): CachedChannelHistoryMessage[] {
+	const messagesById = new Map<string, CachedChannelHistoryMessage>();
+	for (const message of cachedMessages) {
+		messagesById.set(message.id, message);
+	}
+	for (const message of remoteMessages) {
+		messagesById.set(message.id, message);
+	}
+	return [...messagesById.values()].sort(
+		(a, b) => Date.parse(a.created_at) - Date.parse(b.created_at)
+	);
 }
 
 // ─── Stores ───────────────────────────────────────────────────────────────────
@@ -132,18 +154,12 @@ export async function fetchChannels(serverId: string): Promise<Channel[]> {
 export async function loadChannelMessages(channelId: string): Promise<void> {
 	const store = getChannelMessageStore(channelId);
 
-	const raw = await api.get<
-		{
-			id: string;
-			channel_id: string;
-			sender_id: string;
-			ciphertext: string | null;
-			plaintext: string | null;
-			message_type: string;
-			msg_num: number | null;
-			created_at: string;
-		}[]
-	>(`/api/v1/channels/${channelId}/messages`);
+	const [remoteMessages, cachedMessages] = await Promise.all([
+		api.get<CachedChannelHistoryMessage[]>(`/api/v1/channels/${channelId}/messages`),
+		listChannelHistoryMessages(channelId),
+	]);
+	const raw = mergeChannelHistoryMessages(remoteMessages, cachedMessages);
+	await storeChannelHistoryMessages(remoteMessages);
 
 	const messages: Message[] = await Promise.all(
 		raw.map(async (m) => {
@@ -171,10 +187,16 @@ export async function loadChannelMessages(channelId: string): Promise<void> {
 				};
 			}
 			try {
-				const text = await decryptChannel(m.channel_id, m.sender_id, {
-					ciphertext: m.ciphertext,
-					msg_num: m.msg_num,
-				}, { allowHistorical: true });
+				const text = await decryptChannel(
+					m.channel_id,
+					m.sender_id,
+					m.sender_device_id ?? 'legacy',
+					{
+						ciphertext: m.ciphertext,
+						msg_num: m.msg_num,
+					},
+					{ allowHistorical: true }
+				);
 				return {
 					id: m.id,
 					conversationId: m.channel_id,
@@ -237,21 +259,49 @@ export function registerChannelHandler(): () => void {
 			id: string;
 			channel_id: string;
 			sender_id: string;
+			sender_device_id?: string | null;
 			ciphertext: string;
 			msg_num: number | null;
+			created_at?: string;
 		};
 
 		// Own messages are already added optimistically on send
 		const myId = get(authStore).user?.id ?? '';
-		if (msg.sender_id === myId) return;
+		const myDeviceId = get(authStore).device?.id ?? null;
+		if (
+			msg.sender_id === myId &&
+			(!msg.sender_device_id || msg.sender_device_id === myDeviceId)
+		) {
+			return;
+		}
+
+		const createdAt = msg.created_at ?? new Date().toISOString();
+		await storeChannelHistoryMessages([
+			{
+				id: msg.id,
+				channel_id: msg.channel_id,
+				sender_id: msg.sender_id,
+				sender_device_id: msg.sender_device_id ?? null,
+				ciphertext: msg.ciphertext,
+				plaintext: null,
+				message_type: 'text',
+				msg_num: msg.msg_num,
+				created_at: createdAt,
+			},
+		]);
 
 		let text: string | null = null;
 		let decryptError = false;
 		try {
-			text = await decryptChannel(msg.channel_id, msg.sender_id, {
-				ciphertext: msg.ciphertext,
-				msg_num: msg.msg_num,
-			});
+			text = await decryptChannel(
+				msg.channel_id,
+				msg.sender_id,
+				msg.sender_device_id ?? 'legacy',
+				{
+					ciphertext: msg.ciphertext,
+					msg_num: msg.msg_num,
+				}
+			);
 		} catch {
 			decryptError = true;
 		}
@@ -265,7 +315,7 @@ export function registerChannelHandler(): () => void {
 				senderId: msg.sender_id,
 				text,
 				decryptError,
-				createdAt: new Date().toISOString(),
+				createdAt,
 				messageType: 'text',
 			},
 		]);

@@ -1,18 +1,30 @@
-import { test, expect, type Page, type BrowserContext } from '@playwright/test';
-import { mockAuthEndpoints } from './auth-helper.js';
+import { test, expect, type Page } from '@playwright/test';
+import { loginViaApi, mockAuthEndpoints, setInstallationId } from './auth-helper.js';
 
 /**
  * Direct Messages E2E tests.
  *
- * Single-user tests: DM index page rendering, navigation.
- * Two-user tests: require E2E_EMAIL + E2E_EMAIL_2 (second test account).
- *
- * The E2EE nature of DMs means we verify the UI flow, not the plaintext
- * message contents — the server only ever stores ciphertext.
+ * Single-user tests cover DM index rendering and navigation.
+ * The seeded flow creates a deterministic conversation over the API first,
+ * then signs in through the real UI and verifies the primary account can open
+ * that conversation and send a DM.
  */
 
+const API_URL = process.env.VITE_API_URL ?? 'https://api.yapperhq.com';
+const USER_A_EMAIL = process.env.E2E_EMAIL ?? '';
+const USER_A_PASS = process.env.E2E_PASSWORD ?? '';
 const USER_B_EMAIL = process.env.E2E_EMAIL_2 ?? '';
-const USER_B_PASS  = process.env.E2E_PASSWORD_2 ?? '';
+const USER_B_PASS = process.env.E2E_PASSWORD_2 ?? '';
+const USER_A_INSTALLATION_ID = '33333333-3333-4333-8333-333333333333';
+const USER_B_INSTALLATION_ID = '44444444-4444-4444-8444-444444444444';
+
+interface SessionBootstrap {
+	userId: string;
+	username: string;
+	displayName: string | null;
+	accessToken: string;
+	csrfToken: string;
+}
 
 async function loginAs(page: Page) {
 	await mockAuthEndpoints(page);
@@ -20,8 +32,8 @@ async function loginAs(page: Page) {
 	await page.waitForURL(/\/explore/, { timeout: 20_000 });
 }
 
-// Full form login for a fresh context (used for USER_B in two-user tests)
-async function loginFresh(page: Page, email: string, password: string) {
+async function loginFresh(page: Page, email: string, password: string, installationId: string) {
+	await setInstallationId(page, installationId);
 	await page.goto('/login');
 	await page.fill('#email', email);
 	await page.fill('#password', password);
@@ -29,10 +41,98 @@ async function loginFresh(page: Page, email: string, password: string) {
 	await page.waitForURL(/\/explore/, { timeout: 20_000 });
 }
 
-// ─── DM index page ─────────────────────────────────────────────────────────────
+async function waitForAppReady(page: Page): Promise<void> {
+	await expect(page.locator('[aria-label="Loading Yapper"]')).toHaveCount(0, {
+		timeout: 45_000,
+	});
+}
 
-test.describe('DM index — authenticated', () => {
-	test.skip(!process.env.E2E_EMAIL, 'Set E2E_EMAIL / E2E_PASSWORD to run these tests');
+async function createSessionBootstrap(
+	email: string,
+	password: string,
+	installationId: string,
+	label: string,
+): Promise<SessionBootstrap> {
+	const authData = await loginViaApi(email, password, {
+		installationId,
+		label,
+	});
+	const userId = authData.user.id;
+	const username = authData.user.username;
+	const displayName = authData.user.displayName ?? authData.user.display_name ?? null;
+
+	if (typeof userId !== 'string' || typeof username !== 'string') {
+		throw new Error('createSessionBootstrap response missing user identity fields');
+	}
+
+	return {
+		userId,
+		username,
+		displayName: typeof displayName === 'string' ? displayName : null,
+		accessToken: authData.accessToken,
+		csrfToken: authData.csrfToken,
+	};
+}
+
+function apiHeaders(session: SessionBootstrap) {
+	return {
+		'Content-Type': 'application/json',
+		Authorization: `Bearer ${session.accessToken}`,
+		Cookie: `csrf_token=${session.csrfToken}`,
+		'X-CSRF-Token': session.csrfToken,
+	};
+}
+
+async function createDmConversation(session: SessionBootstrap, peerId: string): Promise<string> {
+	const response = await fetch(`${API_URL}/api/v1/conversations`, {
+		method: 'POST',
+		headers: apiHeaders(session),
+		body: JSON.stringify({ peer_id: peerId }),
+	});
+
+	if (!response.ok) {
+		throw new Error(`createDmConversation failed: ${response.status} ${await response.text()}`);
+	}
+
+	const body = (await response.json()) as { id?: string };
+	if (typeof body.id !== 'string') {
+		throw new Error('createDmConversation response missing conversation id');
+	}
+
+	return body.id;
+}
+
+async function openConversation(
+	page: Page,
+	conversationId: string,
+	peerLabels: string[],
+): Promise<void> {
+	const dmLink = page
+		.getByRole('link', { name: /Direct Messages/i })
+		.or(page.locator('a[href="/dm"]'));
+	await dmLink.first().click();
+	await page.waitForURL(/\/dm$/, { timeout: 10_000 });
+	await expect(page.locator('button.conv-btn').first()).toBeVisible({ timeout: 15_000 });
+
+	for (const label of peerLabels) {
+		const button = page.locator('button.conv-btn', { hasText: label }).first();
+		const visible = await button.isVisible({ timeout: 2_000 }).catch(() => false);
+		if (!visible) {
+			continue;
+		}
+
+		await button.click();
+		await page.waitForURL(new RegExp(`/dm/${conversationId}$`), { timeout: 10_000 });
+		return;
+	}
+
+	throw new Error(`Conversation ${conversationId} was not visible in the DM sidebar`);
+}
+
+// DM index page
+
+test.describe('DM index - authenticated', () => {
+	test.skip(!USER_A_EMAIL, 'Set E2E_EMAIL / E2E_PASSWORD to run these tests');
 
 	test.beforeEach(async ({ page }) => {
 		await loginAs(page);
@@ -46,114 +146,65 @@ test.describe('DM index — authenticated', () => {
 
 	test('Direct Messages nav link is present in sidebar', async ({ page }) => {
 		await page.goto('/explore');
-		const dmLink = page.getByRole('link', { name: /Direct Messages/i })
+		const dmLink = page
+			.getByRole('link', { name: /Direct Messages/i })
 			.or(page.locator('a[href="/dm"]'));
 		await expect(dmLink.first()).toBeVisible();
 	});
 
 	test('sidebar shows DM section when on /dm', async ({ page }) => {
 		await page.goto('/dm');
-		// Sidebar should be present
 		await expect(page.locator('nav, aside, [class*="sidebar"]').first()).toBeVisible();
 	});
 });
 
-// ─── Two-user DM flow ──────────────────────────────────────────────────────────
+// Seeded DM flow
 
-test.describe('Two-user DM flow', () => {
+test.describe('Seeded DM flow', () => {
+	test.use({ storageState: { cookies: [], origins: [] } });
+
 	test.skip(
-		!process.env.E2E_EMAIL || !process.env.E2E_EMAIL_2,
-		'Set E2E_EMAIL, E2E_PASSWORD, E2E_EMAIL_2, E2E_PASSWORD_2 to run two-user tests',
+		!USER_A_EMAIL || !USER_B_EMAIL,
+		'Set E2E_EMAIL, E2E_PASSWORD, E2E_EMAIL_2, E2E_PASSWORD_2 to run seeded DM tests',
 	);
 
-	let contextA: BrowserContext;
-	let contextB: BrowserContext;
+	let conversationId = '';
+	let userBLabels: string[] = [];
 
-	test.beforeEach(async ({ browser }) => {
-		contextA = await browser.newContext();
-		contextB = await browser.newContext();
+	test.beforeEach(async ({ page }) => {
+		const sessionA = await createSessionBootstrap(
+			USER_A_EMAIL,
+			USER_A_PASS,
+			USER_A_INSTALLATION_ID,
+			'E2E DM Browser A',
+		);
+		const sessionB = await createSessionBootstrap(
+			USER_B_EMAIL,
+			USER_B_PASS,
+			USER_B_INSTALLATION_ID,
+			'E2E DM Browser B',
+		);
+		conversationId = await createDmConversation(sessionA, sessionB.userId);
+		userBLabels = [sessionB.username, sessionB.displayName].filter(
+			(label): label is string => typeof label === 'string' && label.length > 0,
+		);
 
-		const pageA = await contextA.newPage();
-		const pageB = await contextB.newPage();
-
-		// contextA has the storageState refresh cookie; contextB needs full form login
-		await loginAs(pageA);
-		await loginFresh(pageB, USER_B_EMAIL, USER_B_PASS);
+		await loginFresh(page, USER_A_EMAIL, USER_A_PASS, USER_A_INSTALLATION_ID);
+		await waitForAppReady(page);
 	});
 
-	test.afterEach(async () => {
-		await contextA.close();
-		await contextB.close();
-	});
+	test('User A can open the seeded DM with User B and send a message', async ({ page }) => {
+		test.slow();
+		await openConversation(page, conversationId, userBLabels);
 
-	test('User A can open a DM with User B and send a message', async () => {
-		const pageA = contextA.pages()[0];
-		const pageB = contextB.pages()[0];
+		const input = page.locator('textarea[aria-label="Message"]').first();
+		await expect(input).toBeVisible({ timeout: 20_000 });
+		await expect(input).toBeEnabled({ timeout: 20_000 });
 
-		// User B username — get from profile page or explore
-		await pageB.goto('/explore');
-		const bUrl = pageB.url();
-		const bUsername = bUrl; // placeholder; real test would extract username
-
-		// User A navigates to User B's profile and starts a DM
-		await pageA.goto('/explore');
-
-		// Look for a DM button or conversation starter
-		// This is necessarily loose — the exact selectors depend on what's rendered
-		const dmButton = pageA.getByRole('button', { name: /Message|DM/i }).first();
-		const hasDmBtn = await dmButton.isVisible({ timeout: 5_000 }).catch(() => false);
-
-		if (!hasDmBtn) {
-			// Navigate directly to DM page as fallback
-			await pageA.goto('/dm');
-			await expect(pageA).toHaveURL('/dm');
-		}
-
-		expect(bUsername).toBeTruthy(); // both users logged in successfully
-	});
-
-	test('DM conversation page has message input', async () => {
-		const pageA = contextA.pages()[0];
-
-		// Get list of existing DM conversations
-		await pageA.goto('/dm');
-
-		const firstConvo = pageA.locator('button.conv-btn').first();
-		const hasConvo = await firstConvo.isVisible({ timeout: 5_000 }).catch(() => false);
-
-		if (hasConvo) {
-			await firstConvo.click();
-			await pageA.waitForURL(/\/dm\//, { timeout: 5_000 });
-
-			// Message input should be present
-			const input = pageA.locator('textarea, input[placeholder*="message"], [contenteditable]').first();
-			await expect(input).toBeVisible({ timeout: 5_000 });
-		}
-	});
-
-	test('sending a message updates the conversation', async () => {
-		const pageA = contextA.pages()[0];
-
-		await pageA.goto('/dm');
-		// Wait for conversations to load before checking for conv-btn
-		await pageA.waitForSelector('button.conv-btn, .empty-dm', { timeout: 15_000 }).catch(() => {});
-		const firstConvo = pageA.locator('button.conv-btn').first();
-		const hasConvo = await firstConvo.isVisible({ timeout: 3_000 }).catch(() => false);
-
-		if (!hasConvo) {
-			test.skip();
-			return;
-		}
-
-		await firstConvo.click();
-		await pageA.waitForURL(/\/dm\//, { timeout: 5_000 });
-
-		const testMsg = `E2E test ${Date.now()}`;
-		const input = pageA.locator('textarea, [contenteditable="true"]').first();
+		const testMsg = `E2E DM test ${Date.now()}`;
 		await input.fill(testMsg);
 		await input.press('Enter');
 
-		// Message should appear in the conversation
-		await expect(pageA.getByText(testMsg)).toBeVisible({ timeout: 8_000 });
+		await expect(page.getByText(testMsg)).toBeVisible({ timeout: 8_000 });
 	});
 });

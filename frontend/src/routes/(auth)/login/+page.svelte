@@ -3,6 +3,7 @@
 	import { api, ApiError } from '$api/client.js';
 	import { setAuth } from '$stores/auth.js';
 	import type { User } from '$stores/auth.js';
+	import { getDeviceBootstrap, normalizeServerDevice } from '$lib/device/bootstrap.js';
 
 	let email = '';
 	let password = '';
@@ -15,11 +16,27 @@
 		error = '';
 		loading = true;
 		try {
-			const res = await api.post<{ access_token: string; csrf_token: string; user: User }>(
-				'/api/v1/auth/login',
-				{ email, password }
+			const res = await api.post<{
+				access_token: string;
+				csrf_token: string;
+				user: User;
+				device: {
+					id: string;
+					signal_device_id: number;
+					installation_id: string | null;
+					platform: 'web' | 'tauri' | 'capacitor';
+					label: string;
+					trust_state: 'trusted' | 'pending_trust' | 'revoked';
+					created_at: string;
+					last_seen_at: string | null;
+					approved_at: string | null;
+					revoked_at: string | null;
+				};
+			}>(
+				'/api/v2/auth/login',
+				{ email, password, device: getDeviceBootstrap() }
 			);
-			setAuth(res.user, res.access_token, res.csrf_token);
+			setAuth(res.user, res.access_token, res.csrf_token, normalizeServerDevice(res.device));
 			await goto('/explore');
 		} catch (e) {
 			if (e instanceof ApiError) {

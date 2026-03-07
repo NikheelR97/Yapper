@@ -1,47 +1,34 @@
-import { test, expect, type Page } from '@playwright/test';
-import { mockAuthEndpoints } from './auth-helper.js';
+﻿import { test, expect, type Page } from '@playwright/test';
+import { buildMockAuthData, mockAuthEndpoints } from './auth-helper.js';
 
 /**
- * Navigation & protected-route E2E tests.
+ * Navigation and protected-route E2E tests.
  *
  * These tests cover page-level rendering and redirect behaviour.
- * Tests that require a real session are gated behind E2E_EMAIL env var.
  */
 
-// ─── Helpers ───────────────────────────────────────────────────────────────────
-
 async function loginAs(page: Page) {
-	await mockAuthEndpoints(page);
+	await mockAuthEndpoints(page, buildMockAuthData());
 	await page.goto('/explore');
 	await page.waitForURL(/\/explore/, { timeout: 20_000 });
 }
 
-// ─── Unauthenticated redirects ─────────────────────────────────────────────────
-
 test.describe('Unauthenticated redirects', () => {
-	// These tests check that protected routes send unauthenticated visitors to /login.
-	// The SvelteKit (app) layout guards these routes.
-
 	for (const route of ['/dm', '/servers', '/explore', '/settings']) {
 		test(`${route} redirects to /login when not authenticated`, async ({ page }) => {
-			// Clear any stored auth state
 			await page.context().clearCookies();
 			await page.context().clearPermissions();
 
 			await page.goto(route);
 
-			// Should land on /login (possibly after a redirect chain)
 			await expect(page).toHaveURL(/\/login/, { timeout: 8_000 });
 		});
 	}
 });
 
-// ─── Public pages ──────────────────────────────────────────────────────────────
-
 test.describe('Public pages', () => {
 	test('root page loads', async ({ page }) => {
 		await page.goto('/');
-		// Root either redirects to /login or renders a landing page — just confirm no crash
 		await expect(page.locator('body')).toBeVisible();
 	});
 
@@ -62,11 +49,7 @@ test.describe('Public pages', () => {
 	});
 });
 
-// ─── Authenticated navigation ──────────────────────────────────────────────────
-
 test.describe('Authenticated navigation', () => {
-	test.skip(!process.env.E2E_EMAIL, 'Set E2E_EMAIL / E2E_PASSWORD to run these tests');
-
 	test.beforeEach(async ({ page }) => {
 		await loginAs(page);
 	});

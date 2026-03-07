@@ -12,12 +12,28 @@
 const API = process.env.VITE_API_URL ?? 'https://api.yapperhq.com';
 
 async function login(email, password) {
-	const res = await fetch(`${API}/api/v1/auth/login`, {
+	let res = await fetch(`${API}/api/v2/auth/login`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ email, password }),
+		body: JSON.stringify({
+			email,
+			password,
+			device: {
+				installation_id: '55555555-5555-4555-8555-555555555555',
+				platform: 'web',
+				label: 'E2E Seeder',
+			},
+		}),
 		credentials: 'include',
 	});
+	if (res.status === 404) {
+		res = await fetch(`${API}/api/v1/auth/login`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ email, password }),
+			credentials: 'include',
+		});
+	}
 	if (!res.ok) {
 		const text = await res.text();
 		throw new Error(`Login failed for ${email}: ${res.status} ${text}`);

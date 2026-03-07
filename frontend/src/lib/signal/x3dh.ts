@@ -49,6 +49,7 @@ function concat(...arrays: Uint8Array[]): Uint8Array {
 export async function x3dhInitiate(
 	myIdentity: IdentityKeyPair,
 	bundle: KeyBundle,
+	sessionId: string,
 	conversationId: string
 ): Promise<{ session: Session; ephemeralPublicKey: Uint8Array; usedOpkId: number | null }> {
 	const ikB_dh = b64ToBytes(bundle.identity_dh_key);
@@ -76,8 +77,11 @@ export async function x3dhInitiate(
 	const sendChainKey = sk.slice(32, 64);
 
 	const session: Session = {
+		sessionId,
 		conversationId,
 		peerId: bundle.userId,
+		peerDeviceId: bundle.deviceId,
+		peerSignalDeviceId: bundle.signalDeviceId,
 		rootKey,
 		sendChainKey,
 		receiveChainKey: null, // set when Bob replies
@@ -102,8 +106,11 @@ export async function x3dhRespond(
 	oneTimePreKey: PreKeyPair | null,
 	ephemeralPubKey: Uint8Array,
 	senderDhPubKey: Uint8Array,
+	sessionId: string,
 	conversationId: string,
-	peerId: string
+	peerId: string,
+	peerDeviceId: string,
+	peerSignalDeviceId: number
 ): Promise<Session> {
 	const dh1 = x25519.getSharedSecret(signedPreKey.privateKey, senderDhPubKey);
 	const dh2 = x25519.getSharedSecret(myIdentity.dhPrivateKey, ephemeralPubKey);
@@ -126,8 +133,11 @@ export async function x3dhRespond(
 	const sendChainKey = hkdf(sha256, rootKey, undefined, new TextEncoder().encode('send'), 32);
 
 	return {
+		sessionId,
 		conversationId,
 		peerId,
+		peerDeviceId,
+		peerSignalDeviceId,
 		rootKey,
 		sendChainKey,
 		receiveChainKey,

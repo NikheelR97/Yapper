@@ -1,12 +1,13 @@
 mod tauri_commands;
 
+use argon2::Argon2;
+use std::sync::Arc;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager, WindowEvent,
 };
 use tauri_commands::{AppSettingsState, TrayBadgeUpdater};
-use std::sync::Arc;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -16,6 +17,16 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(
+            tauri_plugin_stronghold::Builder::new(|password| {
+                let mut output = [0u8; 32];
+                Argon2::default()
+                    .hash_password_into(password.as_bytes(), b"yapper-stronghold-v1", &mut output)
+                    .expect("failed to derive stronghold key");
+                output.to_vec()
+            })
+            .build(),
+        )
         // ── Shared state ───────────────────────────────────────────────────
         .manage(AppSettingsState::default())
         // ── Setup ──────────────────────────────────────────────────────────
@@ -136,6 +147,7 @@ pub fn run() {
             tauri_commands::set_minimize_to_tray,
             tauri_commands::get_minimize_to_tray,
             tauri_commands::set_tray_badge,
+            tauri_commands::stronghold_exists,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tauri application");

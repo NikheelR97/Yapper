@@ -35,6 +35,7 @@ mod channels;
 mod csrf;
 mod db;
 mod discord;
+mod devices;
 mod emojis;
 mod error;
 mod explore;
@@ -131,6 +132,7 @@ async fn main() -> anyhow::Result<()> {
         // OAuth at top level — must match redirect URIs registered in Discord/Google consoles
         .nest("/auth/oauth", auth::oauth_router())
         .nest("/api/v1", api_router())
+        .nest("/api/v2", api_router_v2())
         .layer(TraceLayer::new_for_http())
         .layer(CompressionLayer::new())
         // Security response headers
@@ -183,6 +185,15 @@ fn api_router() -> Router<AppState> {
         .nest("/discord", discord::router())
         .nest("/premium", premium::router())
         .nest("/notifications", notifications::router())
+        .layer(axum::middleware::from_fn(csrf::csrf_check))
+}
+
+fn api_router_v2() -> Router<AppState> {
+    Router::new()
+        .nest("/auth", auth::v2_router())
+        .nest("/devices", devices::router())
+        .nest("/keys", keys::v2_router())
+        .nest("/conversations", messages::v2_router())
         .layer(axum::middleware::from_fn(csrf::csrf_check))
 }
 

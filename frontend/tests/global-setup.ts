@@ -1,16 +1,162 @@
-import { chromium, type FullConfig } from '@playwright/test';
+import type { FullConfig } from '@playwright/test';
 import { writeFileSync } from 'fs';
 
+interface AuthData {
+	accessToken: string;
+	csrfToken: string;
+	user: Record<string, unknown>;
+	device?: Record<string, unknown>;
+}
+
+interface LoginResult {
+	auth: AuthData;
+	storageState: {
+		cookies: Array<{
+			name: string;
+			value: string;
+			domain: string;
+			path: string;
+			expires: number;
+			httpOnly: boolean;
+			secure: boolean;
+			sameSite: 'Lax' | 'None' | 'Strict';
+		}>;
+		origins: [];
+	};
+}
+
+const DEFAULT_DEVICE_BOOTSTRAP = {
+	installation_id: '33333333-3333-4333-8333-333333333333',
+	platform: 'web',
+	label: 'E2E Browser',
+};
+
+function parseSameSite(value: string | undefined): 'Lax' | 'None' | 'Strict' {
+	switch ((value ?? '').toLowerCase()) {
+		case 'none':
+			return 'None';
+		case 'strict':
+			return 'Strict';
+		default:
+			return 'Lax';
+	}
+}
+
+function parseExpires(value: string | undefined): number {
+	if (!value) {
+		return -1;
+	}
+
+	const timestampMs = Date.parse(value);
+	return Number.isFinite(timestampMs) ? Math.floor(timestampMs / 1000) : -1;
+}
+
+function parseSetCookie(cookieHeader: string, apiUrl: string) {
+	const url = new URL(apiUrl);
+	const segments = cookieHeader.split(';').map((segment) => segment.trim());
+	const [nameValue, ...attributes] = segments;
+	const separatorIndex = nameValue.indexOf('=');
+	if (separatorIndex <= 0) {
+		return null;
+	}
+
+	const name = nameValue.slice(0, separatorIndex);
+	const value = nameValue.slice(separatorIndex + 1);
+	const parsed = new Map<string, string>();
+	for (const attribute of attributes) {
+		const [rawKey, ...rawValue] = attribute.split('=');
+		parsed.set(rawKey.toLowerCase(), rawValue.join('='));
+	}
+
+	return {
+		name,
+		value,
+		domain: parsed.get('domain') ?? url.hostname,
+		path: parsed.get('path') ?? '/',
+		expires: parseExpires(parsed.get('expires')),
+		httpOnly: parsed.has('httponly'),
+		secure: parsed.has('secure'),
+		sameSite: parseSameSite(parsed.get('samesite')),
+	};
+}
+
+function responseCookies(apiUrl: string, response: Response): LoginResult['storageState']['cookies'] {
+	const getSetCookie = (response.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie;
+	const headers = typeof getSetCookie === 'function' ? getSetCookie.call(response.headers) : [];
+	return headers
+		.map((header) => parseSetCookie(header, apiUrl))
+		.filter((cookie): cookie is NonNullable<typeof cookie> => cookie !== null);
+}
+
+async function loginWithFallback(apiUrl: string, email: string, password: string): Promise<LoginResult> {
+	let response = await fetch(`${apiUrl}/api/v2/auth/login`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({
+			email,
+			password,
+			device: DEFAULT_DEVICE_BOOTSTRAP,
+		}),
+	});
+
+	if (response.status === 404) {
+		response = await fetch(`${apiUrl}/api/v1/auth/login`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ email, password }),
+		});
+	}
+
+	if (!response.ok) {
+		throw new Error(`global setup login failed: ${response.status} ${await response.text()}`);
+	}
+
+	const body = (await response.json()) as {
+		access_token?: string;
+		csrf_token?: string;
+		user?: Record<string, unknown>;
+		device?: Record<string, unknown>;
+	};
+
+	if (!body.access_token || !body.csrf_token || !body.user) {
+		throw new Error('global setup login response was missing auth fields');
+	}
+
+	return {
+		auth: {
+			accessToken: body.access_token,
+			csrfToken: body.csrf_token,
+			user: body.user,
+			device: body.device,
+		},
+		storageState: {
+			cookies: responseCookies(apiUrl, response),
+			origins: [],
+		},
+	};
+}
+
+async function fetchUser(apiUrl: string, accessToken: string): Promise<Record<string, unknown> | null> {
+	const response = await fetch(`${apiUrl}/api/v1/users/me`, {
+		headers: { Authorization: `Bearer ${accessToken}` },
+	});
+
+	if (!response.ok) {
+		return null;
+	}
+
+	return (await response.json()) as Record<string, unknown>;
+}
+
 /**
- * Global setup: logs in ONCE and saves:
- *  - tests/auth-state.json  — browser cookies (HttpOnly refresh_token)
- *  - tests/auth-data.json   — access_token, csrf_token, user object
+ * Global setup writes:
+ * - tests/auth-state.json with API cookies for refresh flows
+ * - tests/auth-data.json with access token, CSRF token, user, and optional device
  *
- * Individual tests mock POST /auth/refresh and GET /users/me using the saved
- * data so they don't burn through the backend's per-IP rate limit (burst 20,
- * 100/min). Only the single global login call hits the real login endpoint.
+ * Most E2E specs mock /api/v2/auth/refresh and /users/me using this saved data so
+ * they do not burn through the backend login rate limit.
  */
-export default async function globalSetup(config: FullConfig) {
+export default async function globalSetup(_config: FullConfig) {
 	const email = process.env.E2E_EMAIL;
 	const password = process.env.E2E_PASSWORD;
 
@@ -18,46 +164,13 @@ export default async function globalSetup(config: FullConfig) {
 		return;
 	}
 
-	const baseURL = config.projects[0]?.use?.baseURL ?? 'http://localhost:5173';
-	const apiURL = process.env.VITE_API_URL ?? 'https://api.yapperhq.com';
-
-	const browser = await chromium.launch();
-	const context = await browser.newContext({ baseURL });
-	const page = await context.newPage();
-
-	// Intercept the login response to capture access_token + csrf_token
-	let accessToken = '';
-	let csrfToken = '';
-
-	await page.route(`${apiURL}/api/v1/auth/login`, async (route) => {
-		const response = await route.fetch();
-		const body = await response.json().catch(() => ({}));
-		accessToken = body.access_token ?? '';
-		csrfToken = body.csrf_token ?? '';
-		await route.fulfill({ response });
-	});
-
-	await page.goto('/login');
-	await page.fill('#email', email);
-	await page.fill('#password', password);
-	await page.getByRole('button', { name: /Sign In/i }).click();
-	await page.waitForURL(/\/explore/, { timeout: 30_000 });
-
-	// Fetch user profile with the captured access token
-	let user = {};
-	if (accessToken) {
-		const res = await page.request.get(`${apiURL}/api/v1/users/me`, {
-			headers: { Authorization: `Bearer ${accessToken}` },
-		});
-		user = await res.json().catch(() => ({}));
+	const apiUrl = process.env.VITE_API_URL ?? 'https://api.yapperhq.com';
+	const result = await loginWithFallback(apiUrl, email, password);
+	const latestUser = await fetchUser(apiUrl, result.auth.accessToken);
+	if (latestUser) {
+		result.auth.user = latestUser;
 	}
 
-	// Save browser state (cookies) and auth data
-	await context.storageState({ path: 'tests/auth-state.json' });
-	writeFileSync(
-		'tests/auth-data.json',
-		JSON.stringify({ accessToken, csrfToken, user }, null, 2),
-	);
-
-	await browser.close();
+	writeFileSync('tests/auth-state.json', JSON.stringify(result.storageState, null, 2));
+	writeFileSync('tests/auth-data.json', JSON.stringify(result.auth, null, 2));
 }

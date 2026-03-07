@@ -3,12 +3,11 @@
 	import {
 		sendTypingStart,
 		sendChannelMessage,
-		sendDmMessage,
 	} from "$stores/ws.js";
 	import YapRecorder from "./YapRecorder.svelte";
 	import ClipRecorder from "./ClipRecorder.svelte";
 	import EmojiPicker from "$lib/components/emoji/EmojiPicker.svelte";
-	import { encryptChannel, encryptDm } from "$lib/signal/index.js";
+	import { encryptChannel } from "$lib/signal/index.js";
 
 	export let disabled = false;
 	export let placeholder = "Send a message…";
@@ -97,19 +96,7 @@
 					messageType,
 				);
 			} else if (conversationId && recipientId) {
-				const { ciphertext, msgNum, ephemeralKey, opkId } =
-					await encryptDm(
-						conversationId,
-						recipientId,
-						mediaPayloadJson,
-					);
-				sendDmMessage(
-					conversationId,
-					ciphertext,
-					msgNum,
-					ephemeralKey,
-					opkId,
-				);
+				dispatch("send", mediaPayloadJson);
 			}
 		} catch (e) {
 			console.error("[MessageInput] Failed to send media message:", e);

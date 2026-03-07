@@ -8,10 +8,13 @@
 import { writable, get } from 'svelte/store';
 import { api } from '$api/client.js';
 import { decryptDm, encryptDm } from '$signal/index.js';
-import { onWsMessage, sendDmMessage } from '$stores/ws.js';
+import {
+	listDmHistoryMessages,
+	storeDmHistoryMessages,
+	type CachedDmHistoryMessage,
+} from '$signal/keystore.js';
+import { onWsMessage } from '$stores/ws.js';
 import { authStore } from '$stores/auth.js';
-
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface Conversation {
 	id: string;
@@ -41,7 +44,43 @@ interface ConversationStore {
 	loadError: boolean;
 }
 
-// ─── Stores ───────────────────────────────────────────────────────────────────
+interface RawConversation {
+	id: string;
+	peer_id: string;
+	peer_username: string;
+	peer_display_name: string | null;
+	peer_avatar_url: string | null;
+	last_message_at: string | null;
+}
+
+interface RawMessageV2 {
+	id: string;
+	conversation_id: string;
+	sender_id: string;
+	sender_device_id: string;
+	sender_signal_device_id: number;
+	ciphertext: string;
+	ephemeral_key: string | null;
+	opk_id: number | null;
+	msg_num: number;
+	created_at: string;
+}
+
+function mergeDmHistoryMessages(
+	remoteMessages: RawMessageV2[],
+	cachedMessages: CachedDmHistoryMessage[]
+): RawMessageV2[] {
+	const messagesById = new Map<string, RawMessageV2>();
+	for (const message of cachedMessages) {
+		messagesById.set(message.id, message);
+	}
+	for (const message of remoteMessages) {
+		messagesById.set(message.id, message);
+	}
+	return [...messagesById.values()].sort(
+		(a, b) => Date.parse(a.created_at) - Date.parse(b.created_at)
+	);
+}
 
 export const conversationsStore = writable<ConversationStore>({
 	conversations: [],
@@ -49,7 +88,6 @@ export const conversationsStore = writable<ConversationStore>({
 	loadError: false,
 });
 
-// Per-conversation message lists
 const messageStores = new Map<string, ReturnType<typeof writable<Message[]>>>();
 
 export function getMessageStore(conversationId: string) {
@@ -59,81 +97,97 @@ export function getMessageStore(conversationId: string) {
 	return messageStores.get(conversationId)!;
 }
 
-// ─── Fetch Conversations ──────────────────────────────────────────────────────
+function inferDmMessageType(text: string | null): string {
+	if (!text) return 'text';
+	try {
+		const payload = JSON.parse(text) as { mime_type?: string };
+		if (typeof payload.mime_type !== 'string') return 'text';
+		if (payload.mime_type.startsWith('audio/')) return 'yap';
+		if (payload.mime_type.startsWith('video/')) return 'clip';
+	} catch {
+		// Not a structured media payload.
+	}
+	return 'text';
+}
+
+function touchConversation(conversationId: string, timestamp: string): void {
+	conversationsStore.update((state) => ({
+		...state,
+		conversations: [...state.conversations]
+			.map((conversation) =>
+				conversation.id === conversationId
+					? { ...conversation, lastMessageAt: timestamp }
+					: conversation
+			)
+			.sort((a, b) => {
+				const aTime = a.lastMessageAt ? Date.parse(a.lastMessageAt) : 0;
+				const bTime = b.lastMessageAt ? Date.parse(b.lastMessageAt) : 0;
+				return bTime - aTime;
+			}),
+	}));
+}
 
 export async function fetchConversations(): Promise<void> {
-	conversationsStore.update((s) => ({ ...s, loading: true }));
+	conversationsStore.update((state) => ({ ...state, loading: true }));
 	try {
-		const raw = await api.get<
-			{
-				id: string;
-				peer_id: string;
-				peer_username: string;
-				peer_display_name: string | null;
-				peer_avatar_url: string | null;
-				last_message_at: string | null;
-			}[]
-		>('/api/v1/conversations');
-
+		const raw = await api.get<RawConversation[]>('/api/v2/conversations');
 		conversationsStore.set({
-			conversations: raw.map((c) => ({
-				id: c.id,
-				peerId: c.peer_id,
-				peerUsername: c.peer_username,
-				peerDisplayName: c.peer_display_name,
-				peerAvatarUrl: c.peer_avatar_url,
-				lastMessageAt: c.last_message_at,
+			conversations: raw.map((conversation) => ({
+				id: conversation.id,
+				peerId: conversation.peer_id,
+				peerUsername: conversation.peer_username,
+				peerDisplayName: conversation.peer_display_name,
+				peerAvatarUrl: conversation.peer_avatar_url,
+				lastMessageAt: conversation.last_message_at,
 			})),
 			loading: false,
 			loadError: false,
 		});
 	} catch {
-		conversationsStore.update((s) => ({ ...s, loading: false, loadError: true }));
+		conversationsStore.update((state) => ({ ...state, loading: false, loadError: true }));
 	}
 }
 
-// ─── Load Message History ─────────────────────────────────────────────────────
-
 export async function loadMessages(conversationId: string, peerId: string): Promise<void> {
 	const store = getMessageStore(conversationId);
-	const raw = await api.get<
-		{
-			id: string;
-			conversation_id: string;
-			sender_id: string;
-			ciphertext: string;
-			ephemeral_key: string | null;
-			opk_id: number | null;
-			message_type: string;
-			created_at: string;
-		}[]
-	>(`/api/v1/conversations/${conversationId}/messages`);
+	const [remoteMessages, cachedMessages] = await Promise.all([
+		api.get<RawMessageV2[]>(`/api/v2/conversations/${conversationId}/messages`),
+		listDmHistoryMessages(conversationId),
+	]);
+	const raw = mergeDmHistoryMessages(remoteMessages, cachedMessages);
+	await storeDmHistoryMessages(remoteMessages);
 
 	const messages: Message[] = await Promise.all(
-		raw.map(async (m) => {
+		raw.map(async (message) => {
 			try {
-				const text = await decryptDm(conversationId, peerId, {
-					ciphertext: m.ciphertext,
-					ephemeral_key: m.ephemeral_key,
-					opk_id: m.opk_id,
-				});
+				const text = await decryptDm(
+					conversationId,
+					peerId,
+					message.sender_device_id,
+					message.sender_signal_device_id,
+					{
+						ciphertext: message.ciphertext,
+						ephemeral_key: message.ephemeral_key,
+						opk_id: message.opk_id,
+					}
+				);
 				return {
-					id: m.id,
-					conversationId: m.conversation_id,
-					senderId: m.sender_id,
+					id: message.id,
+					conversationId: message.conversation_id,
+					senderId: message.sender_id,
 					text,
 					decryptError: false,
-					createdAt: m.created_at,
-					messageType: m.message_type ?? 'text',
+					createdAt: message.created_at,
+					messageType: inferDmMessageType(text),
 				};
 			} catch {
 				return {
-					id: m.id,
-					conversationId: m.conversation_id,
-					senderId: m.sender_id,
+					id: message.id,
+					conversationId: message.conversation_id,
+					senderId: message.sender_id,
 					text: null,
 					decryptError: true,
-					createdAt: m.created_at,
+					createdAt: message.created_at,
 					messageType: 'text',
 				};
 			}
@@ -143,92 +197,82 @@ export async function loadMessages(conversationId: string, peerId: string): Prom
 	store.set(messages);
 }
 
-// ─── Send Message ─────────────────────────────────────────────────────────────
-
 export async function sendMessage(conversationId: string, peerId: string, text: string): Promise<void> {
 	const encrypted = await encryptDm(conversationId, peerId, text);
-
-	const sent = sendDmMessage(
-		conversationId,
-		encrypted.ciphertext,
-		encrypted.msgNum,
-		encrypted.ephemeralKey,
-		encrypted.opkId
+	const response = await api.post<{ status: string; message_id: string; created_at: string }>(
+		`/api/v2/conversations/${conversationId}/messages`,
+		{
+			envelopes: encrypted.envelopes.map((envelope) => ({
+				recipient_user_id: envelope.recipientUserId,
+				recipient_device_id: envelope.recipientDeviceId,
+				ciphertext: envelope.ciphertext,
+				ephemeral_key: envelope.ephemeralKey ?? null,
+				opk_id: envelope.opkId ?? null,
+				msg_num: envelope.msgNum,
+			})),
+		}
 	);
 
-	if (!sent) {
-		throw new Error('WebSocket not connected — message not sent');
-	}
-
-	// Optimistically append to local store as own message
 	const userId = get(authStore).user?.id ?? '';
+	const createdAt = response.created_at ?? new Date().toISOString();
 	const store = getMessageStore(conversationId);
-	store.update((msgs) => [
-		...msgs,
+	store.update((messages) => [
+		...messages,
 		{
-			id: crypto.randomUUID(),
+			id: response.message_id,
 			conversationId,
 			senderId: userId,
 			text,
 			decryptError: false,
-			createdAt: new Date().toISOString(),
-			messageType: 'text',
+			createdAt,
+			messageType: inferDmMessageType(text),
 		},
 	]);
+	touchConversation(conversationId, createdAt);
 }
 
-// ─── WS Incoming DM Handler ───────────────────────────────────────────────────
-
-/** Register the global WS handler for incoming DMs. Call once on app init. */
 export function registerDmHandler(): () => void {
-	return onWsMessage('dm', async (payload) => {
-		const msg = payload as {
-			id: string;
-			conversation_id: string;
-			sender_id: string;
-			ciphertext: string;
-			ephemeral_key?: string | null;
-			opk_id?: number | null;
-		};
-
-		// Look up the peer id from our conversations store
-		const conv = get(conversationsStore).conversations.find((c) => c.id === msg.conversation_id);
-		const peerId = conv?.peerId ?? msg.sender_id;
+	return onWsMessage('dm_v2', async (payload) => {
+		const message = payload as RawMessageV2;
+		await storeDmHistoryMessages([message]);
+		const conversation = get(conversationsStore).conversations.find(
+			(entry) => entry.id === message.conversation_id
+		);
+		const currentUserId = get(authStore).user?.id;
+		const peerId = conversation?.peerId ?? (message.sender_id === currentUserId ? currentUserId ?? '' : message.sender_id);
 
 		let text: string | null = null;
 		let decryptError = false;
 		try {
-			text = await decryptDm(msg.conversation_id, peerId, {
-				ciphertext: msg.ciphertext,
-				ephemeral_key: msg.ephemeral_key ?? null,
-				opk_id: msg.opk_id ?? null,
-			});
+			text = await decryptDm(
+				message.conversation_id,
+				peerId,
+				message.sender_device_id,
+				message.sender_signal_device_id,
+				{
+					ciphertext: message.ciphertext,
+					ephemeral_key: message.ephemeral_key ?? null,
+					opk_id: message.opk_id ?? null,
+				}
+			);
 		} catch {
 			decryptError = true;
 		}
 
-		const store = getMessageStore(msg.conversation_id);
-		store.update((msgs) => [
-			...msgs,
+		const createdAt = message.created_at ?? new Date().toISOString();
+		const store = getMessageStore(message.conversation_id);
+		store.update((messages) => [
+			...messages,
 			{
-				id: msg.id,
-				conversationId: msg.conversation_id,
-				senderId: msg.sender_id,
+				id: message.id,
+				conversationId: message.conversation_id,
+				senderId: message.sender_id,
 				text,
 				decryptError,
-				createdAt: new Date().toISOString(),
-				messageType: 'text',
+				createdAt,
+				messageType: inferDmMessageType(text),
 			},
 		]);
-
-		// Bump lastMessageAt in conversation list
-		conversationsStore.update((s) => ({
-			...s,
-			conversations: s.conversations.map((c) =>
-				c.id === msg.conversation_id
-					? { ...c, lastMessageAt: new Date().toISOString() }
-					: c
-			),
-		}));
+		touchConversation(message.conversation_id, createdAt);
 	});
 }

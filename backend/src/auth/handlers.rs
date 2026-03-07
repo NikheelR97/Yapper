@@ -37,7 +37,7 @@ pub struct RegisterRequest {
 }
 
 // Username: alphanumeric + underscores, no spaces
-static USERNAME_RE: once_cell::sync::Lazy<regex::Regex> =
+pub(crate) static USERNAME_RE: once_cell::sync::Lazy<regex::Regex> =
     once_cell::sync::Lazy::new(|| regex::Regex::new(r"^[a-zA-Z0-9_]+$").unwrap());
 
 #[derive(Debug, Deserialize, Validate)]
@@ -130,11 +130,13 @@ pub async fn register(
         let _ = send_verification_email(&email, &token, &resend_key).await;
     });
 
-    let access_token = generate_access_token(user.id, &user.account_type, &state.jwt_keys)?;
-    let refresh_token = generate_refresh_token(user.id, Uuid::new_v4(), &state.jwt_keys)?;
+    let access_token =
+        generate_access_token(user.id, &user.account_type, None, &state.jwt_keys)?;
+    let refresh_token =
+        generate_refresh_token(user.id, Uuid::new_v4(), None, &state.jwt_keys)?;
 
     // Store refresh token session
-    store_session(pool, user.id, &refresh_token, &state.jwt_keys).await?;
+    store_session(pool, user.id, &refresh_token, None, &state.jwt_keys).await?;
 
     let (cookies, csrf_token) = auth_cookies(&refresh_token);
     Ok((
@@ -208,10 +210,12 @@ pub async fn login(
     state.login_limiter.record_success(ip);
 
     let family_id = Uuid::new_v4();
-    let access_token = generate_access_token(row.id, &row.account_type, &state.jwt_keys)?;
-    let refresh_token = generate_refresh_token(row.id, family_id, &state.jwt_keys)?;
+    let access_token =
+        generate_access_token(row.id, &row.account_type, None, &state.jwt_keys)?;
+    let refresh_token =
+        generate_refresh_token(row.id, family_id, None, &state.jwt_keys)?;
 
-    store_session(pool, row.id, &refresh_token, &state.jwt_keys).await?;
+    store_session(pool, row.id, &refresh_token, None, &state.jwt_keys).await?;
 
     let user = UserDto {
         id: row.id,
@@ -296,10 +300,12 @@ pub async fn refresh(
     .await?
     .ok_or(AppError::Unauthorized)?;
 
-    let new_access = generate_access_token(user.id, &user.account_type, &state.jwt_keys)?;
-    let new_refresh = generate_refresh_token(user.id, claims.family_id, &state.jwt_keys)?;
+    let new_access =
+        generate_access_token(user.id, &user.account_type, claims.device_id, &state.jwt_keys)?;
+    let new_refresh =
+        generate_refresh_token(user.id, claims.family_id, claims.device_id, &state.jwt_keys)?;
 
-    store_session(pool, user.id, &new_refresh, &state.jwt_keys).await?;
+    store_session(pool, user.id, &new_refresh, claims.device_id, &state.jwt_keys).await?;
 
     let (cookies, csrf_token) = refresh_cookie(&new_refresh);
     Ok((
@@ -424,33 +430,35 @@ pub async fn request_password_reset(
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async fn store_session(
+pub(crate) async fn store_session(
     pool: &sqlx::PgPool,
     user_id: Uuid,
     refresh_token: &str,
+    device_id: Option<Uuid>,
     keys: &JwtKeys,
 ) -> AppResult<()> {
     let claims = validate_refresh_token(refresh_token, keys)?.claims;
     let token_hash = sha256_hex(refresh_token);
     let expires_at = chrono::DateTime::from_timestamp(claims.exp, 0).unwrap_or_else(Utc::now);
 
-    sqlx::query!(
+    sqlx::query(
         r#"
-        INSERT INTO sessions (user_id, family_id, token_hash, expires_at)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO sessions (user_id, family_id, token_hash, expires_at, device_id)
+        VALUES ($1, $2, $3, $4, $5)
         "#,
-        user_id,
-        claims.family_id,
-        token_hash,
-        expires_at,
     )
+    .bind(user_id)
+    .bind(claims.family_id)
+    .bind(token_hash)
+    .bind(expires_at)
+    .bind(device_id)
     .execute(pool)
     .await?;
 
     Ok(())
 }
 
-fn sha256_hex(input: &str) -> String {
+pub(crate) fn sha256_hex(input: &str) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(input.as_bytes());
@@ -460,11 +468,23 @@ fn sha256_hex(input: &str) -> String {
 /// Returns both the refresh cookie headers and the new CSRF token value.
 /// The CSRF token is included in the JSON response body so cross-origin frontends
 /// (Tauri, Capacitor) can read it — they can't access Set-Cookie from a different origin.
-fn auth_cookies(refresh_token: &str) -> ([String; 2], String) {
+pub(crate) fn auth_cookies(refresh_token: &str) -> ([String; 2], String) {
+    auth_cookies_for_path(refresh_token, "/api/v1/auth/refresh")
+}
+
+pub(crate) fn auth_cookies_for_path(
+    refresh_token: &str,
+    refresh_cookie_path: &str,
+) -> ([String; 2], String) {
     let csrf_token = Uuid::new_v4().to_string();
     let use_secure_cookie = crate::csrf::should_use_secure_cookie();
     let cookies = [
-        refresh_cookie_header(refresh_token, REFRESH_TTL_SECS, use_secure_cookie),
+        refresh_cookie_header_for_path(
+            refresh_token,
+            REFRESH_TTL_SECS,
+            use_secure_cookie,
+            refresh_cookie_path,
+        ),
         crate::csrf::csrf_cookie_header(&csrf_token),
     ];
     (cookies, csrf_token)
@@ -476,14 +496,18 @@ fn refresh_cookie(token: &str) -> ([String; 2], String) {
 }
 
 fn clear_auth_cookies() -> [String; 2] {
+    clear_auth_cookies_for_path("/api/v1/auth/refresh")
+}
+
+pub(crate) fn clear_auth_cookies_for_path(refresh_cookie_path: &str) -> [String; 2] {
     let use_secure_cookie = crate::csrf::should_use_secure_cookie();
     [
-        refresh_cookie_header("", 0, use_secure_cookie),
+        refresh_cookie_header_for_path("", 0, use_secure_cookie, refresh_cookie_path),
         crate::csrf::clear_csrf_cookie(),
     ]
 }
 
-fn extract_refresh_cookie(headers: &HeaderMap) -> Option<String> {
+pub(crate) fn extract_refresh_cookie(headers: &HeaderMap) -> Option<String> {
     let cookie_header = headers.get(header::COOKIE)?.to_str().ok()?;
     cookie_header
         .split(';')
@@ -491,15 +515,20 @@ fn extract_refresh_cookie(headers: &HeaderMap) -> Option<String> {
         .map(|s| s.trim().trim_start_matches("refresh_token=").to_string())
 }
 
-fn refresh_cookie_header(refresh_token: &str, max_age: i64, use_secure_cookie: bool) -> String {
+pub(crate) fn refresh_cookie_header_for_path(
+    refresh_token: &str,
+    max_age: i64,
+    use_secure_cookie: bool,
+    cookie_path: &str,
+) -> String {
     let secure_flag = if use_secure_cookie { "; Secure" } else { "" };
     let same_site = if use_secure_cookie { "None" } else { "Strict" };
     format!(
-        "refresh_token={refresh_token}; HttpOnly{secure_flag}; SameSite={same_site}; Path=/api/v1/auth/refresh; Max-Age={max_age}"
+        "refresh_token={refresh_token}; HttpOnly{secure_flag}; SameSite={same_site}; Path={cookie_path}; Max-Age={max_age}"
     )
 }
 
-fn append_set_cookie_headers(
+pub(crate) fn append_set_cookie_headers(
     cookies: &[String; 2],
 ) -> AppendHeaders<[(header::HeaderName, String); 2]> {
     AppendHeaders([
@@ -508,7 +537,7 @@ fn append_set_cookie_headers(
     ])
 }
 
-fn extract_ip(headers: &HeaderMap) -> IpAddr {
+pub(crate) fn extract_ip(headers: &HeaderMap) -> IpAddr {
     // Fly.io sets Fly-Client-IP; fallback to CF-Connecting-IP; fallback to loopback
     headers
         .get("Fly-Client-IP")
@@ -519,7 +548,11 @@ fn extract_ip(headers: &HeaderMap) -> IpAddr {
         .unwrap_or(IpAddr::from([127, 0, 0, 1]))
 }
 
-async fn send_verification_email(to: &str, token: &str, api_key: &str) -> anyhow::Result<()> {
+pub(crate) async fn send_verification_email(
+    to: &str,
+    token: &str,
+    api_key: &str,
+) -> anyhow::Result<()> {
     if api_key.is_empty() {
         tracing::debug!("RESEND_API_KEY not set — skipping email to {to}");
         return Ok(());
@@ -691,11 +724,11 @@ pub async fn change_password(
 
 #[cfg(test)]
 mod tests {
-    use super::refresh_cookie_header;
+    use super::refresh_cookie_header_for_path;
 
     #[test]
     fn refresh_cookie_header_omits_secure_flag_for_local_http() {
-        let header = refresh_cookie_header("token", 60, false);
+        let header = refresh_cookie_header_for_path("token", 60, false, "/api/v1/auth/refresh");
 
         assert!(header.contains("refresh_token=token"));
         assert!(header.contains("HttpOnly"));
@@ -705,7 +738,7 @@ mod tests {
 
     #[test]
     fn refresh_cookie_header_includes_secure_flag_for_https() {
-        let header = refresh_cookie_header("token", 60, true);
+        let header = refresh_cookie_header_for_path("token", 60, true, "/api/v1/auth/refresh");
 
         assert!(header.contains("refresh_token=token"));
         assert!(header.contains("HttpOnly"));

@@ -23,6 +23,7 @@ describe('sender_keys historical decrypt', () => {
 		let record: SenderKeyRecord = {
 			channelId,
 			senderId,
+			senderDeviceId: 'device-2',
 			chainKey: seedChainKey,
 			signingPubKey,
 			iteration: 0,

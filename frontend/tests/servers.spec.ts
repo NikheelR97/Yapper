@@ -1,127 +1,70 @@
-import { test, expect, type Page } from '@playwright/test';
-import { mockAuthEndpoints } from './auth-helper.js';
+﻿import { test, expect, type Page } from '@playwright/test';
 
 /**
- * Servers & Channels E2E tests.
+ * Servers and channels E2E tests.
  *
- * Covers: server creation, channel navigation, message sending, invite links.
- * Requires E2E_EMAIL / E2E_PASSWORD.
+ * Covers: server creation, channel navigation, message sending, and invite links.
  */
 
+const TEST_EMAIL = process.env.E2E_EMAIL ?? '';
+const TEST_PASSWORD = process.env.E2E_PASSWORD ?? '';
 
 async function loginAs(page: Page) {
-	await mockAuthEndpoints(page);
-	await page.goto('/explore');
+	await page.goto('/login');
+	await page.fill('#email', TEST_EMAIL);
+	await page.fill('#password', TEST_PASSWORD);
+	await page.getByRole('button', { name: /Sign In/i }).click();
 	await page.waitForURL(/\/explore/, { timeout: 20_000 });
 }
 
-// ─── Servers index ─────────────────────────────────────────────────────────────
+async function createServerInUi(page: Page, namePrefix: string): Promise<string> {
+	await loginAs(page);
+	await expect(page.locator('.search-input')).toBeVisible({ timeout: 30_000 });
 
-test.describe('Servers — authenticated', () => {
-	test.skip(!process.env.E2E_EMAIL, 'Set E2E_EMAIL / E2E_PASSWORD to run these tests');
+	const createBtn = page.getByRole('button', { name: 'Create Server' });
+	await expect(createBtn).toBeVisible({ timeout: 20_000 });
+	await createBtn.click();
 
-	test.beforeEach(async ({ page }) => {
-		await loginAs(page);
-	});
+	const modal = page.locator('[role="dialog"]').first();
+	await expect(modal).toBeVisible({ timeout: 5_000 });
 
-	test('/servers page renders', async ({ page }) => {
-		await page.goto('/servers');
-		await page.waitForURL(/\/servers(\/|$)/, { timeout: 10_000 });
-		await expect(page.locator('body')).toBeVisible();
-	});
+	const nameInput = page.locator('.modal-input').first();
+	await expect(nameInput).toBeVisible({ timeout: 5_000 });
 
-	test('Create Server button is visible in sidebar', async ({ page }) => {
-		await page.goto('/servers');
-		await page.waitForURL(/\/servers(\/|$)/, { timeout: 10_000 });
-		// Button has class "add-btn" and aria-label "Create or join a server"
-		await expect(page.getByRole('button', { name: 'Create or join a server' })).toBeVisible({ timeout: 20_000 });
-	});
+	const serverName = `${namePrefix} ${Date.now()}`;
+	await nameInput.fill(serverName);
+	await page.locator('.modal-submit').click();
 
-	test('Create Server modal opens', async ({ page }) => {
-		await page.goto('/servers');
-		await page.waitForURL(/\/servers(\/|$)/, { timeout: 10_000 });
+	await page.waitForURL(/\/servers\/[^/]+\/channels(\/[^/]+)?$/, { timeout: 20_000 });
+	return serverName;
+}
 
-		const createBtn = page.getByRole('button', { name: 'Create or join a server' });
-		await createBtn.waitFor({ timeout: 20_000 });
-		await createBtn.click();
+test.describe('Servers - authenticated', () => {
+	test.skip(!TEST_EMAIL || !TEST_PASSWORD, 'Set E2E_EMAIL / E2E_PASSWORD to run these tests');
 
-		// Modal or dialog should appear
-		const modal = page.locator('[role="dialog"]').first();
-		await expect(modal).toBeVisible({ timeout: 5_000 });
-	});
-
-	test('Create Server modal has name input', async ({ page }) => {
-		await page.goto('/servers');
-		await page.waitForURL(/\/servers(\/|$)/, { timeout: 10_000 });
-
-		const createBtn = page.getByRole('button', { name: 'Create or join a server' });
-		await createBtn.waitFor({ timeout: 20_000 });
-		await createBtn.click();
-
-		await expect(page.locator('.modal-input').first())
-			.toBeVisible({ timeout: 5_000 });
-	});
-
-	test('can create a server with a unique name', async ({ page }) => {
-		await page.goto('/servers');
-		await page.waitForURL(/\/servers(\/|$)/, { timeout: 10_000 });
-
-		const createBtn = page.getByRole('button', { name: 'Create or join a server' });
-		await createBtn.waitFor({ timeout: 20_000 });
-		await createBtn.click();
-
-		const serverName = `E2E Server ${Date.now()}`;
-		const nameInput = page.locator('.modal-input').first();
-		await nameInput.fill(serverName);
-
-		// Submit
-		const submitBtn = page.locator('.modal-submit');
-		await submitBtn.click();
-
-		// Should redirect to the new server or close modal
-		await page.waitForTimeout(3_000);
-		const url = page.url();
-		const modalGone = await page.locator('[role="dialog"]').isHidden().catch(() => true);
-
-		expect(url.includes('/servers/') || modalGone).toBeTruthy();
+	test('opens the create-server flow from the app shell', async ({ page }) => {
+		await createServerInUi(page, 'E2E Server');
+		await expect(page).toHaveURL(/\/servers\/[^/]+\/channels(\/[^/]+)?$/, { timeout: 10_000 });
 	});
 });
 
-// ─── Channel page ──────────────────────────────────────────────────────────────
-
-test.describe('Channel — authenticated', () => {
-	test.skip(!process.env.E2E_EMAIL, 'Set E2E_EMAIL / E2E_PASSWORD to run these tests');
+test.describe('Channel - authenticated', () => {
+	test.skip(!TEST_EMAIL || !TEST_PASSWORD, 'Set E2E_EMAIL / E2E_PASSWORD to run these tests');
 
 	test.beforeEach(async ({ page }) => {
-		await loginAs(page);
+		await createServerInUi(page, 'E2E Channel Server');
 	});
 
-	// Helper: navigate to /servers and wait for the auto-redirect chain to land on a channel page
-	async function gotoFirstChannel(page: Page): Promise<boolean> {
-		await page.goto('/servers');
-		// /servers → /servers/{id}/channels → /servers/{id}/channels/{channelId}
-		return page
-			.waitForURL(/\/servers\/[^/]+\/channels\/[^/]+/, { timeout: 20_000 })
-			.then(() => true)
-			.catch(() => false);
-	}
-
 	test('first server channel page renders message input', async ({ page }) => {
-		const onChannel = await gotoFirstChannel(page);
-		if (!onChannel) { test.skip(); return; }
-
-		// Message input should be present
-		const input = page.locator('textarea, [contenteditable="true"], input[placeholder*="Message"]').first();
-		await expect(input).toBeVisible({ timeout: 8_000 });
+		const input = page
+			.locator('textarea, [contenteditable="true"], input[placeholder*="Message"]')
+			.first();
+		await expect(input).toBeVisible({ timeout: 20_000 });
 	});
 
 	test('sending a channel message renders it in the list', async ({ page }) => {
-		test.slow(); // E2EE joinChannel() makes multiple API calls — allow 90s
-		const onChannel = await gotoFirstChannel(page);
-		if (!onChannel) { test.skip(); return; }
-
+		test.slow();
 		const input = page.locator('textarea[aria-label="Message"]').first();
-		// Wait for E2EE setup ("Setting up encryption…") to finish
 		await expect(input).toBeEnabled({ timeout: 60_000 });
 
 		const testMsg = `E2E channel test ${Date.now()}`;
@@ -132,49 +75,29 @@ test.describe('Channel — authenticated', () => {
 	});
 
 	test('typing indicator appears when typing in channel', async ({ page }) => {
-		test.slow(); // E2EE joinChannel() makes multiple API calls — allow 90s
-		const onChannel = await gotoFirstChannel(page);
-		if (!onChannel) { test.skip(); return; }
-
+		test.slow();
 		const input = page.locator('textarea[aria-label="Message"]').first();
-		// Wait for E2EE setup to finish before typing
 		await expect(input).toBeEnabled({ timeout: 60_000 });
 		await input.fill('typing...');
-
-		// No assertion on indicator visibility (need second user), just ensure no crash
 		await expect(page.locator('body')).toBeVisible();
 	});
 });
 
-// ─── Invite links ──────────────────────────────────────────────────────────────
-
-test.describe('Invite links — authenticated', () => {
-	test.skip(!process.env.E2E_EMAIL, 'Set E2E_EMAIL / E2E_PASSWORD to run these tests');
+test.describe('Invite links - authenticated', () => {
+	test.skip(!TEST_EMAIL || !TEST_PASSWORD, 'Set E2E_EMAIL / E2E_PASSWORD to run these tests');
 
 	test.beforeEach(async ({ page }) => {
-		await loginAs(page);
+		await createServerInUi(page, 'E2E Invite Server');
 	});
 
 	test('invite link can be generated for a server', async ({ page }) => {
-		const onChannel = await page.goto('/servers').then(() =>
-			page.waitForURL(/\/servers\/[^/]+\/channels\/[^/]+/, { timeout: 20_000 }).then(() => true).catch(() => false)
-		);
-		if (!onChannel) { test.skip(); return; }
-
-		// Look for invite button in sidebar or header
-		const inviteBtn = page.getByRole('button', { name: /Invite/i })
-			.or(page.locator('[title*="invite"], [aria-label*="invite"]')).first();
-
-		const hasInvite = await inviteBtn.isVisible({ timeout: 5_000 }).catch(() => false);
-		if (!hasInvite) {
-			test.skip();
-			return;
-		}
-
+		const inviteBtn = page
+			.getByRole('button', { name: /Create invite link/i })
+			.or(page.locator('[title*="invite"], [aria-label*="invite"]'))
+			.first();
+		await expect(inviteBtn).toBeVisible({ timeout: 10_000 });
 		await inviteBtn.click();
 
-		// Invite link or modal should appear
-		const inviteLink = page.locator('input[value*="yapper://"], input[value*="/invite/"], [class*="invite"]').first();
-		await expect(inviteLink.or(page.locator('[role="dialog"]').first())).toBeVisible({ timeout: 5_000 });
+		await expect(page.locator('.invite-panel').first()).toBeVisible({ timeout: 5_000 });
 	});
 });

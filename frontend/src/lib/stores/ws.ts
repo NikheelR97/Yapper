@@ -37,8 +37,26 @@ const handlers = new Map<string, Set<MessageHandler>>();
 // Always-on handler: decrypt and store incoming SenderKey distributions.
 onWsMessage('key_dist', (payload) => {
 	receiveSenderKeyDist(
-		payload as { channel_id: string; from_user: string; ciphertext: string; ek_public: string }
+		payload as {
+			channel_id: string;
+			from_user: string;
+			from_device_id?: string | null;
+			ciphertext: string;
+			ek_public: string;
+		}
 	).catch((err) => console.error('[signal] Failed to process key_dist:', err));
+});
+
+onWsMessage('key_dist_v2', (payload) => {
+	receiveSenderKeyDist(
+		payload as {
+			channel_id: string;
+			from_user: string;
+			from_device_id?: string | null;
+			ciphertext: string;
+			ek_public: string;
+		}
+	).catch((err) => console.error('[signal] Failed to process key_dist_v2:', err));
 });
 
 /** Register a handler for a specific message type inside `payload.type`. */
@@ -94,6 +112,9 @@ export function sendDmMessage(
 /** Connect to the WebSocket server. Call after authentication. */
 export function wsConnect(): void {
 	stopped = false;
+	if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+		return;
+	}
 	doConnect();
 }
 
@@ -175,6 +196,7 @@ function doConnect(): void {
 
 			case 'error':
 				console.warn('[WS] Server error:', frame.code, frame.message);
+				handlers.get('ws_error')?.forEach((h) => h(frame));
 				break;
 		}
 	};

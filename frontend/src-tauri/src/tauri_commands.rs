@@ -1,5 +1,5 @@
+use std::{path::PathBuf, sync::{Arc, Mutex}};
 use tauri::{AppHandle, Manager, Runtime, State};
-use std::sync::{Arc, Mutex};
 
 /// Shared app state — persists for the lifetime of the process.
 #[derive(Default)]
@@ -9,6 +9,15 @@ pub struct AppSettings {
 }
 
 pub type AppSettingsState = Mutex<AppSettings>;
+
+const STRONGHOLD_FILENAME: &str = "signal-vault.hold";
+
+fn stronghold_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
+    app.path()
+        .app_data_dir()
+        .map(|dir| dir.join(STRONGHOLD_FILENAME))
+        .map_err(|err| err.to_string())
+}
 
 // ─── Tray badge state ─────────────────────────────────────────────────────────
 
@@ -62,4 +71,9 @@ pub fn set_minimize_to_tray(
 #[tauri::command]
 pub fn get_minimize_to_tray(settings: State<'_, AppSettingsState>) -> bool {
     settings.lock().map(|s| s.minimize_to_tray).unwrap_or(false)
+}
+
+#[tauri::command]
+pub fn stronghold_exists<R: Runtime>(app: AppHandle<R>) -> Result<bool, String> {
+    Ok(stronghold_path(&app)?.exists())
 }

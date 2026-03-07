@@ -152,6 +152,8 @@
 	<!-- Input -->
 	<MessageInput
 		disabled={sending || !conversation}
+		conversationId={conversation?.id}
+		recipientId={conversation?.peerId}
 		placeholder="Message {conversation?.peerDisplayName ||
 			conversation?.peerUsername ||
 			''}…"

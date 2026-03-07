@@ -2,6 +2,7 @@ pub mod handlers;
 pub mod middleware;
 pub mod oauth;
 pub mod service;
+pub mod v2;
 
 use axum::{
     routing::{delete, get, post},
@@ -10,7 +11,7 @@ use axum::{
 
 use crate::AppState;
 
-pub use middleware::{AuthUser, LoginRateLimiter};
+pub use middleware::{AuthDevice, AuthUser, LoginRateLimiter};
 pub use oauth::OAuthStateStore;
 pub use service::JwtKeys;
 
@@ -33,6 +34,10 @@ pub fn router() -> Router<AppState> {
         .route("/change-password", post(handlers::change_password))
 }
 
+pub fn v2_router() -> Router<AppState> {
+    v2::router()
+}
+
 /// OAuth routes — registered at top level (/auth/oauth/...) to match
 /// the redirect URIs configured in Discord, Google, and Apple developer consoles.
 pub fn oauth_router() -> Router<AppState> {
@@ -44,11 +49,4 @@ pub fn oauth_router() -> Router<AppState> {
         .route("/apple", get(oauth::apple_redirect))
         // Apple sends the callback as form_post (POST), not a GET redirect.
         .route("/apple/callback", post(oauth::apple_callback))
-}
-
-/// Called by the WebSocket hub to validate the first-message auth token.
-pub fn validate_ws_token(token: &str, keys: &JwtKeys) -> Option<uuid::Uuid> {
-    service::validate_access_token(token, keys)
-        .ok()
-        .map(|t| t.claims.sub)
 }

@@ -25,6 +25,9 @@ pub struct AccessClaims {
     pub kid: String,
     /// Account type: standard | parent | child | bot
     pub account_type: String,
+    /// Authenticated device UUID for v2 device-bound sessions.
+    #[serde(default)]
+    pub device_id: Option<Uuid>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -36,6 +39,9 @@ pub struct RefreshClaims {
     pub family_id: Uuid,
     /// Unique ID for this specific refresh token
     pub jti: Uuid,
+    /// Authenticated device UUID for v2 device-bound sessions.
+    #[serde(default)]
+    pub device_id: Option<Uuid>,
 }
 
 /// Access token TTL: 15 minutes
@@ -125,6 +131,7 @@ pub fn verify_password(password: &str, hash: &str) -> AppResult<bool> {
 pub fn generate_access_token(
     user_id: Uuid,
     account_type: &str,
+    device_id: Option<Uuid>,
     keys: &JwtKeys,
 ) -> AppResult<String> {
     let now = Utc::now();
@@ -134,6 +141,7 @@ pub fn generate_access_token(
         iat: now.timestamp(),
         kid: keys.kid.clone(),
         account_type: account_type.to_string(),
+        device_id,
     };
 
     let mut header = Header::new(Algorithm::RS256);
@@ -143,7 +151,12 @@ pub fn generate_access_token(
         .map_err(|e| AppError::Internal(anyhow::anyhow!("JWT encode: {e}")))
 }
 
-pub fn generate_refresh_token(user_id: Uuid, family_id: Uuid, keys: &JwtKeys) -> AppResult<String> {
+pub fn generate_refresh_token(
+    user_id: Uuid,
+    family_id: Uuid,
+    device_id: Option<Uuid>,
+    keys: &JwtKeys,
+) -> AppResult<String> {
     let now = Utc::now();
     let claims = RefreshClaims {
         sub: user_id,
@@ -151,6 +164,7 @@ pub fn generate_refresh_token(user_id: Uuid, family_id: Uuid, keys: &JwtKeys) ->
         iat: now.timestamp(),
         family_id,
         jti: Uuid::new_v4(),
+        device_id,
     };
 
     let mut header = Header::new(Algorithm::RS256);

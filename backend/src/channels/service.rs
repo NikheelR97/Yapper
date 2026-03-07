@@ -18,6 +18,7 @@ pub struct MessageRecord {
     pub id: Uuid,
     pub channel_id: Uuid,
     pub sender_id: Uuid,
+    pub sender_device_id: Option<Uuid>,
     pub ciphertext: Option<String>,
     pub plaintext: Option<String>,
     pub ephemeral_key: Option<String>,
@@ -189,7 +190,7 @@ pub async fn get_messages(
 
     let rows = if let Some(before_id) = before {
         sqlx::query(
-            "SELECT id, channel_id, sender_id, ciphertext, plaintext, ek_public, opk_id, \
+            "SELECT id, channel_id, sender_id, sender_device_id, ciphertext, plaintext, ek_public, opk_id, \
                      message_type, msg_num, created_at \
              FROM messages \
              WHERE channel_id = $1 AND deleted_at IS NULL \
@@ -203,7 +204,7 @@ pub async fn get_messages(
         .await?
     } else {
         sqlx::query(
-            "SELECT id, channel_id, sender_id, ciphertext, plaintext, ek_public, opk_id, \
+            "SELECT id, channel_id, sender_id, sender_device_id, ciphertext, plaintext, ek_public, opk_id, \
                      message_type, msg_num, created_at \
              FROM messages \
              WHERE channel_id = $1 AND deleted_at IS NULL \
@@ -224,6 +225,7 @@ pub async fn get_messages(
                 id: r.try_get("id")?,
                 channel_id: r.try_get("channel_id")?,
                 sender_id: r.try_get("sender_id")?,
+                sender_device_id: r.try_get("sender_device_id")?,
                 ciphertext: ct.map(|b| BASE64.encode(&b)),
                 plaintext: r.try_get("plaintext")?,
                 ephemeral_key: ek.map(|b| BASE64.encode(&b)),
@@ -286,6 +288,7 @@ pub async fn list_channel_members(
 
 pub struct KeyDistItem {
     pub to_user: Uuid,
+    pub to_device: Uuid,
     pub ciphertext: Vec<u8>,
     pub ek_public: Vec<u8>,
 }
@@ -293,6 +296,7 @@ pub struct KeyDistItem {
 #[derive(Serialize)]
 pub struct KeyDistRecord {
     pub from_user: Uuid,
+    pub from_device_id: Option<Uuid>,
     pub ciphertext: String, // base64
     pub ek_public: String,  // base64
 }
@@ -300,22 +304,51 @@ pub struct KeyDistRecord {
 /// Upsert sender key distributions for a channel. Pushes to online recipients immediately.
 pub async fn store_key_distributions(
     from_user: Uuid,
+    from_device_id: Uuid,
     channel_id: Uuid,
     items: Vec<KeyDistItem>,
     state: &AppState,
 ) -> AppResult<()> {
     debug_assert!(from_user != Uuid::nil());
+    debug_assert!(from_device_id != Uuid::nil());
     debug_assert!(channel_id != Uuid::nil());
 
     let server_id = channel_server_id(state, channel_id).await?;
     require_member(state, from_user, server_id).await?;
 
     for item in &items {
+        require_member(state, item.to_user, server_id).await?;
+
+        let recipient_device = sqlx::query(
+            "SELECT user_id, revoked_at, trust_state \
+             FROM devices \
+             WHERE id = $1",
+        )
+        .bind(item.to_device)
+        .fetch_optional(state.db.pool())
+        .await?
+        .ok_or_else(|| AppError::BadRequest("Recipient device not found".into()))?;
+
+        let recipient_user_id: Uuid = recipient_device.try_get("user_id")?;
+        let revoked_at: Option<chrono::DateTime<chrono::Utc>> =
+            recipient_device.try_get("revoked_at")?;
+        let trust_state: String = recipient_device.try_get("trust_state")?;
+        if recipient_user_id != item.to_user {
+            return Err(AppError::BadRequest(
+                "Recipient device does not belong to recipient user".into(),
+            ));
+        }
+        if revoked_at.is_some() || trust_state != "trusted" {
+            return Err(AppError::BadRequest(
+                "Recipient device must be trusted and active".into(),
+            ));
+        }
+
         sqlx::query(
             "INSERT INTO sender_key_distributions \
-                 (channel_id, from_user, to_user, ciphertext, ek_public, delivered) \
-             VALUES ($1, $2, $3, $4, $5, FALSE) \
-             ON CONFLICT (channel_id, from_user, to_user) DO UPDATE \
+                 (channel_id, from_user, from_device_id, to_user, to_device_id, ciphertext, ek_public, delivered) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE) \
+             ON CONFLICT (channel_id, from_user, from_device_id, to_user, to_device_id) DO UPDATE \
                  SET ciphertext = EXCLUDED.ciphertext, \
                      ek_public  = EXCLUDED.ek_public, \
                      delivered  = FALSE, \
@@ -323,21 +356,24 @@ pub async fn store_key_distributions(
         )
         .bind(channel_id)
         .bind(from_user)
+        .bind(from_device_id)
         .bind(item.to_user)
+        .bind(item.to_device)
         .bind(&item.ciphertext)
         .bind(&item.ek_public)
         .execute(state.db.pool())
         .await?;
 
         // Push immediately to online recipient
-        if state.hub.is_online(&item.to_user) {
-            state.hub.send_to_user(
-                &item.to_user,
+        if state.hub.is_device_online(&item.to_device) {
+            state.hub.send_to_device(
+                &item.to_device,
                 crate::hub::WsOutbound::Message {
                     payload: serde_json::json!({
-                        "type": "key_dist",
+                        "type": "key_dist_v2",
                         "channel_id": channel_id,
                         "from_user": from_user,
+                        "from_device_id": from_device_id,
                         "ciphertext": BASE64.encode(&item.ciphertext),
                         "ek_public":  BASE64.encode(&item.ek_public),
                     }),
@@ -347,11 +383,14 @@ pub async fn store_key_distributions(
             sqlx::query(
                 "UPDATE sender_key_distributions \
                  SET delivered = TRUE \
-                 WHERE channel_id = $1 AND from_user = $2 AND to_user = $3",
+                 WHERE channel_id = $1 AND from_user = $2 AND from_device_id = $3 \
+                   AND to_user = $4 AND to_device_id = $5",
             )
             .bind(channel_id)
             .bind(from_user)
+            .bind(from_device_id)
             .bind(item.to_user)
+            .bind(item.to_device)
             .execute(state.db.pool())
             .await?;
         }
@@ -364,10 +403,12 @@ pub async fn store_key_distributions(
 /// Marks them delivered as they are returned.
 pub async fn fetch_key_distributions(
     user_id: Uuid,
+    device_id: Uuid,
     channel_id: Uuid,
     state: &AppState,
 ) -> AppResult<Vec<KeyDistRecord>> {
     debug_assert!(user_id != Uuid::nil());
+    debug_assert!(device_id != Uuid::nil());
     debug_assert!(channel_id != Uuid::nil());
 
     let server_id = channel_server_id(state, channel_id).await?;
@@ -376,11 +417,16 @@ pub async fn fetch_key_distributions(
     let rows = sqlx::query(
         "UPDATE sender_key_distributions \
          SET delivered = TRUE \
-         WHERE to_user = $1 AND channel_id = $2 \
-         RETURNING from_user, ciphertext, ek_public",
+         WHERE channel_id = $1 \
+           AND (
+               to_device_id = $2
+               OR (to_device_id IS NULL AND to_user = $3)
+           ) \
+         RETURNING from_user, from_device_id, ciphertext, ek_public",
     )
-    .bind(user_id)
     .bind(channel_id)
+    .bind(device_id)
+    .bind(user_id)
     .fetch_all(state.db.pool())
     .await?;
 
@@ -390,6 +436,7 @@ pub async fn fetch_key_distributions(
             let ek: Vec<u8> = r.try_get("ek_public")?;
             Ok(KeyDistRecord {
                 from_user: r.try_get("from_user")?,
+                from_device_id: r.try_get("from_device_id")?,
                 ciphertext: BASE64.encode(&ct),
                 ek_public: BASE64.encode(&ek),
             })
@@ -401,6 +448,7 @@ pub async fn fetch_key_distributions(
 #[allow(clippy::too_many_arguments)]
 pub async fn send_message(
     user_id: Uuid,
+    sender_device_id: Uuid,
     channel_id: Uuid,
     ciphertext_b64: String,
     ephemeral_key_b64: Option<String>,
@@ -410,6 +458,7 @@ pub async fn send_message(
     state: &AppState,
 ) -> AppResult<MessageRecord> {
     debug_assert!(user_id != Uuid::nil());
+    debug_assert!(sender_device_id != Uuid::nil());
     debug_assert!(channel_id != Uuid::nil());
     debug_assert!(!ciphertext_b64.is_empty(), "ciphertext must not be empty");
 
@@ -428,12 +477,13 @@ pub async fn send_message(
 
     let row = sqlx::query(
         "INSERT INTO messages \
-             (channel_id, sender_id, ciphertext, ek_public, opk_id, message_type, msg_num, delivered) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE) \
+             (channel_id, sender_id, sender_device_id, ciphertext, ek_public, opk_id, message_type, msg_num, delivered) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE) \
          RETURNING id, created_at",
     )
     .bind(channel_id)
     .bind(user_id)
+    .bind(sender_device_id)
     .bind(&ciphertext)
     .bind(&ek_bytes)
     .bind(opk_id)
@@ -447,6 +497,7 @@ pub async fn send_message(
 
     fanout_to_members(
         user_id,
+        sender_device_id,
         channel_id,
         server_id,
         msg_id,
@@ -464,6 +515,7 @@ pub async fn send_message(
         id: msg_id,
         channel_id,
         sender_id: user_id,
+        sender_device_id: Some(sender_device_id),
         ciphertext: Some(ciphertext_b64),
         plaintext: None,
         ephemeral_key: ephemeral_key_b64,
@@ -477,6 +529,7 @@ pub async fn send_message(
 #[allow(clippy::too_many_arguments)]
 async fn fanout_to_members(
     sender_id: Uuid,
+    sender_device_id: Uuid,
     channel_id: Uuid,
     server_id: Uuid,
     msg_id: Uuid,
@@ -489,6 +542,7 @@ async fn fanout_to_members(
     state: &AppState,
 ) -> AppResult<()> {
     debug_assert!(sender_id != Uuid::nil());
+    debug_assert!(sender_device_id != Uuid::nil());
     debug_assert!(server_id != Uuid::nil());
 
     let member_rows =
@@ -504,6 +558,7 @@ async fn fanout_to_members(
         "channel_id": channel_id,
         "server_id": server_id,
         "sender_id": sender_id,
+        "sender_device_id": sender_device_id,
         "ciphertext": ciphertext_b64,
         "ephemeral_key": ephemeral_key,
         "opk_id": opk_id,
@@ -514,14 +569,12 @@ async fn fanout_to_members(
 
     for m in member_rows.iter().take(MAX_FANOUT_MEMBERS) {
         let uid: Uuid = m.try_get("user_id")?;
-        if uid != sender_id {
-            state.hub.send_to_user(
-                &uid,
-                crate::hub::WsOutbound::Message {
-                    payload: ws_payload.clone(),
-                },
-            );
-        }
+        state.hub.send_to_user(
+            &uid,
+            crate::hub::WsOutbound::Message {
+                payload: ws_payload.clone(),
+            },
+        );
     }
 
     Ok(())

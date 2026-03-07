@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
 import { authStore, setAuth, clearAuth } from './auth.js';
-import type { User } from './auth.js';
+import type { AuthDevice, User } from './auth.js';
 
 const testUser: User = {
 	id: 'test-uuid-1234',
@@ -12,6 +12,19 @@ const testUser: User = {
 	isPremium: false,
 };
 
+const testDevice: AuthDevice = {
+	id: 'device-uuid-1234',
+	signalDeviceId: 7,
+	installationId: 'install-123',
+	platform: 'web',
+	label: 'Web Browser',
+	trustState: 'trusted',
+	createdAt: new Date().toISOString(),
+	lastSeenAt: null,
+	approvedAt: new Date().toISOString(),
+	revokedAt: null,
+};
+
 describe('authStore', () => {
 	beforeEach(() => {
 		clearAuth();
@@ -20,6 +33,7 @@ describe('authStore', () => {
 	it('starts with no user', () => {
 		const state = get(authStore);
 		expect(state.user).toBeNull();
+		expect(state.device).toBeNull();
 		expect(state.accessToken).toBeNull();
 	});
 
@@ -27,15 +41,25 @@ describe('authStore', () => {
 		setAuth(testUser, 'test-token');
 		const state = get(authStore);
 		expect(state.user).toEqual(testUser);
+		expect(state.device).toBeNull();
 		expect(state.accessToken).toBe('test-token');
 		expect(state.loading).toBe(false);
 	});
 
+	it('setAuth stores the active device when provided', () => {
+		setAuth(testUser, 'test-token', 'csrf-token', testDevice);
+		const state = get(authStore);
+		expect(state.user).toEqual(testUser);
+		expect(state.device).toEqual(testDevice);
+		expect(state.csrfToken).toBe('csrf-token');
+	});
+
 	it('clearAuth removes user and token', () => {
-		setAuth(testUser, 'test-token');
+		setAuth(testUser, 'test-token', 'csrf-token', testDevice);
 		clearAuth();
 		const state = get(authStore);
 		expect(state.user).toBeNull();
+		expect(state.device).toBeNull();
 		expect(state.accessToken).toBeNull();
 	});
 });

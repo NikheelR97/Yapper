@@ -29,10 +29,16 @@ export interface SignedPreKey extends PreKeyPair {
 }
 
 export interface Session {
+	/** Stable local key used to address one peer device within a conversation. */
+	sessionId: string;
 	/** UUID of the DM conversation this session belongs to. */
 	conversationId: string;
 	/** The other party's user UUID. */
 	peerId: string;
+	/** The other party's device UUID. */
+	peerDeviceId: string;
+	/** Legacy or server-assigned integer Signal device id. */
+	peerSignalDeviceId: number;
 	rootKey: Uint8Array;
 	sendChainKey: Uint8Array;
 	receiveChainKey: Uint8Array | null;
@@ -43,7 +49,8 @@ export interface Session {
 /** Key bundle fetched from the server for a target user. */
 export interface KeyBundle {
 	userId: string;
-	deviceId: number;
+	deviceId: string;
+	signalDeviceId: number;
 	/** Base64-encoded X25519 DH public key. */
 	identity_dh_key: string;
 	/** Base64-encoded Ed25519 signing public key. */
@@ -87,6 +94,7 @@ export interface SenderKey {
 export interface SenderKeyRecord {
 	channelId: string;
 	senderId: string;
+	senderDeviceId: string;
 	chainKey: Uint8Array;
 	signingPubKey: Uint8Array;
 	iteration: number;

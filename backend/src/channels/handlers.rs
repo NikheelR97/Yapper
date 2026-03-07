@@ -10,12 +10,10 @@ use uuid::Uuid;
 
 use super::service;
 use crate::{
-    auth::AuthUser,
+    auth::{AuthDevice, AuthUser},
     error::{AppError, AppResult},
     AppState,
 };
-
-// ─── Response types (pub — used by servers router) ───────────────────────────
 
 #[derive(Serialize)]
 pub struct ChannelResp {
@@ -32,6 +30,7 @@ pub(super) struct MessageResp {
     id: Uuid,
     channel_id: Uuid,
     sender_id: Uuid,
+    sender_device_id: Option<Uuid>,
     ciphertext: Option<String>,
     plaintext: Option<String>,
     ephemeral_key: Option<String>,
@@ -40,8 +39,6 @@ pub(super) struct MessageResp {
     msg_num: Option<i32>,
     created_at: chrono::DateTime<chrono::Utc>,
 }
-
-// ─── Request DTOs ─────────────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -68,8 +65,6 @@ pub(super) struct SendMessageReq {
     msg_num: Option<i32>,
 }
 
-// ─── Channel CRUD (pub — called from servers router) ─────────────────────────
-
 pub async fn list_channels(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -88,7 +83,7 @@ pub async fn create_channel(
     let name = req.name.trim().to_lowercase();
     if name.is_empty() || name.len() > 50 {
         return Err(AppError::BadRequest(
-            "Channel name must be 1–50 characters".into(),
+            "Channel name must be 1-50 characters".into(),
         ));
     }
     let channel_type = req.channel_type.as_deref().unwrap_or("text");
@@ -100,14 +95,13 @@ pub async fn create_channel(
     Ok((StatusCode::CREATED, Json(channel)))
 }
 
-// ─── Message handlers ─────────────────────────────────────────────────────────
-
 pub(super) async fn get_messages(
-    auth: AuthUser,
+    auth: AuthDevice,
     State(state): State<AppState>,
     Path(channel_id): Path<Uuid>,
     Query(query): Query<MessagesQuery>,
 ) -> AppResult<Json<Vec<MessageResp>>> {
+    auth.require_trusted()?;
     let limit = query.limit.unwrap_or(50).min(100);
     let msgs = service::get_messages(auth.user_id, channel_id, query.before, limit, &state).await?;
     let resp: Vec<MessageResp> = msgs
@@ -116,6 +110,7 @@ pub(super) async fn get_messages(
             id: m.id,
             channel_id: m.channel_id,
             sender_id: m.sender_id,
+            sender_device_id: m.sender_device_id,
             ciphertext: m.ciphertext,
             plaintext: m.plaintext,
             ephemeral_key: m.ephemeral_key,
@@ -128,26 +123,22 @@ pub(super) async fn get_messages(
     Ok(Json(resp))
 }
 
-// ─── Channel members ──────────────────────────────────────────────────────────
-
 pub async fn list_members(
-    auth: AuthUser,
+    auth: AuthDevice,
     State(state): State<AppState>,
     Path(channel_id): Path<Uuid>,
 ) -> AppResult<Json<Vec<service::ChannelMember>>> {
+    auth.require_trusted()?;
     let members = service::list_channel_members(auth.user_id, channel_id, &state).await?;
     Ok(Json(members))
 }
-
-// ─── Sender Key distributions ─────────────────────────────────────────────────
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct KeyDistItem {
     to_user_id: Uuid,
-    /// Base64-encoded ECIES ciphertext.
+    to_device_id: Uuid,
     ciphertext: String,
-    /// Base64-encoded X25519 ephemeral public key.
     ek_public: String,
 }
 
@@ -158,13 +149,14 @@ pub(super) struct PostKeyDistsReq {
 }
 
 pub(super) async fn post_key_dists(
-    auth: AuthUser,
+    auth: AuthDevice,
     State(state): State<AppState>,
     Path(channel_id): Path<Uuid>,
     Json(req): Json<PostKeyDistsReq>,
 ) -> AppResult<Json<serde_json::Value>> {
+    auth.require_trusted()?;
     if req.distributions.is_empty() || req.distributions.len() > 500 {
-        return Err(AppError::BadRequest("Provide 1–500 distributions".into()));
+        return Err(AppError::BadRequest("Provide 1-500 distributions".into()));
     }
 
     let items = req
@@ -182,37 +174,43 @@ pub(super) async fn post_key_dists(
             }
             Ok(service::KeyDistItem {
                 to_user: d.to_user_id,
+                to_device: d.to_device_id,
                 ciphertext,
                 ek_public,
             })
         })
         .collect::<AppResult<Vec<_>>>()?;
 
-    service::store_key_distributions(auth.user_id, channel_id, items, &state).await?;
+    service::store_key_distributions(auth.user_id, auth.device_id, channel_id, items, &state)
+        .await?;
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }
 
 pub(super) async fn get_key_dists(
-    auth: AuthUser,
+    auth: AuthDevice,
     State(state): State<AppState>,
     Path(channel_id): Path<Uuid>,
 ) -> AppResult<Json<Vec<service::KeyDistRecord>>> {
-    let dists = service::fetch_key_distributions(auth.user_id, channel_id, &state).await?;
+    auth.require_trusted()?;
+    let dists = service::fetch_key_distributions(auth.user_id, auth.device_id, channel_id, &state)
+        .await?;
     Ok(Json(dists))
 }
 
 pub(super) async fn send_message(
-    auth: AuthUser,
+    auth: AuthDevice,
     State(state): State<AppState>,
     Path(channel_id): Path<Uuid>,
     Json(req): Json<SendMessageReq>,
 ) -> AppResult<(StatusCode, Json<MessageResp>)> {
+    auth.require_trusted()?;
     let message_type = req.message_type.as_deref().unwrap_or("text");
     if !["text", "yap", "clip"].contains(&message_type) {
         return Err(AppError::BadRequest("Invalid message_type".into()));
     }
     let msg = service::send_message(
         auth.user_id,
+        auth.device_id,
         channel_id,
         req.ciphertext,
         req.ephemeral_key,
@@ -228,6 +226,7 @@ pub(super) async fn send_message(
             id: msg.id,
             channel_id: msg.channel_id,
             sender_id: msg.sender_id,
+            sender_device_id: msg.sender_device_id,
             ciphertext: msg.ciphertext,
             plaintext: msg.plaintext,
             ephemeral_key: msg.ephemeral_key,

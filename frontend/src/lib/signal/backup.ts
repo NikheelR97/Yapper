@@ -7,7 +7,7 @@
  *   2. Encrypt the JSON-serialised keystore snapshot with AES-256-GCM
  *      using a random 12-byte IV.
  *   3. Concatenate salt(16) || iv(12) || ciphertext+tag and base64-encode it.
- *   4. Upload the blob to PUT /api/v1/keys/backup.
+ *   4. Upload the blob to PUT /api/v2/keys/backup.
  *
  * Restore reverses the process: fetch blob → split → derive key → decrypt.
  *
@@ -15,11 +15,8 @@
  * so the blob stays ASCII-safe and compact.
  */
 
-import { openDB } from 'idb';
 import { api } from '$lib/api/client.js';
-
-const DB_NAME = 'yapper-signal';
-const DB_VERSION = 2;
+import { exportSignalSnapshot, importSignalSnapshot } from './keystore.js';
 const PBKDF2_ITERS = 600_000;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -61,49 +58,12 @@ async function deriveKey(pin: string, salt: Uint8Array): Promise<CryptoKey> {
 // ─── Snapshot ─────────────────────────────────────────────────────────────────
 
 async function exportKeystore(): Promise<string> {
-	const db = await openDB(DB_NAME, DB_VERSION);
-	const [identity, prekeys, signedPrekeys, sessions, senderKeys, receiverKeys] = await Promise.all([
-		db.getAll('identity'),
-		db.getAll('prekeys'),
-		db.getAll('signed_prekeys'),
-		db.getAll('sessions'),
-		db.getAll('sender_keys'),
-		db.getAll('receiver_keys')
-	]);
-
-	const identityKey = await db.get('identity', 'own');
-
-	return JSON.stringify(
-		{ identityKey, prekeys, signedPrekeys, sessions, senderKeys, receiverKeys },
-		jsonReplacer
-	);
+	return JSON.stringify(await exportSignalSnapshot(), jsonReplacer);
 }
 
 async function importKeystore(snapshot: string): Promise<void> {
-	const data = JSON.parse(snapshot, jsonReviver) as {
-		identityKey?: unknown;
-		prekeys: unknown[];
-		signedPrekeys: unknown[];
-		sessions: unknown[];
-		senderKeys: unknown[];
-		receiverKeys: unknown[];
-	};
-
-	const db = await openDB(DB_NAME, DB_VERSION);
-
-	const tx = db.transaction(
-		['identity', 'prekeys', 'signed_prekeys', 'sessions', 'sender_keys', 'receiver_keys'],
-		'readwrite'
-	);
-
-	if (data.identityKey) await tx.objectStore('identity').put(data.identityKey, 'own');
-	for (const pk of data.prekeys) await tx.objectStore('prekeys').put(pk);
-	for (const spk of data.signedPrekeys) await tx.objectStore('signed_prekeys').put(spk);
-	for (const s of data.sessions) await tx.objectStore('sessions').put(s);
-	for (const sk of (data.senderKeys ?? [])) await tx.objectStore('sender_keys').put(sk);
-	for (const rk of (data.receiverKeys ?? [])) await tx.objectStore('receiver_keys').put(rk);
-
-	await tx.done;
+	const data = JSON.parse(snapshot, jsonReviver) as Parameters<typeof importSignalSnapshot>[0];
+	await importSignalSnapshot(data);
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -133,20 +93,23 @@ export async function backupKeys(pin: string): Promise<void> {
 	blob.set(iv, 16);
 	blob.set(ciphertext, 28);
 
-	await api.put('/api/v1/keys/backup', { encrypted_blob: u8ToB64(blob) });
+	await api.put('/api/v2/keys/backup', { encrypted_blob: u8ToB64(blob) });
 }
 
 /**
  * Fetch the encrypted backup from the server, decrypt with `pin`, and
- * restore all Signal keys into IndexedDB.
+ * restore all Signal keys into the local Signal store.
  *
  * Returns `true` on success, `false` if no backup exists on the server.
  * Throws on decryption failure (wrong PIN).
  */
-export async function restoreKeys(pin: string): Promise<boolean> {
+export async function restoreKeys(pin: string, sourceDeviceId?: string): Promise<boolean> {
 	let resp: { encrypted_blob: string };
 	try {
-		resp = await api.get<{ encrypted_blob: string }>('/api/v1/keys/backup');
+		const query = sourceDeviceId
+			? `/api/v2/keys/backup?source_device_id=${encodeURIComponent(sourceDeviceId)}`
+			: '/api/v2/keys/backup';
+		resp = await api.get<{ encrypted_blob: string }>(query);
 	} catch (err: unknown) {
 		// 404 = no backup stored yet
 		if (err && typeof err === 'object' && 'status' in err && (err as { status: number }).status === 404) {
@@ -177,5 +140,10 @@ export async function restoreKeys(pin: string): Promise<boolean> {
 
 	const snapshot = new TextDecoder().decode(plaintextBuf);
 	await importKeystore(snapshot);
+	if (sourceDeviceId) {
+		await api.post('/api/v2/keys/backup/restore', {
+			source_device_id: sourceDeviceId,
+		});
+	}
 	return true;
 }
