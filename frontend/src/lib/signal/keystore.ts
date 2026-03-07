@@ -226,6 +226,22 @@ async function listReceiverKeysFromDb(db: IDBPDatabase): Promise<SenderKeyRecord
 	return receiverKeys;
 }
 
+async function readKeyedStoreEntries<T>(
+	db: IDBPDatabase,
+	storeName: string
+): Promise<Array<{ key: IDBValidKey; value: T }>> {
+	const keys = await db.getAllKeys(storeName).catch(() => []);
+	const values = await Promise.all(keys.map((key) => db.get(storeName, key)));
+	const entries: Array<{ key: IDBValidKey; value: T }> = [];
+	for (let index = 0; index < keys.length; index += 1) {
+		const value = values[index];
+		if (value !== undefined) {
+			entries.push({ key: keys[index], value: value as T });
+		}
+	}
+	return entries;
+}
+
 async function readSecretSnapshotFromDb(db: IDBPDatabase): Promise<SignalSecretSnapshot> {
 	return {
 		identityKey: (await db.get('identity', 'own')) ?? null,
@@ -285,8 +301,10 @@ async function migrateLegacyStoreIfNeeded(): Promise<void> {
 		legacyDb.getAll('dm_sessions').catch(() => []),
 		legacyDb.getAll('sender_keys').catch(() => []),
 	]);
-	const receiverKeys = await legacyDb.getAllKeys('receiver_keys').catch(() => []);
-	const emojiKeys = await legacyDb.getAllKeys('emojis').catch(() => []);
+	const [receiverKeys, emojis] = await Promise.all([
+		readKeyedStoreEntries<SenderKeyRecord>(legacyDb, 'receiver_keys'),
+		readKeyedStoreEntries(legacyDb, 'emojis'),
+	]);
 	const tx = currentDb.transaction(
 		['identity', 'prekeys', 'signed_prekeys', 'sessions', 'dm_sessions', 'sender_keys', 'receiver_keys', 'emojis', 'meta'],
 		'readwrite'
@@ -307,15 +325,11 @@ async function migrateLegacyStoreIfNeeded(): Promise<void> {
 		await tx.objectStore('dm_sessions').put(migrated);
 	}
 	for (const record of senderKeys) await tx.objectStore('sender_keys').put(record);
-	for (const key of receiverKeys) {
-		const record = await legacyDb.get('receiver_keys', key);
-		if (record) await tx.objectStore('receiver_keys').put(record, key);
+	for (const { key, value } of receiverKeys) {
+		await tx.objectStore('receiver_keys').put(value, key);
 	}
-	for (const key of emojiKeys) {
-		const record = await legacyDb.get('emojis', key);
-		if (record) {
-			await tx.objectStore('emojis').put(record, key);
-		}
+	for (const { key, value } of emojis) {
+		await tx.objectStore('emojis').put(value, key);
 	}
 	await tx.objectStore('meta').put(true, BOOTSTRAP_COMPLETE_KEY);
 	await tx.done;
