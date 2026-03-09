@@ -83,7 +83,7 @@ Applied via `tower-http` `SetResponseHeaderLayer`:
 
 - Double-submit cookie pattern (`csrf.rs`)
 - `SameSite=Strict` + `Secure` (conditional on `FLY_APP_NAME` env var)
-- Explicit route allowlist (7 routes exempt: login, register, refresh, OAuth callbacks)
+- Explicit route allowlist for public auth and OAuth callback routes during the `v1` -> `v2` migration. Current production login/register/refresh entrypoints include `/api/v2/auth/login`, `/api/v2/auth/register`, and `/api/v2/auth/refresh`; authenticated device-binding routes such as `/api/v2/auth/attach-device` remain CSRF-protected and are not exempt.
 
 ### 7. OAuth State — PASS
 
@@ -164,7 +164,8 @@ Applied via `tower-http` `SetResponseHeaderLayer`:
 - `HttpOnly` flag: yes
 - `SameSite=Strict`
 - `Secure` flag: conditional (enabled when `FLY_APP_NAME` is set, i.e., production)
-- `Path=/api/v1/auth` (scoped to auth routes only)
+- `Path=/api/v2/auth/refresh` for the active device-aware refresh flow (scoped to the refresh endpoint only)
+- Refresh sessions are now bound to the authenticated `device_id` as well as `user_id`
 - 30-day max-age
 
 ### 16. Account Deletion (GDPR) — PASS

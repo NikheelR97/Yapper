@@ -439,7 +439,7 @@ Mitigations for Neon cold starts (500ms–2s):
 |-------|------|--------|-----------------|
 | 0 | Marketing Website | ✅ Complete | Astro site + wishlist on Cloudflare (yapperhq.com live) |
 | 1 | Repo Scaffolding | ✅ Complete | Runnable skeleton: backend + frontend + hot reload + CI |
-| 2 | Authentication | ✅ Complete | Register, login, JWT refresh, OAuth (Discord + Google) |
+| 2 | Authentication | ✅ Complete | Device-aware register/login, device-bound JWT refresh, OAuth attach-device, pending-trust approval flow |
 | 3 | E2EE Core (1:1 DMs) | ✅ Complete | Signal Protocol DMs, WebSocket hub, X3DH + ratchet, PIN backup |
 | 4 | Servers & Groups | ✅ Complete | Server/channel CRUD, Sender Keys group E2EE, invite links |
 | 5 | Media Messages | ✅ Complete | R2 credentials staged; real-time typing, read receipts, presence |
@@ -466,7 +466,18 @@ The following cross-cutting UI components were built and wired into `(app)/+layo
 | `Toast.svelte` + `stores/toast.ts` | Bottom-right notifications, 4 types, auto-dismiss |
 | `Skeleton.svelte` | Shimmer loader for async content |
 | `ContextMenu.svelte` | Cursor-positioned context menu, Escape to close |
-| `AppLoadingScreen.svelte` | Full-screen loading state shown while `!$auth.ready` |
+| `AppLoadingScreen.svelte` | Full-screen loading state shown while auth restore, device approval, vault unlock, and Signal bootstrap complete |
+
+### Current Login Flow (Updated 2026-03-09)
+
+- Frontend login and register now use `POST /api/v2/auth/login` and `POST /api/v2/auth/register`.
+- Every auth entrypoint sends device bootstrap metadata from the current install: stable `installation_id`, detected `platform`, and a local device `label`.
+- Auth responses now return `access_token`, `csrf_token`, `user`, and `device` metadata. The frontend stores the active device and reuses the same local Signal vault on the same machine/profile.
+- Session restore now uses `POST /api/v2/auth/refresh`. The refresh cookie is scoped to `/api/v2/auth/refresh`, and the backend binds the refreshed session to the active `device_id`.
+- OAuth callback no longer finishes login on its own. After the provider callback lands, the frontend calls `POST /api/v2/auth/attach-device` so the signed-in account is attached to the current installation.
+- New installs do not become fully trusted automatically. A new device can enter `pending_trust`, which blocks normal chat/message access until an existing trusted device approves it or the user restores an encrypted backup.
+- Trusted devices load `/api/v2/devices`, show the device approval inbox, and can approve pending devices with `POST /api/v2/devices/:id/approve`.
+- Normal logout is auth-only. It clears session state but does not wipe the local E2EE vault. Device revocation / "forget this device" is the destructive path that revokes the device and removes its local key material.
 
 ---
 
