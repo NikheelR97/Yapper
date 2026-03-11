@@ -35,7 +35,7 @@ async function createServerInUi(page: Page, namePrefix: string): Promise<string>
 
 	const serverName = `${namePrefix} ${Date.now()}`;
 	await nameInput.fill(serverName);
-	await page.getByRole('button', { name: 'Create' }).click();
+	await page.getByRole('button', { name: 'Create', exact: true }).click();
 
 	await page.waitForURL(/\/servers\/[^/]+\/channels(\/[^/]+)?$/, { timeout: 20_000 });
 	return serverName;

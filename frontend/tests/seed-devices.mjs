@@ -181,6 +181,27 @@ function printDevices(devices) {
 	}
 }
 
+async function revokeStaleDevices(primarySession) {
+	const devices = await listDevices(primarySession);
+	const stale = devices.filter(
+		(d) =>
+			d.trust_state === 'pending_trust' &&
+			d.installation_id !== PRIMARY_INSTALLATION_ID &&
+			d.installation_id !== SECONDARY_INSTALLATION_ID,
+	);
+
+	if (stale.length === 0) {
+		console.log('No stale pending devices to revoke.');
+		return;
+	}
+
+	console.log(`Revoking ${stale.length} stale pending device(s)...`);
+	for (const d of stale) {
+		await revokeDevice(primarySession, d.id);
+		console.log(`  Revoked: ${d.label} (${d.id})`);
+	}
+}
+
 async function main() {
 	const email = process.env.E2E_EMAIL;
 	const password = process.env.E2E_PASSWORD;
@@ -205,6 +226,10 @@ async function main() {
 	console.log(
 		`  Primary device: ${primarySession.device.id} state=${primarySession.device.trust_state}`,
 	);
+
+	// Clean up stale pending devices from previous test runs so the
+	// "Pending Device Approvals" banner doesn't obscure the UI in later tests.
+	await revokeStaleDevices(primarySession);
 
 	let devices = await listDevices(primarySession);
 	const existingSecondary = devices.find(
