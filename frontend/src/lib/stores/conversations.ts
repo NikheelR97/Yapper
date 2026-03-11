@@ -63,6 +63,9 @@ interface RawMessageV2 {
 	ephemeral_key: string | null;
 	opk_id: number | null;
 	msg_num: number;
+	ratchet_pub: string | null;
+	previous_chain_len: number | null;
+	crypto_version: number | null;
 	created_at: string;
 }
 
@@ -169,6 +172,10 @@ export async function loadMessages(conversationId: string, peerId: string): Prom
 						ciphertext: message.ciphertext,
 						ephemeral_key: message.ephemeral_key,
 						opk_id: message.opk_id,
+						msg_num: message.msg_num,
+						ratchet_pub: message.ratchet_pub,
+						previous_chain_len: message.previous_chain_len,
+						crypto_version: message.crypto_version,
 					}
 				);
 				return {
@@ -209,6 +216,9 @@ export async function sendMessage(conversationId: string, peerId: string, text: 
 				ephemeral_key: envelope.ephemeralKey ?? null,
 				opk_id: envelope.opkId ?? null,
 				msg_num: envelope.msgNum,
+				ratchet_pub: envelope.ratchetPub ?? null,
+				previous_chain_len: envelope.previousChainLen ?? null,
+				crypto_version: envelope.cryptoVersion,
 			})),
 		}
 	);
@@ -253,6 +263,10 @@ export function registerDmHandler(): () => void {
 					ciphertext: message.ciphertext,
 					ephemeral_key: message.ephemeral_key ?? null,
 					opk_id: message.opk_id ?? null,
+					msg_num: message.msg_num,
+					ratchet_pub: message.ratchet_pub ?? null,
+					previous_chain_len: message.previous_chain_len ?? null,
+					crypto_version: message.crypto_version,
 				}
 			);
 		} catch {

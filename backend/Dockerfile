@@ -21,15 +21,20 @@ RUN cargo build --release
 # ─── Runtime stage ────────────────────────────────────────────────────────────
 FROM alpine:3.19
 
-RUN apk add --no-cache ca-certificates libgcc
+RUN apk add --no-cache ca-certificates libgcc \
+    && addgroup -S yapper \
+    && adduser -S -G yapper -h /app yapper
 
 WORKDIR /app
 
 COPY --from=builder /app/target/release/yapper-server ./yapper-server
 COPY --from=builder /app/migrations ./migrations
+RUN chown -R yapper:yapper /app
 
 EXPOSE 8080
 
 ENV RUST_LOG=info
+
+USER yapper
 
 CMD ["./yapper-server"]

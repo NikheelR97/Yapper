@@ -1,3 +1,4 @@
+import { execFileSync } from 'child_process';
 import { type Page } from '@playwright/test';
 import { existsSync, readFileSync } from 'fs';
 
@@ -28,6 +29,10 @@ interface MockAuthRouteOptions {
 
 const API_URL = process.env.VITE_API_URL ?? 'https://api.yapperhq.com';
 const INSTALLATION_ID_KEY = 'yapper_installation_id';
+export const PRIMARY_INSTALLATION_ID =
+	process.env.E2E_PRIMARY_INSTALLATION_ID ?? '11111111-1111-4111-8111-111111111111';
+export const SECONDARY_INSTALLATION_ID =
+	process.env.E2E_SECONDARY_INSTALLATION_ID ?? '22222222-2222-4222-8222-222222222222';
 
 const DEFAULT_USER = {
 	id: 'e2e-user',
@@ -268,4 +273,26 @@ export async function setInstallationId(page: Page, installationId: string): Pro
 		},
 		[INSTALLATION_ID_KEY, installationId],
 	);
+}
+
+export function seedTrustedPrimaryDevice(): void {
+	try {
+		execFileSync(process.execPath, ['tests/seed-devices.mjs'], {
+			cwd: process.cwd(),
+			env: {
+				...process.env,
+				E2E_APPROVE_PENDING_DEVICE: '0',
+				E2E_RESET_SECONDARY_DEVICE: '1',
+				E2E_PRIMARY_INSTALLATION_ID: PRIMARY_INSTALLATION_ID,
+				E2E_SECONDARY_INSTALLATION_ID: SECONDARY_INSTALLATION_ID,
+			},
+			stdio: 'pipe',
+		});
+	} catch (error) {
+		const details =
+			error && typeof error === 'object' && 'stderr' in error
+				? String((error as { stderr?: Buffer | string }).stderr ?? '')
+				: String(error);
+		throw new Error(`seedTrustedPrimaryDevice failed: ${details}`.trim());
+	}
 }

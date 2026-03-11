@@ -253,7 +253,18 @@ async fn download_and_reupload_avatar(
     url: &str,
     user_id: Uuid,
 ) -> anyhow::Result<String> {
-    let image_bytes = client.get(url).send().await?.bytes().await?.to_vec();
+    const MAX_AVATAR_BYTES: usize = 5 * 1024 * 1024; // 5 MB
+
+    let resp = client.get(url).send().await?;
+    let content_length = resp.content_length().unwrap_or(0) as usize;
+    if content_length > MAX_AVATAR_BYTES {
+        anyhow::bail!("Avatar download too large: {content_length} bytes");
+    }
+    let image_bytes = resp.bytes().await?;
+    if image_bytes.len() > MAX_AVATAR_BYTES {
+        anyhow::bail!("Avatar download too large: {} bytes", image_bytes.len());
+    }
+    let image_bytes = image_bytes.to_vec();
 
     // Resize to 256×256 WebP in a blocking thread
     let webp_bytes = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<u8>> {

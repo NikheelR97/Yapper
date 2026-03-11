@@ -1,4 +1,5 @@
-﻿import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+import { PRIMARY_INSTALLATION_ID, seedTrustedPrimaryDevice, setInstallationId } from './auth-helper.js';
 
 /**
  * Explore page E2E tests.
@@ -10,6 +11,7 @@ const TEST_EMAIL = process.env.E2E_EMAIL ?? '';
 const TEST_PASSWORD = process.env.E2E_PASSWORD ?? '';
 
 async function loginAs(page: Page) {
+	await setInstallationId(page, PRIMARY_INSTALLATION_ID);
 	await page.goto('/login');
 	await page.fill('#email', TEST_EMAIL);
 	await page.fill('#password', TEST_PASSWORD);
@@ -32,12 +34,16 @@ test.describe('Explore - unauthenticated', () => {
 test.describe('Explore - authenticated', () => {
 	test.skip(!TEST_EMAIL || !TEST_PASSWORD, 'Set E2E_EMAIL / E2E_PASSWORD to run these tests');
 
+	test.beforeAll(() => {
+		seedTrustedPrimaryDevice();
+	});
+
 	test('renders core explore controls and handles join attempts', async ({ page }) => {
 		await loginAs(page);
-		await expect(page.locator('.search-input')).toBeVisible({ timeout: 30_000 });
+		const searchInput = page.getByRole('searchbox', { name: 'Search' });
+		await expect(searchInput).toBeVisible({ timeout: 30_000 });
 		await expect(page.getByText(/Communities/i)).toBeVisible({ timeout: 10_000 });
 
-		const searchInput = page.locator('.search-input');
 		await searchInput.fill('test');
 		await page.waitForTimeout(500);
 		await expect(searchInput).toHaveValue('test');

@@ -249,6 +249,9 @@ struct MessageRespV2 {
     ephemeral_key: Option<String>,
     opk_id: Option<i32>,
     msg_num: i32,
+    ratchet_pub: Option<String>,
+    previous_chain_len: Option<i32>,
+    crypto_version: i16,
     created_at: DateTime<Utc>,
 }
 
@@ -261,6 +264,9 @@ struct SendEnvelopeReqV2 {
     ephemeral_key: Option<String>,
     opk_id: Option<i32>,
     msg_num: i32,
+    ratchet_pub: Option<String>,
+    previous_chain_len: Option<i32>,
+    crypto_version: Option<i16>,
 }
 
 #[derive(Deserialize)]
@@ -312,6 +318,9 @@ async fn list_messages_v2(
                    e.ek_public,
                    e.opk_id,
                    e.msg_num,
+                   e.ratchet_pub,
+                   e.previous_chain_len,
+                   e.crypto_version,
                    m.created_at
             FROM dm_message_envelopes e
             JOIN messages m ON m.id = e.message_id
@@ -342,6 +351,9 @@ async fn list_messages_v2(
                    e.ek_public,
                    e.opk_id,
                    e.msg_num,
+                   e.ratchet_pub,
+                   e.previous_chain_len,
+                   e.crypto_version,
                    m.created_at
             FROM dm_message_envelopes e
             JOIN messages m ON m.id = e.message_id
@@ -365,6 +377,7 @@ async fn list_messages_v2(
         .map(|r| {
             let cipher: Vec<u8> = r.try_get("ciphertext").unwrap_or_default();
             let ek: Option<Vec<u8>> = r.try_get("ek_public").ok().flatten();
+            let ratchet_pub: Option<Vec<u8>> = r.try_get("ratchet_pub").ok().flatten();
             MessageRespV2 {
                 id: r.try_get("id").unwrap(),
                 conversation_id: r.try_get("conversation_id").unwrap(),
@@ -375,6 +388,9 @@ async fn list_messages_v2(
                 ephemeral_key: ek.as_ref().map(|k| BASE64.encode(k)),
                 opk_id: r.try_get("opk_id").ok().flatten(),
                 msg_num: r.try_get("msg_num").unwrap_or(0),
+                ratchet_pub: ratchet_pub.as_ref().map(|key| BASE64.encode(key)),
+                previous_chain_len: r.try_get("previous_chain_len").ok().flatten(),
+                crypto_version: r.try_get("crypto_version").unwrap_or(1),
                 created_at: r.try_get("created_at").unwrap(),
             }
         })
@@ -598,6 +614,16 @@ async fn send_message_v2(
             .map(|value| BASE64.decode(value))
             .transpose()
             .map_err(|_| AppError::BadRequest("Invalid ephemeral_key encoding".into()))?;
+        let ratchet_pub = envelope
+            .ratchet_pub
+            .as_deref()
+            .map(|value| BASE64.decode(value))
+            .transpose()
+            .map_err(|_| AppError::BadRequest("Invalid ratchet_pub encoding".into()))?;
+        let crypto_version = envelope.crypto_version.unwrap_or(1);
+        if !(1..=2).contains(&crypto_version) {
+            return Err(AppError::BadRequest("Invalid crypto_version".into()));
+        }
 
         let deliver_now = envelope.recipient_device_id == auth.device_id
             || state.hub.is_device_online(&envelope.recipient_device_id);
@@ -606,8 +632,9 @@ async fn send_message_v2(
             r#"
             INSERT INTO dm_message_envelopes
                 (message_id, recipient_user_id, recipient_device_id, sender_user_id, sender_device_id,
-                 ciphertext, ek_public, opk_id, msg_num, delivered_at, created_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                 ciphertext, ek_public, opk_id, msg_num, ratchet_pub, previous_chain_len, crypto_version,
+                 delivered_at, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             "#,
         )
         .bind(message_id)
@@ -619,6 +646,9 @@ async fn send_message_v2(
         .bind(&ek_public)
         .bind(envelope.opk_id)
         .bind(envelope.msg_num)
+        .bind(&ratchet_pub)
+        .bind(envelope.previous_chain_len)
+        .bind(crypto_version)
         .bind(if deliver_now { Some(created_at) } else { None })
         .bind(created_at)
         .execute(&mut *tx)
@@ -651,6 +681,9 @@ async fn send_message_v2(
             "ephemeral_key": envelope.ephemeral_key,
             "opk_id": envelope.opk_id,
             "msg_num": envelope.msg_num,
+            "ratchet_pub": envelope.ratchet_pub,
+            "previous_chain_len": envelope.previous_chain_len,
+            "crypto_version": envelope.crypto_version.unwrap_or(1),
             "created_at": created_at,
         });
         state.hub.send_to_device(

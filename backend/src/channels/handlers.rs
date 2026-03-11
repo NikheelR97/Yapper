@@ -192,8 +192,8 @@ pub(super) async fn get_key_dists(
     Path(channel_id): Path<Uuid>,
 ) -> AppResult<Json<Vec<service::KeyDistRecord>>> {
     auth.require_trusted()?;
-    let dists = service::fetch_key_distributions(auth.user_id, auth.device_id, channel_id, &state)
-        .await?;
+    let dists =
+        service::fetch_key_distributions(auth.user_id, auth.device_id, channel_id, &state).await?;
     Ok(Json(dists))
 }
 

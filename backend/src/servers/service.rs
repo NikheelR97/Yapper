@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD as BASE64_URL_SAFE_NO_PAD, Engine};
 use chrono::Utc;
 use serde::Serialize;
 use sqlx::Row;
@@ -327,40 +328,52 @@ pub async fn join_by_invite(
     debug_assert!(user_id != Uuid::nil());
     debug_assert!(!code.is_empty(), "invite code must be non-empty");
 
-    let invite_row = sqlx::query(
-        "SELECT i.id, i.server_id, i.uses, i.max_uses, i.expires_at \
-         FROM server_invite_links i \
-         WHERE i.code = $1",
+    let claimed_invite = sqlx::query(
+        "UPDATE server_invite_links \
+         SET uses = uses + 1 \
+         WHERE code = $1 \
+           AND (expires_at IS NULL OR expires_at > NOW()) \
+           AND (max_uses IS NULL OR uses < max_uses) \
+         RETURNING server_id",
     )
     .bind(&code)
     .fetch_optional(state.db.pool())
-    .await?
-    .ok_or_else(|| AppError::NotFound("Invalid invite code".into()))?;
+    .await?;
 
-    let expires_at: Option<chrono::DateTime<Utc>> = invite_row.try_get("expires_at")?;
-    if let Some(exp) = expires_at {
-        if Utc::now() > exp {
-            return Err(AppError::BadRequest("Invite link has expired".into()));
+    let server_id = if let Some(row) = claimed_invite {
+        row.try_get("server_id")?
+    } else {
+        let invite_row = sqlx::query(
+            "SELECT i.uses, i.max_uses, i.expires_at \
+             FROM server_invite_links i \
+             WHERE i.code = $1",
+        )
+        .bind(&code)
+        .fetch_optional(state.db.pool())
+        .await?
+        .ok_or_else(|| AppError::NotFound("Invalid invite code".into()))?;
+
+        let expires_at: Option<chrono::DateTime<Utc>> = invite_row.try_get("expires_at")?;
+        if let Some(exp) = expires_at {
+            if Utc::now() > exp {
+                return Err(AppError::BadRequest("Invite link has expired".into()));
+            }
         }
-    }
 
-    let uses: i32 = invite_row.try_get("uses")?;
-    let max_uses: Option<i32> = invite_row.try_get("max_uses")?;
-    if let Some(max) = max_uses {
-        if uses >= max {
-            return Err(AppError::BadRequest(
-                "Invite link has reached its use limit".into(),
-            ));
+        let uses: i32 = invite_row.try_get("uses")?;
+        let max_uses: Option<i32> = invite_row.try_get("max_uses")?;
+        if let Some(max) = max_uses {
+            if uses >= max {
+                return Err(AppError::BadRequest(
+                    "Invite link has reached its use limit".into(),
+                ));
+            }
         }
-    }
 
-    let server_id: Uuid = invite_row.try_get("server_id")?;
-    let invite_id: Uuid = invite_row.try_get("id")?;
-
-    sqlx::query("UPDATE server_invite_links SET uses = uses + 1 WHERE id = $1")
-        .bind(invite_id)
-        .execute(state.db.pool())
-        .await?;
+        return Err(AppError::Conflict(
+            "Invite link is temporarily unavailable".into(),
+        ));
+    };
 
     do_join(user_id, server_id, Some(code), state).await
 }
@@ -501,12 +514,7 @@ async fn notify_parents(
 }
 
 pub fn generate_invite_code() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .subsec_nanos();
-    let uid = Uuid::new_v4();
-    let base = uid.simple().to_string();
-    format!("{}{:x}", &base[..7], ts & 0xF)
+    let mut bytes = [0u8; 16];
+    getrandom::getrandom(&mut bytes).expect("invite code randomness unavailable");
+    BASE64_URL_SAFE_NO_PAD.encode(bytes)
 }

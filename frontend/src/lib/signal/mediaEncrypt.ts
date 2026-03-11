@@ -9,35 +9,39 @@
  * browser, Tauri webview, and Capacitor WebView.
  */
 
-const ALGO = 'AES-GCM';
+const ALGO = "AES-GCM";
 const KEY_LENGTH = 256; // bits
-const IV_LENGTH = 12;   // bytes (96-bit IV — recommended for AES-GCM)
+const IV_LENGTH = 12; // bytes (96-bit IV — recommended for AES-GCM)
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function bufferToBase64(buf: ArrayBuffer | Uint8Array): string {
-	const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
-	return btoa(String.fromCharCode(...bytes));
+  const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += 1) {
+    binary += String.fromCharCode(bytes[index]);
+  }
+  return btoa(binary);
 }
 
 function base64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
-	const binary = atob(b64);
-	const bytes = new Uint8Array(binary.length);
-	for (let i = 0; i < binary.length; i++) {
-		bytes[i] = binary.charCodeAt(i);
-	}
-	return bytes;
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export interface EncryptedMedia {
-	/** AES-GCM encrypted bytes ready for upload to R2. */
-	encrypted: ArrayBuffer;
-	/** Base64-encoded raw AES-256 key. Embed in Signal payload. */
-	key: string;
-	/** Base64-encoded 96-bit IV. Embed in Signal payload. */
-	iv: string;
+  /** AES-GCM encrypted bytes ready for upload to R2. */
+  encrypted: ArrayBuffer;
+  /** Base64-encoded raw AES-256 key. Embed in Signal payload. */
+  key: string;
+  /** Base64-encoded 96-bit IV. Embed in Signal payload. */
+  iv: string;
 }
 
 /**
@@ -47,31 +51,31 @@ export interface EncryptedMedia {
  * identical content will always produce different output.
  */
 export async function encryptMedia(blob: Blob): Promise<EncryptedMedia> {
-	// Normalize into current-realm bytes to avoid cross-realm BufferSource issues in tests/SSR.
-	const plaintextBytes = new Uint8Array(await blob.arrayBuffer());
+  // Normalize into current-realm bytes to avoid cross-realm BufferSource issues in tests/SSR.
+  const plaintextBytes = new Uint8Array(await blob.arrayBuffer());
 
-	const rawKey = crypto.getRandomValues(new Uint8Array(KEY_LENGTH / 8));
-	const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
+  const rawKey = crypto.getRandomValues(new Uint8Array(KEY_LENGTH / 8));
+  const iv = crypto.getRandomValues(new Uint8Array(IV_LENGTH));
 
-	const cryptoKey = await crypto.subtle.importKey(
-		'raw',
-		rawKey,
-		{ name: ALGO },
-		false,             // not extractable (we already hold rawKey)
-		['encrypt']
-	);
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw",
+    rawKey,
+    { name: ALGO },
+    false, // not extractable (we already hold rawKey)
+    ["encrypt"],
+  );
 
-	const encrypted = await crypto.subtle.encrypt(
-		{ name: ALGO, iv },
-		cryptoKey,
-		plaintextBytes
-	);
+  const encrypted = await crypto.subtle.encrypt(
+    { name: ALGO, iv },
+    cryptoKey,
+    plaintextBytes,
+  );
 
-	return {
-		encrypted,
-		key: bufferToBase64(rawKey),
-		iv: bufferToBase64(iv)
-	};
+  return {
+    encrypted,
+    key: bufferToBase64(rawKey),
+    iv: bufferToBase64(iv),
+  };
 }
 
 /**
@@ -83,28 +87,28 @@ export async function encryptMedia(blob: Blob): Promise<EncryptedMedia> {
  * @param mimeType   MIME type to set on the resulting Blob (e.g. 'audio/webm').
  */
 export async function decryptMedia(
-	encrypted: ArrayBuffer,
-	keyB64: string,
-	ivB64: string,
-	mimeType: string
+  encrypted: ArrayBuffer,
+  keyB64: string,
+  ivB64: string,
+  mimeType: string,
 ): Promise<Blob> {
-	const encryptedBytes = new Uint8Array(encrypted);
-	const rawKey = base64ToBytes(keyB64);
-	const iv = base64ToBytes(ivB64);
+  const encryptedBytes = new Uint8Array(encrypted);
+  const rawKey = base64ToBytes(keyB64);
+  const iv = base64ToBytes(ivB64);
 
-	const cryptoKey = await crypto.subtle.importKey(
-		'raw',
-		rawKey,
-		{ name: ALGO },
-		false,
-		['decrypt']
-	);
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw",
+    rawKey,
+    { name: ALGO },
+    false,
+    ["decrypt"],
+  );
 
-	const plaintext = await crypto.subtle.decrypt(
-		{ name: ALGO, iv },
-		cryptoKey,
-		encryptedBytes
-	);
+  const plaintext = await crypto.subtle.decrypt(
+    { name: ALGO, iv },
+    cryptoKey,
+    encryptedBytes,
+  );
 
-	return new Blob([plaintext], { type: mimeType });
+  return new Blob([plaintext], { type: mimeType });
 }

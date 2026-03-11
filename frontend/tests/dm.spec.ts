@@ -1,5 +1,11 @@
 import { test, expect, type Page } from '@playwright/test';
-import { loginViaApi, mockAuthEndpoints, setInstallationId } from './auth-helper.js';
+import {
+	loginViaApi,
+	mockAuthEndpoints,
+	PRIMARY_INSTALLATION_ID,
+	seedTrustedPrimaryDevice,
+	setInstallationId,
+} from './auth-helper.js';
 
 /**
  * Direct Messages E2E tests.
@@ -15,7 +21,7 @@ const USER_A_EMAIL = process.env.E2E_EMAIL ?? '';
 const USER_A_PASS = process.env.E2E_PASSWORD ?? '';
 const USER_B_EMAIL = process.env.E2E_EMAIL_2 ?? '';
 const USER_B_PASS = process.env.E2E_PASSWORD_2 ?? '';
-const USER_A_INSTALLATION_ID = '33333333-3333-4333-8333-333333333333';
+const USER_A_INSTALLATION_ID = PRIMARY_INSTALLATION_ID;
 const USER_B_INSTALLATION_ID = '44444444-4444-4444-8444-444444444444';
 
 interface SessionBootstrap {
@@ -171,12 +177,16 @@ test.describe('Seeded DM flow', () => {
 	let conversationId = '';
 	let userBLabels: string[] = [];
 
+	test.beforeAll(() => {
+		seedTrustedPrimaryDevice();
+	});
+
 	test.beforeEach(async ({ page }) => {
 		const sessionA = await createSessionBootstrap(
 			USER_A_EMAIL,
 			USER_A_PASS,
 			USER_A_INSTALLATION_ID,
-			'E2E DM Browser A',
+			'E2E Primary Browser',
 		);
 		const sessionB = await createSessionBootstrap(
 			USER_B_EMAIL,

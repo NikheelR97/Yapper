@@ -1,15 +1,17 @@
 use axum::{
     extract::{Form, Query, State},
-    http::header,
+    http::{header, HeaderMap},
     response::{AppendHeaders, IntoResponse, Redirect},
 };
 use chrono::Utc;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use std::time::Instant;
 use uuid::Uuid;
 
-use super::service::{generate_access_token, generate_refresh_token, REFRESH_TTL_SECS};
-use crate::{error::AppResult, AppState};
+use crate::{
+    error::{AppError, AppResult},
+    AppState,
+};
 
 // ─── Discord user info ────────────────────────────────────────────────────────
 
@@ -20,6 +22,7 @@ struct DiscordUser {
     discriminator: String,
     email: Option<String>,
     avatar: Option<String>,
+    verified: Option<bool>,
 }
 
 // ─── Google user info ─────────────────────────────────────────────────────────
@@ -30,12 +33,15 @@ struct GoogleUser {
     email: String,
     name: String,
     picture: Option<String>,
+    verified_email: Option<bool>,
 }
 
 // ─── OAuth state store ────────────────────────────────────────────────────────
 
 /// Short-lived state tokens keyed by the random state value.
 pub type OAuthStateStore = dashmap::DashMap<String, Instant>;
+
+const OAUTH_STATE_COOKIE_PATH: &str = "/auth/oauth";
 
 fn api_base() -> String {
     std::env::var("API_BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string())
@@ -55,10 +61,70 @@ fn new_state_token() -> String {
     })
 }
 
+fn new_oauth_login_code() -> String {
+    use std::fmt::Write;
+    let mut bytes = [0u8; 32];
+    getrandom::getrandom(&mut bytes).expect("getrandom failed");
+    bytes.iter().fold(String::with_capacity(64), |mut s, b| {
+        write!(s, "{:02x}", b).unwrap();
+        s
+    })
+}
+
 /// Remove state tokens older than 10 minutes to avoid unbounded growth.
 fn gc_oauth_states(store: &OAuthStateStore) {
     let cutoff = Instant::now();
     store.retain(|_, created_at| cutoff.duration_since(*created_at).as_secs() < 600);
+}
+
+fn oauth_state_cookie_header(token: &str) -> String {
+    let secure_flag = if crate::csrf::should_use_secure_cookie() {
+        "; Secure"
+    } else {
+        ""
+    };
+    let same_site = if crate::csrf::should_use_secure_cookie() {
+        "None"
+    } else {
+        "Lax"
+    };
+    format!(
+        "oauth_state={token}; HttpOnly{secure_flag}; SameSite={same_site}; Path={OAUTH_STATE_COOKIE_PATH}; Max-Age=600"
+    )
+}
+
+fn clear_oauth_state_cookie() -> String {
+    let secure_flag = if crate::csrf::should_use_secure_cookie() {
+        "; Secure"
+    } else {
+        ""
+    };
+    let same_site = if crate::csrf::should_use_secure_cookie() {
+        "None"
+    } else {
+        "Lax"
+    };
+    format!(
+        "oauth_state=; HttpOnly{secure_flag}; SameSite={same_site}; Path={OAUTH_STATE_COOKIE_PATH}; Max-Age=0"
+    )
+}
+
+fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
+    let cookie_header = headers.get(header::COOKIE)?.to_str().ok()?;
+    cookie_header
+        .split(';')
+        .map(str::trim)
+        .find(|part| part.starts_with(name))
+        .map(|part| part.trim_start_matches(name).to_string())
+}
+
+fn validate_oauth_state(
+    headers: &HeaderMap,
+    expected_state: &str,
+    state_store: &OAuthStateStore,
+) -> bool {
+    let cookie_state = cookie_value(headers, "oauth_state=");
+    cookie_state.as_deref() == Some(expected_state) && state_store.remove(expected_state).is_some()
 }
 
 // ─── Callback query params ────────────────────────────────────────────────────
@@ -98,15 +164,20 @@ pub async fn discord_redirect(State(state): State<AppState>) -> impl IntoRespons
     )
     .expect("Discord auth URL is valid");
 
-    Redirect::to(auth_url.as_str())
+    (
+        AppendHeaders([(header::SET_COOKIE, oauth_state_cookie_header(&csrf))]),
+        Redirect::to(auth_url.as_str()),
+    )
+        .into_response()
 }
 
 pub async fn discord_callback(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(params): Query<OAuthCallbackParams>,
 ) -> impl IntoResponse {
     // Validate CSRF state
-    if state.oauth_states.remove(&params.state).is_none() {
+    if !validate_oauth_state(&headers, &params.state, &state.oauth_states) {
         return oauth_error_redirect("invalid_state");
     }
 
@@ -128,8 +199,9 @@ pub async fn discord_callback(
         .send()
         .await
     {
-        Ok(r) => r,
+        Ok(r) if r.status().is_success() => r,
         Err(_) => return oauth_error_redirect("token_exchange_failed"),
+        Ok(_) => return oauth_error_redirect("token_exchange_failed"),
     };
 
     #[derive(Deserialize)]
@@ -149,11 +221,12 @@ pub async fn discord_callback(
         .send()
         .await
     {
-        Ok(r) => match r.json().await {
+        Ok(r) if r.status().is_success() => match r.json().await {
             Ok(u) => u,
             Err(_) => return oauth_error_redirect("profile_fetch_failed"),
         },
         Err(_) => return oauth_error_redirect("profile_fetch_failed"),
+        Ok(_) => return oauth_error_redirect("profile_fetch_failed"),
     };
 
     let Some(email) = discord_user.email else {
@@ -175,7 +248,7 @@ pub async fn discord_callback(
         )
     });
 
-    match issue_oauth_session(
+    match issue_oauth_code(
         &state,
         OAuthUserInfo {
             provider_id: discord_user.id,
@@ -184,6 +257,7 @@ pub async fn discord_callback(
             username_hint: discord_user.username,
             display_name,
             avatar_url,
+            provider_email_verified: discord_user.verified.unwrap_or(false),
         },
     )
     .await
@@ -216,15 +290,20 @@ pub async fn google_redirect(State(state): State<AppState>) -> impl IntoResponse
     )
     .expect("Google auth URL is valid");
 
-    Redirect::to(auth_url.as_str())
+    (
+        AppendHeaders([(header::SET_COOKIE, oauth_state_cookie_header(&csrf))]),
+        Redirect::to(auth_url.as_str()),
+    )
+        .into_response()
 }
 
 pub async fn google_callback(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(params): Query<OAuthCallbackParams>,
 ) -> impl IntoResponse {
     // Validate CSRF state
-    if state.oauth_states.remove(&params.state).is_none() {
+    if !validate_oauth_state(&headers, &params.state, &state.oauth_states) {
         return oauth_error_redirect("invalid_state");
     }
 
@@ -247,8 +326,9 @@ pub async fn google_callback(
         .send()
         .await
     {
-        Ok(r) => r,
+        Ok(r) if r.status().is_success() => r,
         Err(_) => return oauth_error_redirect("token_exchange_failed"),
+        Ok(_) => return oauth_error_redirect("token_exchange_failed"),
     };
 
     #[derive(Deserialize)]
@@ -268,11 +348,12 @@ pub async fn google_callback(
         .send()
         .await
     {
-        Ok(r) => match r.json().await {
+        Ok(r) if r.status().is_success() => match r.json().await {
             Ok(u) => u,
             Err(_) => return oauth_error_redirect("profile_fetch_failed"),
         },
         Err(_) => return oauth_error_redirect("profile_fetch_failed"),
+        Ok(_) => return oauth_error_redirect("profile_fetch_failed"),
     };
 
     let username_hint = google_user
@@ -282,7 +363,7 @@ pub async fn google_callback(
         .unwrap_or("user")
         .to_string();
 
-    match issue_oauth_session(
+    match issue_oauth_code(
         &state,
         OAuthUserInfo {
             provider_id: google_user.id,
@@ -291,6 +372,7 @@ pub async fn google_callback(
             username_hint,
             display_name: google_user.name,
             avatar_url: google_user.picture,
+            provider_email_verified: google_user.verified_email.unwrap_or(false),
         },
     )
     .await
@@ -309,23 +391,31 @@ struct OAuthUserInfo {
     username_hint: String,
     display_name: String,
     avatar_url: Option<String>,
+    provider_email_verified: bool,
 }
 
 /// User DTO for OAuth queries.
 #[derive(sqlx::FromRow)]
 struct OAuthUserRow {
     id: Uuid,
-    account_type: String,
     #[allow(dead_code)]
     is_new: bool,
 }
 
-async fn issue_oauth_session(
+pub struct ConsumedOAuthCode {
+    pub user_id: Uuid,
+}
+
+async fn issue_oauth_code(
     state: &AppState,
     info: OAuthUserInfo,
 ) -> AppResult<axum::response::Response> {
     let pool = state.db.pool();
     let email = info.email.to_lowercase();
+
+    if !info.provider_email_verified {
+        return Ok(oauth_error_redirect("email_unverified"));
+    }
 
     // Sanitize username: keep alphanumeric + underscore, max 32 chars
     let clean_username = sanitize_username(&info.username_hint);
@@ -339,7 +429,7 @@ async fn issue_oauth_session(
     let existing = sqlx::query_as!(
         OAuthUserRow,
         r#"
-        SELECT id, account_type, FALSE AS "is_new!"
+        SELECT id, FALSE AS "is_new!"
         FROM users
         WHERE discord_id = $1 AND deleted_at IS NULL
         "#,
@@ -348,7 +438,7 @@ async fn issue_oauth_session(
     .fetch_optional(pool)
     .await?;
 
-    let (user_id, account_type, is_new) = if let Some(u) = existing {
+    let (user_id, is_new) = if let Some(u) = existing {
         // Known user — update avatar/display_name if changed
         if let Some(ref avatar) = info.avatar_url {
             sqlx::query!(
@@ -359,17 +449,20 @@ async fn issue_oauth_session(
             .execute(pool)
             .await?;
         }
-        (u.id, u.account_type, false)
+        (u.id, false)
     } else {
         // Try find by email (link existing account)
         let by_email = sqlx::query!(
-            "SELECT id, account_type FROM users WHERE email = $1 AND deleted_at IS NULL",
+            "SELECT id, account_type, email_verified FROM users WHERE email = $1 AND deleted_at IS NULL",
             email,
         )
         .fetch_optional(pool)
         .await?;
 
         if let Some(u) = by_email {
+            if !u.email_verified {
+                return Ok(oauth_error_redirect("email_verification_required"));
+            }
             // Link OAuth to existing email account
             sqlx::query!(
                 "UPDATE users SET discord_id = $1, last_seen_at = NOW() WHERE id = $2",
@@ -378,7 +471,7 @@ async fn issue_oauth_session(
             )
             .execute(pool)
             .await?;
-            (u.id, u.account_type, false)
+            (u.id, false)
         } else {
             // Create new user
             let username = unique_username(pool, &clean_username).await?;
@@ -398,58 +491,65 @@ async fn issue_oauth_session(
             )
             .fetch_one(pool)
             .await?;
-            (user.id, user.account_type, true)
+            (user.id, true)
         }
     };
 
-    let access_token = generate_access_token(user_id, &account_type, None, &state.jwt_keys)?;
-    let refresh_token =
-        generate_refresh_token(user_id, Uuid::new_v4(), None, &state.jwt_keys)?;
-
-    // Store session
-    let claims = super::service::validate_refresh_token(&refresh_token, &state.jwt_keys)?.claims;
-    let token_hash = sha256_hex(&refresh_token);
-    let expires_at = chrono::DateTime::from_timestamp(claims.exp, 0).unwrap_or_else(Utc::now);
+    let oauth_code = new_oauth_login_code();
+    let code_hash = super::handlers::sha256_hex(&oauth_code);
 
     sqlx::query!(
-        "INSERT INTO sessions (user_id, family_id, token_hash, expires_at) VALUES ($1, $2, $3, $4)",
+        r#"
+        INSERT INTO oauth_login_codes (code_hash, user_id, provider, is_new, expires_at)
+        VALUES ($1, $2, $3, $4, NOW() + INTERVAL '5 minutes')
+        "#,
+        code_hash,
         user_id,
-        claims.family_id,
-        token_hash,
-        expires_at,
+        info.provider,
+        is_new,
     )
     .execute(pool)
     .await?;
 
-    let use_secure_cookie = crate::csrf::should_use_secure_cookie();
-    let secure_flag = if use_secure_cookie { "; Secure" } else { "" };
-    let same_site = if use_secure_cookie { "None" } else { "Lax" };
-    let refresh_cookie = format!(
-        "refresh_token={refresh_token}; HttpOnly{secure_flag}; SameSite={same_site}; Path=/auth/oauth; Max-Age={REFRESH_TTL_SECS}"
-    );
-
-    // Generate a CSRF token so that state-mutating POSTs (e.g. Signal key upload)
-    // work immediately after OAuth login — same as the regular /auth/login flow.
-    // Also returned as a URL param so the cross-origin frontend (Tauri/Capacitor) can read it.
-    let csrf_token = new_state_token();
-    let csrf_cookie = crate::csrf::csrf_cookie_header(&csrf_token);
-
-    let redirect_url = format!(
-        "{}/oauth/callback?access_token={}&is_new={}&csrf_token={}",
-        frontend_base(),
-        access_token,
-        is_new,
-        csrf_token,
-    );
+    let redirect_url = url::Url::parse_with_params(
+        &format!("{}/oauth/callback", frontend_base()),
+        &[
+            ("code", oauth_code.as_str()),
+            ("is_new", if is_new { "true" } else { "false" }),
+        ],
+    )
+    .map_err(|e| AppError::Internal(e.into()))?;
 
     Ok((
-        AppendHeaders([
-            (header::SET_COOKIE, refresh_cookie),
-            (header::SET_COOKIE, csrf_cookie),
-        ]),
-        Redirect::to(&redirect_url),
+        AppendHeaders([(header::SET_COOKIE, clear_oauth_state_cookie())]),
+        Redirect::to(redirect_url.as_str()),
     )
         .into_response())
+}
+
+pub async fn consume_oauth_login_code(
+    state: &AppState,
+    code: &str,
+) -> AppResult<ConsumedOAuthCode> {
+    let code_hash = super::handlers::sha256_hex(code);
+    let row = sqlx::query!(
+        r#"
+        UPDATE oauth_login_codes
+        SET consumed_at = NOW()
+        WHERE code_hash = $1
+          AND consumed_at IS NULL
+          AND expires_at > NOW()
+        RETURNING user_id, is_new
+        "#,
+        code_hash,
+    )
+    .fetch_optional(state.db.pool())
+    .await?;
+
+    let row = row.ok_or(AppError::Unauthorized)?;
+    Ok(ConsumedOAuthCode {
+        user_id: row.user_id,
+    })
 }
 
 /// Make a username unique by appending random digits if needed.
@@ -508,13 +608,6 @@ fn sanitize_username(input: &str) -> String {
     }
 }
 
-fn sha256_hex(input: &str) -> String {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(input.as_bytes());
-    format!("{:x}", hasher.finalize())
-}
-
 // ─── Apple OAuth ──────────────────────────────────────────────────────────────
 
 const APPLE_AUTH_URL: &str = "https://appleid.apple.com/auth/authorize";
@@ -525,6 +618,8 @@ const APPLE_JWKS_URL: &str = "https://appleid.apple.com/auth/keys";
 struct AppleIdTokenClaims {
     sub: String,
     email: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_boolish")]
+    email_verified: Option<bool>,
 }
 
 #[derive(serde::Serialize)]
@@ -584,7 +679,11 @@ pub async fn apple_redirect(State(state): State<AppState>) -> impl IntoResponse 
     )
     .expect("Apple auth URL is valid");
 
-    Redirect::to(auth_url.as_str())
+    (
+        AppendHeaders([(header::SET_COOKIE, oauth_state_cookie_header(&csrf))]),
+        Redirect::to(auth_url.as_str()),
+    )
+        .into_response()
 }
 
 /// Apple sends callback as POST form_post (not a GET redirect like Discord/Google).
@@ -600,6 +699,7 @@ pub struct AppleCallbackForm {
 
 pub async fn apple_callback(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Form(form): Form<AppleCallbackForm>,
 ) -> impl IntoResponse {
     if form.error.is_some() {
@@ -615,7 +715,7 @@ pub async fn apple_callback(
         None => return oauth_error_redirect("missing_state"),
     };
 
-    if state.oauth_states.remove(&csrf_state).is_none() {
+    if !validate_oauth_state(&headers, &csrf_state, &state.oauth_states) {
         return oauth_error_redirect("invalid_state");
     }
 
@@ -651,6 +751,10 @@ pub async fn apple_callback(
     #[derive(Deserialize)]
     struct AppleTokenResponse {
         id_token: Option<String>,
+    }
+
+    if !token_res.status().is_success() {
+        return oauth_error_redirect("token_exchange_failed");
     }
 
     let token_data: AppleTokenResponse = match token_res.json().await {
@@ -696,7 +800,7 @@ pub async fn apple_callback(
 
     let username_hint = email.split('@').next().unwrap_or("user").to_string();
 
-    match issue_oauth_session(
+    match issue_oauth_code(
         &state,
         OAuthUserInfo {
             provider_id: claims.sub,
@@ -705,6 +809,7 @@ pub async fn apple_callback(
             username_hint,
             display_name,
             avatar_url: None, // Apple does not provide avatars
+            provider_email_verified: claims.email_verified.unwrap_or(false),
         },
     )
     .await
@@ -749,7 +854,31 @@ async fn verify_apple_id_token(
     Ok(token_data.claims)
 }
 
+fn deserialize_optional_boolish<'de, D>(deserializer: D) -> Result<Option<bool>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(match value {
+        Some(serde_json::Value::Bool(value)) => Some(value),
+        Some(serde_json::Value::String(value)) => match value.as_str() {
+            "true" | "1" => Some(true),
+            "false" | "0" => Some(false),
+            _ => None,
+        },
+        _ => None,
+    })
+}
+
 fn oauth_error_redirect(reason: &str) -> axum::response::Response {
-    let url = format!("{}/login?oauth_error={}", frontend_base(), reason);
-    Redirect::to(&url).into_response()
+    let url = url::Url::parse_with_params(
+        &format!("{}/login", frontend_base()),
+        &[("oauth_error", reason)],
+    )
+    .expect("OAuth error redirect is valid");
+    (
+        AppendHeaders([(header::SET_COOKIE, clear_oauth_state_cookie())]),
+        Redirect::to(url.as_str()),
+    )
+        .into_response()
 }

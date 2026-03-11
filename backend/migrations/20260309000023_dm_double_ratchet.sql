@@ -1,0 +1,4 @@
+ALTER TABLE dm_message_envelopes
+    ADD COLUMN IF NOT EXISTS ratchet_pub BYTEA NULL,
+    ADD COLUMN IF NOT EXISTS previous_chain_len INTEGER NULL,
+    ADD COLUMN IF NOT EXISTS crypto_version SMALLINT NOT NULL DEFAULT 1;

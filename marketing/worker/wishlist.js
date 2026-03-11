@@ -88,9 +88,9 @@ async function handleSignup(request, env) {
         'INSERT INTO wishlist (email) VALUES (?)'
       ).bind(email).run();
 
-      // Increment KV counter
-      const current = parseInt((await env.KV.get(KV_COUNTER_KEY)) ?? '0', 10);
-      await env.KV.put(KV_COUNTER_KEY, String(current + 1));
+      // Derive count from D1 as source of truth (avoids KV read-increment-write race)
+      const countRow = await env.DB.prepare('SELECT COUNT(*) AS cnt FROM wishlist').first();
+      await env.KV.put(KV_COUNTER_KEY, String(countRow?.cnt ?? 0));
 
       // Send confirmation email -- await so errors are logged, but don't fail signup
       try {
@@ -146,7 +146,12 @@ async function sendConfirmationEmail(email, env) {
   }
 }
 
+function escapeHtml(str) {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 function confirmationHtml(email) {
+  const safeEmail = escapeHtml(email);
   return `<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
@@ -161,7 +166,7 @@ function confirmationHtml(email) {
             Thanks for joining the Yapper waitlist. We'll let you know the moment we launch.
           </p>
           <p style="margin:0;font-size:12px;color:#6b7280;">
-            You signed up with <strong style="color:#a78bfa;">${email}</strong>
+            You signed up with <strong style="color:#a78bfa;">${safeEmail}</strong>
           </p>
         </td></tr>
       </table>

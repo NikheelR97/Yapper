@@ -13,6 +13,7 @@
 	import SafetyNumbers from "$lib/components/chat/SafetyNumbers.svelte";
 	import UserAvatar from "$lib/components/UserAvatar.svelte";
 	import { getPresence } from "$stores/presence.js";
+	import { loadPeerTrustFlags } from "$signal/keystore.js";
 
 	$: conversationId = $page.params.conversationId ?? "";
 
@@ -31,7 +32,9 @@
 	let keyChanged = false;
 
 	$: if (conversation?.peerId) {
-		keyChanged = localStorage.getItem(`yapper_key_changed_${conversation.peerId}`) === '1';
+		void loadPeerTrust(conversation.peerId);
+	} else {
+		keyChanged = false;
 	}
 
 	onMount(async () => {
@@ -58,6 +61,11 @@
 		} finally {
 			sending = false;
 		}
+	}
+
+	async function loadPeerTrust(peerId: string) {
+		const trust = await loadPeerTrustFlags(peerId);
+		keyChanged = trust.keyChanged;
 	}
 </script>
 

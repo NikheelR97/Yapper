@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import { getOwnFingerprint, fetchPeerFingerprint } from '$signal/index.js';
+	import { loadPeerTrustFlags, storePeerVerified } from '$signal/keystore.js';
 
 	export let peerId: string;
 	export let peerName: string;
@@ -12,9 +13,6 @@
 	let keyChanged = false;
 	let verified = false;
 	let dialogBackdrop: HTMLDivElement | null = null;
-
-	$: verifiedKey = `yapper_verified_${peerId}`;
-	$: changedKey = `yapper_key_changed_${peerId}`;
 
 	$: if (open && peerId) loadFingerprints();
 	$: if (open) {
@@ -28,8 +26,7 @@
 
 	async function loadFingerprints() {
 		loading = true;
-		keyChanged = localStorage.getItem(changedKey) === '1';
-		verified = localStorage.getItem(verifiedKey) === '1';
+		({ keyChanged, verified } = await loadPeerTrustFlags(peerId));
 		try {
 			[ownFp, peerFp] = await Promise.all([
 				getOwnFingerprint(),
@@ -46,15 +43,14 @@
 		open = false;
 	}
 
-	function markVerified() {
-		localStorage.setItem(verifiedKey, '1');
-		localStorage.removeItem(changedKey);
+	async function markVerified() {
+		await storePeerVerified(peerId, true);
 		verified = true;
 		keyChanged = false;
 	}
 
-	function clearVerification() {
-		localStorage.removeItem(verifiedKey);
+	async function clearVerification() {
+		await storePeerVerified(peerId, false);
 		verified = false;
 	}
 

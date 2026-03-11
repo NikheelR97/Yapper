@@ -4,8 +4,11 @@ use axum::{
     Json, Router,
 };
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+use governor::{clock::DefaultClock, state::keyed::DefaultKeyedStateStore, RateLimiter};
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
+use std::num::NonZeroU32;
 use uuid::Uuid;
 
 use crate::{
@@ -40,6 +43,62 @@ pub fn v2_router() -> Router<AppState> {
         .route("/:user_id/bundles", get(get_key_bundles_v2))
 }
 
+type KeyedLimiter<T> = RateLimiter<T, DefaultKeyedStateStore<T>, DefaultClock>;
+
+static BACKUP_RETRIEVE_LIMITER: once_cell::sync::Lazy<KeyedLimiter<Uuid>> =
+    once_cell::sync::Lazy::new(|| {
+        RateLimiter::keyed(
+            governor::Quota::with_period(std::time::Duration::from_secs(60 * 60))
+                .expect("valid backup quota")
+                .allow_burst(NonZeroU32::new(5).expect("non-zero burst")),
+        )
+    });
+
+fn reject_trivial_x25519_key(bytes: &[u8], field: &str) -> AppResult<()> {
+    if bytes.iter().all(|byte| *byte == 0) {
+        return Err(AppError::BadRequest(format!(
+            "{field} must not be all-zero"
+        )));
+    }
+    Ok(())
+}
+
+async fn verify_signed_prekey_signature(
+    state: &AppState,
+    user_id: Uuid,
+    device_id: i32,
+    public_key: &[u8],
+    signature: &[u8],
+) -> AppResult<()> {
+    let identity_row = sqlx::query(
+        r#"
+        SELECT signing_key
+        FROM identity_keys
+        WHERE user_id = $1 AND device_id = $2
+        "#,
+    )
+    .bind(user_id)
+    .bind(device_id)
+    .fetch_optional(state.db.pool())
+    .await?
+    .ok_or_else(|| AppError::BadRequest("Upload identity key before signed prekeys".into()))?;
+
+    let signing_key: Vec<u8> = identity_row.try_get("signing_key")?;
+    let signing_key_bytes: [u8; 32] = signing_key
+        .try_into()
+        .map_err(|_| AppError::BadRequest("Stored signing key must be 32 bytes".into()))?;
+    let signature_bytes: [u8; 64] = signature
+        .try_into()
+        .map_err(|_| AppError::BadRequest("signature must be 64 bytes".into()))?;
+
+    let verifying_key = VerifyingKey::from_bytes(&signing_key_bytes)
+        .map_err(|_| AppError::BadRequest("Stored signing key is invalid".into()))?;
+    let signature = Signature::from_bytes(&signature_bytes);
+    verifying_key
+        .verify(public_key, &signature)
+        .map_err(|_| AppError::BadRequest("Signed prekey signature is invalid".into()))
+}
+
 // ─── Upload Identity Key ─────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
@@ -69,6 +128,7 @@ async fn upload_identity_key(
             "dh_public_key must be 32 bytes".into(),
         ));
     }
+    reject_trivial_x25519_key(&dh_key, "dh_public_key")?;
     if sig_key.len() != 32 {
         return Err(AppError::BadRequest(
             "signing_public_key must be 32 bytes".into(),
@@ -123,9 +183,13 @@ async fn upload_signed_prekey(
     if public_key.len() != 32 {
         return Err(AppError::BadRequest("public_key must be 32 bytes".into()));
     }
+    reject_trivial_x25519_key(&public_key, "public_key")?;
     if signature.len() != 64 {
         return Err(AppError::BadRequest("signature must be 64 bytes".into()));
     }
+
+    verify_signed_prekey_signature(&state, auth.user_id, req.device_id, &public_key, &signature)
+        .await?;
 
     // Signed prekeys rotate weekly.
     let expires_at = chrono::Utc::now() + chrono::Duration::days(7);
@@ -192,6 +256,7 @@ async fn upload_one_time_prekeys(
                 item.key_id
             )));
         }
+        reject_trivial_x25519_key(&pub_key, &format!("public_key for key_id {}", item.key_id))?;
         sqlx::query(
             r#"
             INSERT INTO one_time_prekeys (user_id, device_id, key_id, public_key)
@@ -430,6 +495,11 @@ async fn put_backup(
 }
 
 async fn get_backup(auth: AuthUser, State(state): State<AppState>) -> AppResult<Json<BackupResp>> {
+    // H-06: Rate limit backup retrieval to prevent PIN brute-force (5 attempts/hour/user)
+    if BACKUP_RETRIEVE_LIMITER.check_key(&auth.user_id).is_err() {
+        return Err(AppError::RateLimited);
+    }
+
     let row = sqlx::query(
         r#"
         SELECT encrypted_blob, updated_at
@@ -526,7 +596,9 @@ async fn get_opk_count_v2(
     .await?;
 
     let count: i64 = row.try_get("count")?;
-    Ok(Json(serde_json::json!({ "count": count, "low": count < 10 })))
+    Ok(Json(
+        serde_json::json!({ "count": count, "low": count < 10 }),
+    ))
 }
 
 async fn get_key_bundles_v2(
@@ -741,7 +813,9 @@ async fn get_key_bundles_v2(
         .collect::<Result<Vec<_>, sqlx::Error>>()?;
 
     if bundles.is_empty() {
-        return Err(AppError::NotFound("User has no trusted device bundles".into()));
+        return Err(AppError::NotFound(
+            "User has no trusted device bundles".into(),
+        ));
     }
 
     Ok(Json(bundles))
@@ -824,7 +898,9 @@ async fn put_backup_v2(
     .execute(state.db.pool())
     .await?;
 
-    Ok(Json(serde_json::json!({ "status": "ok", "version": next_version })))
+    Ok(Json(
+        serde_json::json!({ "status": "ok", "version": next_version }),
+    ))
 }
 
 async fn get_backup_v2(
@@ -832,6 +908,10 @@ async fn get_backup_v2(
     State(state): State<AppState>,
     Query(query): Query<BackupQueryV2>,
 ) -> AppResult<Json<BackupRespV2>> {
+    if BACKUP_RETRIEVE_LIMITER.check_key(&auth.device_id).is_err() {
+        return Err(AppError::RateLimited);
+    }
+
     let source_device_id = query.source_device_id.unwrap_or(auth.device_id);
     let source_device = get_device_for_user(auth.user_id, source_device_id, &state).await?;
 
@@ -841,7 +921,9 @@ async fn get_backup_v2(
 
     if auth.device_id != source_device_id {
         if source_device.trust_state != DeviceTrustState::Trusted {
-            return Err(AppError::Conflict("Backup source device is not trusted".into()));
+            return Err(AppError::Conflict(
+                "Backup source device is not trusted".into(),
+            ));
         }
     } else {
         auth.require_trusted()?;
@@ -894,7 +976,9 @@ async fn restore_backup_v2(
         return Err(AppError::Conflict("Backup source device is revoked".into()));
     }
     if source_device.trust_state != DeviceTrustState::Trusted {
-        return Err(AppError::Conflict("Backup source device is not trusted".into()));
+        return Err(AppError::Conflict(
+            "Backup source device is not trusted".into(),
+        ));
     }
 
     let backup_exists = sqlx::query_scalar::<_, i64>(
@@ -956,10 +1040,12 @@ async fn restore_backup_v2(
     .execute(&mut *tx)
     .await?;
 
-    sqlx::query("UPDATE sessions SET revoked_at = NOW() WHERE device_id = $1 AND revoked_at IS NULL")
-        .bind(req.source_device_id)
-        .execute(&mut *tx)
-        .await?;
+    sqlx::query(
+        "UPDATE sessions SET revoked_at = NOW() WHERE device_id = $1 AND revoked_at IS NULL",
+    )
+    .bind(req.source_device_id)
+    .execute(&mut *tx)
+    .await?;
 
     sqlx::query(
         r#"

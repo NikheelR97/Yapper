@@ -24,21 +24,8 @@ pub async fn csrf_check(req: Request, next: Next) -> Result<Response, StatusCode
         return Ok(next.run(req).await);
     }
 
-    // Axum strips the /api/v1 prefix before this middleware sees the path.
-    const CSRF_EXEMPT: &[&str] = &[
-        "/auth/login",
-        "/auth/register",
-        "/auth/verify-email",
-        "/auth/forgot-password",
-        "/auth/reset-password",
-        "/auth/refresh",
-        "/auth/logout",
-        // Stripe webhooks are signed server-to-server callbacks (no CSRF cookie).
-        "/premium/webhook",
-    ];
-
-    let path = req.uri().path();
-    if CSRF_EXEMPT.contains(&path) {
+    let path = normalize_path(req.uri().path());
+    if is_csrf_exempt(path) {
         return Ok(next.run(req).await);
     }
 
@@ -65,6 +52,29 @@ pub async fn csrf_check(req: Request, next: Next) -> Result<Response, StatusCode
         }
         _ => Err(StatusCode::FORBIDDEN),
     }
+}
+
+fn normalize_path(path: &str) -> &str {
+    let trimmed = path.trim_end_matches('/');
+    if trimmed.is_empty() {
+        "/"
+    } else {
+        trimmed
+    }
+}
+
+fn is_csrf_exempt(path: &str) -> bool {
+    matches!(
+        path,
+        "/auth/login"
+            | "/auth/register"
+            | "/auth/verify-email"
+            | "/auth/password-reset/request"
+            | "/auth/password-reset/confirm"
+            | "/auth/refresh"
+            | "/auth/oauth/exchange"
+            | "/premium/webhook"
+    )
 }
 
 /// Build a `Set-Cookie` header value for the CSRF token.

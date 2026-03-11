@@ -1,15 +1,21 @@
 #![deny(warnings)]
 
 use axum::{
-    extract::State,
-    http::{HeaderValue, Method, StatusCode},
+    extract::{ConnectInfo, State},
+    http::{HeaderValue, Method, Request, StatusCode},
+    middleware::Next,
     response::IntoResponse,
     routing::get,
     Json, Router,
 };
 use governor::{clock::DefaultClock, state::keyed::DefaultKeyedStateStore, RateLimiter};
 use serde_json::json;
-use std::{net::IpAddr, num::NonZeroU32, sync::Arc};
+use std::{
+    collections::HashSet,
+    net::{IpAddr, SocketAddr},
+    num::NonZeroU32,
+    sync::Arc,
+};
 use tokio::net::TcpListener;
 use tower_http::{
     compression::CompressionLayer, cors::CorsLayer, set_header::SetResponseHeaderLayer,
@@ -34,8 +40,8 @@ mod canvas;
 mod channels;
 mod csrf;
 mod db;
-mod discord;
 mod devices;
+mod discord;
 mod emojis;
 mod error;
 mod explore;
@@ -59,6 +65,7 @@ pub struct AppState {
     pub db: Database,
     pub hub: Arc<Hub>,
     pub rate_limiter: IpRateLimiter,
+    pub trusted_proxy_ips: Arc<HashSet<IpAddr>>,
     pub jwt_keys: Arc<JwtKeys>,
     pub login_limiter: Arc<LoginRateLimiter>,
     /// Short-lived CSRF state tokens for OAuth flows
@@ -113,6 +120,7 @@ async fn main() -> anyhow::Result<()> {
     let quota = governor::Quota::per_minute(NonZeroU32::new(100).unwrap())
         .allow_burst(NonZeroU32::new(20).unwrap());
     let rate_limiter: IpRateLimiter = Arc::new(RateLimiter::keyed(quota));
+    let trusted_proxy_ips = Arc::new(load_trusted_proxy_ips());
     let jwt_keys = Arc::new(JwtKeys::from_env()?);
     let login_limiter = Arc::new(LoginRateLimiter::new());
     let oauth_states = Arc::new(OAuthStateStore::new());
@@ -121,18 +129,28 @@ async fn main() -> anyhow::Result<()> {
         db,
         hub,
         rate_limiter,
+        trusted_proxy_ips,
         jwt_keys,
         login_limiter,
         oauth_states,
     };
+
+    let api_v1 = api_router().layer(axum::middleware::from_fn_with_state(
+        state.clone(),
+        api_rate_limit_check,
+    ));
+    let api_v2 = api_router_v2().layer(axum::middleware::from_fn_with_state(
+        state.clone(),
+        api_rate_limit_check,
+    ));
 
     let app = Router::new()
         .route("/health", get(health_handler))
         .route("/ws", get(hub::ws_handler))
         // OAuth at top level — must match redirect URIs registered in Discord/Google consoles
         .nest("/auth/oauth", auth::oauth_router())
-        .nest("/api/v1", api_router())
-        .nest("/api/v2", api_router_v2())
+        .nest("/api/v1", api_v1)
+        .nest("/api/v2", api_v2)
         .layer(TraceLayer::new_for_http())
         .layer(CompressionLayer::new())
         // Security response headers
@@ -161,9 +179,50 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("Yapper server listening on {addr}");
     let listener = TcpListener::bind(&addr).await?;
-    axum::serve(listener, app).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
 
     Ok(())
+}
+
+fn load_trusted_proxy_ips() -> HashSet<IpAddr> {
+    let mut ips = HashSet::from([
+        IpAddr::from([127, 0, 0, 1]),
+        IpAddr::from(std::net::Ipv6Addr::LOCALHOST),
+    ]);
+    if let Ok(raw) = std::env::var("TRUSTED_PROXY_IPS") {
+        for entry in raw
+            .split(',')
+            .map(str::trim)
+            .filter(|entry| !entry.is_empty())
+        {
+            if let Ok(ip) = entry.parse::<IpAddr>() {
+                ips.insert(ip);
+            } else {
+                tracing::warn!("Ignoring invalid TRUSTED_PROXY_IPS entry: {entry}");
+            }
+        }
+    }
+    ips
+}
+
+async fn api_rate_limit_check(
+    State(state): State<AppState>,
+    req: Request<axum::body::Body>,
+    next: Next,
+) -> Result<axum::response::Response, StatusCode> {
+    let peer_ip = req
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|connect| connect.0.ip());
+    let client_ip = auth::handlers::extract_ip(req.headers(), peer_ip, &state);
+    if state.rate_limiter.check_key(&client_ip).is_err() {
+        return Err(StatusCode::TOO_MANY_REQUESTS);
+    }
+    Ok(next.run(req).await)
 }
 
 fn api_router() -> Router<AppState> {

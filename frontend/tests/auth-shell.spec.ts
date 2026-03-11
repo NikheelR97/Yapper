@@ -42,7 +42,9 @@ test.describe('Authenticated shell', () => {
 		});
 
 		await page.goto('/explore');
-		await expect(page.locator('.search-input')).toBeVisible({ timeout: 30_000 });
+		await expect(page.getByRole('searchbox', { name: 'Search' })).toBeVisible({
+			timeout: 30_000,
+		});
 
 		await page.getByRole('link', { name: 'Settings' }).click();
 		await expect(page).toHaveURL(/\/settings/, { timeout: 20_000 });
@@ -110,11 +112,15 @@ test.describe('Authenticated shell', () => {
 
 		await page.getByRole('link', { name: 'Explore' }).click();
 		await expect(page).toHaveURL(/\/explore/, { timeout: 20_000 });
-		await expect(page.locator('.search-input')).toBeVisible({ timeout: 30_000 });
+		await expect(page.getByRole('searchbox', { name: 'Search' })).toBeVisible({
+			timeout: 30_000,
+		});
 
 		await page.reload();
 		await expect(page).toHaveURL(/\/explore/, { timeout: 20_000 });
-		await expect(page.locator('.search-input')).toBeVisible({ timeout: 30_000 });
+		await expect(page.getByRole('searchbox', { name: 'Search' })).toBeVisible({
+			timeout: 30_000,
+		});
 
 		await page.getByRole('link', { name: 'Settings' }).click();
 		await expect(page).toHaveURL(/\/settings/, { timeout: 20_000 });

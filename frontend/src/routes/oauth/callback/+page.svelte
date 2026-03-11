@@ -13,8 +13,7 @@
 
 	onMount(async () => {
 		const params = get(page).url.searchParams;
-		const accessToken = params.get('access_token');
-		const csrfToken = params.get('csrf_token');
+		const code = params.get('code');
 		const isNew = params.get('is_new') === 'true';
 		const oauthError = params.get('oauth_error');
 
@@ -24,27 +23,30 @@
 			return;
 		}
 
-		if (!accessToken) {
-			error = 'No access token received.';
+		if (!code) {
+			error = 'No OAuth code received.';
 			setTimeout(() => goto('/login'), 3000);
 			return;
 		}
 
 		try {
-			const attachRes = await fetch(`${API_URL}/api/v2/auth/attach-device`, {
+			const exchangeRes = await fetch(`${API_URL}/api/v2/auth/oauth/exchange`, {
 				method: 'POST',
 				headers: {
-					Authorization: `Bearer ${accessToken}`,
 					'Content-Type': 'application/json',
-					...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
 				},
-				body: JSON.stringify(getDeviceBootstrap()),
+				body: JSON.stringify({
+					code,
+					device: getDeviceBootstrap(),
+				}),
 				credentials: 'include',
 			});
 
-			if (!attachRes.ok) throw new Error('Failed to attach OAuth session to device');
+			if (!exchangeRes.ok) {
+				throw new Error('Failed to exchange OAuth login code');
+			}
 
-			const attached = await attachRes.json();
+			const attached = await exchangeRes.json();
 			const user: User = attached.user;
 			setAuth(
 				user,
@@ -54,21 +56,8 @@
 			);
 			await goto(isNew ? '/onboarding' : '/explore');
 		} catch {
-			try {
-				const res = await fetch(`${API_URL}/api/v1/users/me`, {
-					headers: { Authorization: `Bearer ${accessToken}` },
-					credentials: 'include',
-				});
-
-				if (!res.ok) throw new Error('Failed to fetch user');
-
-				const user: User = await res.json();
-				setAuth(user, accessToken, csrfToken);
-				await goto(isNew ? '/onboarding' : '/explore');
-			} catch {
-				error = 'Failed to load your account. Please try again.';
-				setTimeout(() => goto('/login'), 3000);
-			}
+			error = 'Failed to load your account. Please try again.';
+			setTimeout(() => goto('/login'), 3000);
 		}
 	});
 </script>

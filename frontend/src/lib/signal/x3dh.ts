@@ -19,13 +19,19 @@
  * where F = 0xFF × 32 (domain separator from Signal X3DH spec §2.3)
  */
 
-import { x25519 } from '@noble/curves/ed25519.js';
+import { ed25519, x25519 } from '@noble/curves/ed25519.js';
 import { hkdf } from '@noble/hashes/hkdf.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import type { IdentityKeyPair, KeyBundle, PreKeyPair, SignedPreKey, Session } from './types.js';
 
 const X3DH_F = new Uint8Array(32).fill(0xff);
+const ZERO_SALT = new Uint8Array(32);
 const X3DH_INFO = new TextEncoder().encode('YapperX3DH_v1');
+const VALIDATION_SECRET = (() => {
+	const secret = new Uint8Array(32);
+	secret[0] = 9;
+	return secret;
+})();
 
 function b64ToBytes(b64: string): Uint8Array {
 	return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
@@ -42,6 +48,61 @@ function concat(...arrays: Uint8Array[]): Uint8Array {
 	return out;
 }
 
+function isAllZero(bytes: Uint8Array): boolean {
+	let diff = 0;
+	for (const value of bytes) {
+		diff |= value;
+	}
+	return diff === 0;
+}
+
+function assertValidX25519PublicKey(publicKey: Uint8Array, label: string): void {
+	if (publicKey.length !== 32) {
+		throw new Error(`${label} must be 32 bytes`);
+	}
+	try {
+		const shared = x25519.getSharedSecret(VALIDATION_SECRET, publicKey);
+		if (isAllZero(shared)) {
+			throw new Error(`${label} produced an all-zero shared secret`);
+		}
+	} catch {
+		throw new Error(`Invalid ${label}`);
+	}
+}
+
+async function assertValidSignedPreKey(bundle: KeyBundle): Promise<void> {
+	const identitySigKey = b64ToBytes(bundle.identity_sig_key);
+	const signedPreKey = b64ToBytes(bundle.signed_prekey);
+	const signature = b64ToBytes(bundle.signed_prekey_sig);
+
+	if (identitySigKey.length !== 32) {
+		throw new Error('Peer identity signing key must be 32 bytes');
+	}
+	if (signature.length !== 64) {
+		throw new Error('Peer signed prekey signature must be 64 bytes');
+	}
+
+	assertValidX25519PublicKey(b64ToBytes(bundle.identity_dh_key), 'peer identity DH key');
+	assertValidX25519PublicKey(signedPreKey, 'peer signed prekey');
+	if (bundle.one_time_prekey) {
+		assertValidX25519PublicKey(b64ToBytes(bundle.one_time_prekey), 'peer one-time prekey');
+	}
+
+	const ok = ed25519.verify(signature, signedPreKey, identitySigKey);
+	if (!ok) {
+		throw new Error('Peer signed prekey signature is invalid');
+	}
+}
+
+function sharedSecret(privateKey: Uint8Array, publicKey: Uint8Array, label: string): Uint8Array {
+	assertValidX25519PublicKey(publicKey, label);
+	const shared = x25519.getSharedSecret(privateKey, publicKey);
+	if (isAllZero(shared)) {
+		throw new Error(`Invalid ${label}`);
+	}
+	return shared;
+}
+
 /**
  * Initiator side: Alice creates a session with Bob using his key bundle.
  * Returns the session, ephemeral public key, and used OPK id (for the wire message).
@@ -52,6 +113,8 @@ export async function x3dhInitiate(
 	sessionId: string,
 	conversationId: string
 ): Promise<{ session: Session; ephemeralPublicKey: Uint8Array; usedOpkId: number | null }> {
+	await assertValidSignedPreKey(bundle);
+
 	const ikB_dh = b64ToBytes(bundle.identity_dh_key);
 	const spkB = b64ToBytes(bundle.signed_prekey);
 
@@ -59,20 +122,20 @@ export async function x3dhInitiate(
 	const ekPriv = x25519.utils.randomSecretKey();
 	const ekPub = x25519.getPublicKey(ekPriv);
 
-	const dh1 = x25519.getSharedSecret(myIdentity.dhPrivateKey, spkB);
-	const dh2 = x25519.getSharedSecret(ekPriv, ikB_dh);
-	const dh3 = x25519.getSharedSecret(ekPriv, spkB);
+	const dh1 = sharedSecret(myIdentity.dhPrivateKey, spkB, 'peer signed prekey');
+	const dh2 = sharedSecret(ekPriv, ikB_dh, 'peer identity DH key');
+	const dh3 = sharedSecret(ekPriv, spkB, 'peer signed prekey');
 
 	let dhMaterial: Uint8Array;
 	if (bundle.one_time_prekey) {
 		const opkB = b64ToBytes(bundle.one_time_prekey);
-		const dh4 = x25519.getSharedSecret(ekPriv, opkB);
+		const dh4 = sharedSecret(ekPriv, opkB, 'peer one-time prekey');
 		dhMaterial = concat(X3DH_F, dh1, dh2, dh3, dh4);
 	} else {
 		dhMaterial = concat(X3DH_F, dh1, dh2, dh3);
 	}
 
-	const sk = hkdf(sha256, dhMaterial, undefined, X3DH_INFO, 64);
+	const sk = hkdf(sha256, dhMaterial, ZERO_SALT, X3DH_INFO, 64);
 	const rootKey = sk.slice(0, 32);
 	const sendChainKey = sk.slice(32, 64);
 
@@ -82,11 +145,20 @@ export async function x3dhInitiate(
 		peerId: bundle.userId,
 		peerDeviceId: bundle.deviceId,
 		peerSignalDeviceId: bundle.signalDeviceId,
+		version: 2,
 		rootKey,
 		sendChainKey,
 		receiveChainKey: null, // set when Bob replies
 		sendMsgNum: 0,
 		receiveMsgNum: 0,
+		myRatchetPrivKey: ekPriv,
+		myRatchetPubKey: ekPub,
+		peerRatchetPubKey: spkB,
+		previousChainLength: 0,
+		sendCount: 0,
+		recvCount: 0,
+		skippedMessageKeys: [],
+		seenMessages: [],
 	};
 
 	return {
@@ -112,25 +184,24 @@ export async function x3dhRespond(
 	peerDeviceId: string,
 	peerSignalDeviceId: number
 ): Promise<Session> {
-	const dh1 = x25519.getSharedSecret(signedPreKey.privateKey, senderDhPubKey);
-	const dh2 = x25519.getSharedSecret(myIdentity.dhPrivateKey, ephemeralPubKey);
-	const dh3 = x25519.getSharedSecret(signedPreKey.privateKey, ephemeralPubKey);
+	assertValidX25519PublicKey(senderDhPubKey, 'sender identity DH key');
+	assertValidX25519PublicKey(ephemeralPubKey, 'sender ephemeral key');
+
+	const dh1 = sharedSecret(signedPreKey.privateKey, senderDhPubKey, 'sender identity DH key');
+	const dh2 = sharedSecret(myIdentity.dhPrivateKey, ephemeralPubKey, 'sender ephemeral key');
+	const dh3 = sharedSecret(signedPreKey.privateKey, ephemeralPubKey, 'sender ephemeral key');
 
 	let dhMaterial: Uint8Array;
 	if (oneTimePreKey) {
-		const dh4 = x25519.getSharedSecret(oneTimePreKey.privateKey, ephemeralPubKey);
+		const dh4 = sharedSecret(oneTimePreKey.privateKey, ephemeralPubKey, 'sender ephemeral key');
 		dhMaterial = concat(X3DH_F, dh1, dh2, dh3, dh4);
 	} else {
 		dhMaterial = concat(X3DH_F, dh1, dh2, dh3);
 	}
 
-	const sk = hkdf(sha256, dhMaterial, undefined, X3DH_INFO, 64);
+	const sk = hkdf(sha256, dhMaterial, ZERO_SALT, X3DH_INFO, 64);
 	const rootKey = sk.slice(0, 32);
 	const receiveChainKey = sk.slice(32, 64);
-
-	// Bob's initial send chain key will be set when he first sends a message.
-	// For now, derive it from the root key so encryption can start immediately.
-	const sendChainKey = hkdf(sha256, rootKey, undefined, new TextEncoder().encode('send'), 32);
 
 	return {
 		sessionId,
@@ -138,10 +209,19 @@ export async function x3dhRespond(
 		peerId,
 		peerDeviceId,
 		peerSignalDeviceId,
+		version: 2,
 		rootKey,
-		sendChainKey,
+		sendChainKey: null,
 		receiveChainKey,
 		sendMsgNum: 0,
 		receiveMsgNum: 0,
+		myRatchetPrivKey: signedPreKey.privateKey,
+		myRatchetPubKey: signedPreKey.publicKey,
+		peerRatchetPubKey: ephemeralPubKey,
+		previousChainLength: 0,
+		sendCount: 0,
+		recvCount: 0,
+		skippedMessageKeys: [],
+		seenMessages: [],
 	};
 }

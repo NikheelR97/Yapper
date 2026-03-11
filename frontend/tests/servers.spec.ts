@@ -1,4 +1,5 @@
-﻿import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+import { PRIMARY_INSTALLATION_ID, seedTrustedPrimaryDevice, setInstallationId } from './auth-helper.js';
 
 /**
  * Servers and channels E2E tests.
@@ -10,6 +11,7 @@ const TEST_EMAIL = process.env.E2E_EMAIL ?? '';
 const TEST_PASSWORD = process.env.E2E_PASSWORD ?? '';
 
 async function loginAs(page: Page) {
+	await setInstallationId(page, PRIMARY_INSTALLATION_ID);
 	await page.goto('/login');
 	await page.fill('#email', TEST_EMAIL);
 	await page.fill('#password', TEST_PASSWORD);
@@ -19,7 +21,7 @@ async function loginAs(page: Page) {
 
 async function createServerInUi(page: Page, namePrefix: string): Promise<string> {
 	await loginAs(page);
-	await expect(page.locator('.search-input')).toBeVisible({ timeout: 30_000 });
+	await expect(page.getByRole('searchbox', { name: 'Search' })).toBeVisible({ timeout: 30_000 });
 
 	const createBtn = page.getByRole('button', { name: 'Create Server' });
 	await expect(createBtn).toBeVisible({ timeout: 20_000 });
@@ -28,12 +30,12 @@ async function createServerInUi(page: Page, namePrefix: string): Promise<string>
 	const modal = page.locator('[role="dialog"]').first();
 	await expect(modal).toBeVisible({ timeout: 5_000 });
 
-	const nameInput = page.locator('.modal-input').first();
+	const nameInput = page.getByPlaceholder('Server name').first();
 	await expect(nameInput).toBeVisible({ timeout: 5_000 });
 
 	const serverName = `${namePrefix} ${Date.now()}`;
 	await nameInput.fill(serverName);
-	await page.locator('.modal-submit').click();
+	await page.getByRole('button', { name: 'Create' }).click();
 
 	await page.waitForURL(/\/servers\/[^/]+\/channels(\/[^/]+)?$/, { timeout: 20_000 });
 	return serverName;
@@ -41,6 +43,10 @@ async function createServerInUi(page: Page, namePrefix: string): Promise<string>
 
 test.describe('Servers - authenticated', () => {
 	test.skip(!TEST_EMAIL || !TEST_PASSWORD, 'Set E2E_EMAIL / E2E_PASSWORD to run these tests');
+
+	test.beforeAll(() => {
+		seedTrustedPrimaryDevice();
+	});
 
 	test('opens the create-server flow from the app shell', async ({ page }) => {
 		await createServerInUi(page, 'E2E Server');
@@ -50,6 +56,10 @@ test.describe('Servers - authenticated', () => {
 
 test.describe('Channel - authenticated', () => {
 	test.skip(!TEST_EMAIL || !TEST_PASSWORD, 'Set E2E_EMAIL / E2E_PASSWORD to run these tests');
+
+	test.beforeAll(() => {
+		seedTrustedPrimaryDevice();
+	});
 
 	test.beforeEach(async ({ page }) => {
 		await createServerInUi(page, 'E2E Channel Server');
@@ -85,6 +95,10 @@ test.describe('Channel - authenticated', () => {
 
 test.describe('Invite links - authenticated', () => {
 	test.skip(!TEST_EMAIL || !TEST_PASSWORD, 'Set E2E_EMAIL / E2E_PASSWORD to run these tests');
+
+	test.beforeAll(() => {
+		seedTrustedPrimaryDevice();
+	});
 
 	test.beforeEach(async ({ page }) => {
 		await createServerInUi(page, 'E2E Invite Server');

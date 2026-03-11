@@ -1,12 +1,14 @@
 use axum::{
-    extract::{Query, State},
+    extract::{ConnectInfo, Query, State},
     http::{header, HeaderMap, StatusCode},
     response::{AppendHeaders, IntoResponse},
     Json,
 };
 use chrono::Utc;
+use governor::{clock::DefaultClock, state::keyed::DefaultKeyedStateStore, RateLimiter};
 use serde::{Deserialize, Serialize};
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
+use std::num::NonZeroU32;
 use uuid::Uuid;
 use validator::Validate;
 
@@ -66,6 +68,33 @@ pub struct UserDto {
     pub account_type: String,
     pub is_premium: bool,
 }
+
+type KeyedLimiter<T> = RateLimiter<T, DefaultKeyedStateStore<T>, DefaultClock>;
+
+static PASSWORD_RESET_IP_LIMITER: once_cell::sync::Lazy<KeyedLimiter<IpAddr>> =
+    once_cell::sync::Lazy::new(|| {
+        RateLimiter::keyed(
+            governor::Quota::with_period(std::time::Duration::from_secs(15 * 60))
+                .expect("valid password reset ip quota")
+                .allow_burst(NonZeroU32::new(3).expect("non-zero burst")),
+        )
+    });
+static PASSWORD_RESET_EMAIL_LIMITER: once_cell::sync::Lazy<KeyedLimiter<String>> =
+    once_cell::sync::Lazy::new(|| {
+        RateLimiter::keyed(
+            governor::Quota::with_period(std::time::Duration::from_secs(15 * 60))
+                .expect("valid password reset email quota")
+                .allow_burst(NonZeroU32::new(3).expect("non-zero burst")),
+        )
+    });
+static EMAIL_VERIFY_IP_LIMITER: once_cell::sync::Lazy<KeyedLimiter<IpAddr>> =
+    once_cell::sync::Lazy::new(|| {
+        RateLimiter::keyed(
+            governor::Quota::with_period(std::time::Duration::from_secs(15 * 60))
+                .expect("valid email verification quota")
+                .allow_burst(NonZeroU32::new(10).expect("non-zero burst")),
+        )
+    });
 
 // ─── Register ─────────────────────────────────────────────────────────────────
 
@@ -130,10 +159,8 @@ pub async fn register(
         let _ = send_verification_email(&email, &token, &resend_key).await;
     });
 
-    let access_token =
-        generate_access_token(user.id, &user.account_type, None, &state.jwt_keys)?;
-    let refresh_token =
-        generate_refresh_token(user.id, Uuid::new_v4(), None, &state.jwt_keys)?;
+    let access_token = generate_access_token(user.id, &user.account_type, None, &state.jwt_keys)?;
+    let refresh_token = generate_refresh_token(user.id, Uuid::new_v4(), None, &state.jwt_keys)?;
 
     // Store refresh token session
     store_session(pool, user.id, &refresh_token, None, &state.jwt_keys).await?;
@@ -154,6 +181,7 @@ pub async fn register(
 
 pub async fn login(
     State(state): State<AppState>,
+    ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     Json(req): Json<LoginRequest>,
 ) -> AppResult<impl IntoResponse> {
@@ -161,7 +189,7 @@ pub async fn login(
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
 
     // Extract client IP for rate limiting
-    let ip = extract_ip(&headers);
+    let ip = extract_ip(&headers, Some(peer_addr.ip()), &state);
 
     if state.login_limiter.is_locked(ip) {
         return Err(AppError::RateLimited);
@@ -210,10 +238,8 @@ pub async fn login(
     state.login_limiter.record_success(ip);
 
     let family_id = Uuid::new_v4();
-    let access_token =
-        generate_access_token(row.id, &row.account_type, None, &state.jwt_keys)?;
-    let refresh_token =
-        generate_refresh_token(row.id, family_id, None, &state.jwt_keys)?;
+    let access_token = generate_access_token(row.id, &row.account_type, None, &state.jwt_keys)?;
+    let refresh_token = generate_refresh_token(row.id, family_id, None, &state.jwt_keys)?;
 
     store_session(pool, row.id, &refresh_token, None, &state.jwt_keys).await?;
 
@@ -300,12 +326,23 @@ pub async fn refresh(
     .await?
     .ok_or(AppError::Unauthorized)?;
 
-    let new_access =
-        generate_access_token(user.id, &user.account_type, claims.device_id, &state.jwt_keys)?;
+    let new_access = generate_access_token(
+        user.id,
+        &user.account_type,
+        claims.device_id,
+        &state.jwt_keys,
+    )?;
     let new_refresh =
         generate_refresh_token(user.id, claims.family_id, claims.device_id, &state.jwt_keys)?;
 
-    store_session(pool, user.id, &new_refresh, claims.device_id, &state.jwt_keys).await?;
+    store_session(
+        pool,
+        user.id,
+        &new_refresh,
+        claims.device_id,
+        &state.jwt_keys,
+    )
+    .await?;
 
     let (cookies, csrf_token) = refresh_cookie(&new_refresh);
     Ok((
@@ -353,8 +390,15 @@ pub struct VerifyEmailQuery {
 
 pub async fn verify_email(
     State(state): State<AppState>,
+    ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     Query(q): Query<VerifyEmailQuery>,
 ) -> AppResult<impl IntoResponse> {
+    let ip = extract_ip(&headers, Some(peer_addr.ip()), &state);
+    if EMAIL_VERIFY_IP_LIMITER.check_key(&ip).is_err() {
+        return Err(AppError::RateLimited);
+    }
+
     let rows_updated = sqlx::query!(
         r#"
         UPDATE users
@@ -393,10 +437,22 @@ pub struct PasswordResetRequest {
 
 pub async fn request_password_reset(
     State(state): State<AppState>,
+    ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     Json(req): Json<PasswordResetRequest>,
 ) -> AppResult<impl IntoResponse> {
     req.validate()
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
+
+    let ip = extract_ip(&headers, Some(peer_addr.ip()), &state);
+    let normalized_email = req.email.to_lowercase();
+    if PASSWORD_RESET_IP_LIMITER.check_key(&ip).is_err()
+        || PASSWORD_RESET_EMAIL_LIMITER
+            .check_key(&normalized_email)
+            .is_err()
+    {
+        return Err(AppError::RateLimited);
+    }
 
     // Always return 200 — don't reveal whether email exists
     let pool = state.db.pool();
@@ -405,11 +461,11 @@ pub async fn request_password_reset(
     let updated = sqlx::query!(
         r#"
         UPDATE users
-        SET email_verify_token = $1, email_verify_expires_at = NOW() + INTERVAL '1 hour'
+        SET password_reset_token = $1, password_reset_expires_at = NOW() + INTERVAL '1 hour'
         WHERE email = $2 AND deleted_at IS NULL
         "#,
         token,
-        req.email.to_lowercase(),
+        normalized_email,
     )
     .execute(pool)
     .await?
@@ -537,15 +593,22 @@ pub(crate) fn append_set_cookie_headers(
     ])
 }
 
-pub(crate) fn extract_ip(headers: &HeaderMap) -> IpAddr {
-    // Fly.io sets Fly-Client-IP; fallback to CF-Connecting-IP; fallback to loopback
+pub(crate) fn extract_ip(headers: &HeaderMap, peer_ip: Option<IpAddr>, state: &AppState) -> IpAddr {
+    let peer_ip = peer_ip.unwrap_or(IpAddr::from([127, 0, 0, 1]));
+    if !state.trusted_proxy_ips.contains(&peer_ip) {
+        return peer_ip;
+    }
+
     headers
         .get("Fly-Client-IP")
         .or_else(|| headers.get("CF-Connecting-IP"))
+        .or_else(|| headers.get("X-Forwarded-For"))
         .or_else(|| headers.get("X-Real-IP"))
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(IpAddr::from([127, 0, 0, 1]))
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(',').next())
+        .map(str::trim)
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(peer_ip)
 }
 
 pub(crate) async fn send_verification_email(
@@ -633,28 +696,35 @@ pub async fn confirm_password_reset(
 
     let new_hash = hash_password(&req.new_password)?;
 
-    let rows_updated = sqlx::query!(
+    let updated = sqlx::query!(
         r#"
         UPDATE users
         SET password_hash = $1,
-            email_verify_token = NULL,
-            email_verify_expires_at = NULL
-        WHERE email_verify_token = $2
-          AND email_verify_expires_at > NOW()
+            password_reset_token = NULL,
+            password_reset_expires_at = NULL
+        WHERE password_reset_token = $2
+          AND password_reset_expires_at > NOW()
           AND deleted_at IS NULL
+        RETURNING id
         "#,
         new_hash,
         req.token,
     )
-    .execute(state.db.pool())
-    .await?
-    .rows_affected();
+    .fetch_optional(state.db.pool())
+    .await?;
 
-    if rows_updated == 0 {
+    let Some(updated) = updated else {
         return Err(AppError::BadRequest(
             "Invalid or expired reset token".to_string(),
         ));
-    }
+    };
+
+    sqlx::query!(
+        "UPDATE sessions SET revoked_at = NOW() WHERE user_id = $1",
+        updated.id
+    )
+    .execute(state.db.pool())
+    .await?;
 
     Ok(Json(
         serde_json::json!({ "message": "Password updated successfully" }),

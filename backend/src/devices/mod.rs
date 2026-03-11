@@ -175,7 +175,8 @@ pub async fn register_or_reuse_device(
     validate_bootstrap(bootstrap)?;
 
     if let Some(installation_id) = bootstrap.installation_id {
-        if let Some(existing) = find_device_by_installation(user_id, installation_id, state).await? {
+        if let Some(existing) = find_device_by_installation(user_id, installation_id, state).await?
+        {
             sqlx::query(
                 r#"
                 UPDATE devices
@@ -342,10 +343,7 @@ pub async fn enqueue_sync_event(
     Ok(())
 }
 
-pub async fn take_sync_events(
-    device_id: Uuid,
-    state: &AppState,
-) -> AppResult<Vec<SyncEvent>> {
+pub async fn take_sync_events(device_id: Uuid, state: &AppState) -> AppResult<Vec<SyncEvent>> {
     let rows = sqlx::query(
         r#"
         UPDATE device_sync_events
@@ -372,7 +370,10 @@ pub async fn take_sync_events(
         .map_err(AppError::from)
 }
 
-async fn list_devices(auth: AuthDevice, State(state): State<AppState>) -> AppResult<Json<Vec<DeviceSummary>>> {
+async fn list_devices(
+    auth: AuthDevice,
+    State(state): State<AppState>,
+) -> AppResult<Json<Vec<DeviceSummary>>> {
     let rows = sqlx::query(
         r#"
         SELECT id, user_id, signal_device_id, installation_id, platform, label,
@@ -411,7 +412,9 @@ async fn create_trust_request(
     }
 
     enqueue_trust_request(target, auth.user_id, sync_public_key.as_deref(), &state).await?;
-    Ok(Json(serde_json::json!({ "status": "queued", "target_device_id": target })))
+    Ok(Json(
+        serde_json::json!({ "status": "queued", "target_device_id": target }),
+    ))
 }
 
 async fn approve_device(
@@ -506,10 +509,12 @@ async fn revoke_device(
     .execute(state.db.pool())
     .await?;
 
-    sqlx::query("UPDATE sessions SET revoked_at = NOW() WHERE device_id = $1 AND revoked_at IS NULL")
-        .bind(target_device_id)
-        .execute(state.db.pool())
-        .await?;
+    sqlx::query(
+        "UPDATE sessions SET revoked_at = NOW() WHERE device_id = $1 AND revoked_at IS NULL",
+    )
+    .bind(target_device_id)
+    .execute(state.db.pool())
+    .await?;
 
     send_live_sync_event(
         target_device_id,
@@ -534,7 +539,9 @@ async fn revoke_device(
         .await?;
     }
 
-    Ok(Json(serde_json::json!({ "status": "revoked", "device_id": target_device_id })))
+    Ok(Json(
+        serde_json::json!({ "status": "revoked", "device_id": target_device_id }),
+    ))
 }
 
 async fn get_sync_events(
@@ -655,7 +662,11 @@ async fn next_signal_device_id(user_id: Uuid, state: &AppState) -> AppResult<i32
     }
 
     let max_device_id = max_signal_device_id.max(max_identity_device_id);
-    Ok(if max_device_id == 0 { 1 } else { max_device_id + 1 })
+    Ok(if max_device_id == 0 {
+        1
+    } else {
+        max_device_id + 1
+    })
 }
 
 fn validate_bootstrap(bootstrap: &DeviceBootstrap) -> AppResult<()> {
@@ -675,7 +686,10 @@ fn validate_bootstrap(bootstrap: &DeviceBootstrap) -> AppResult<()> {
 }
 
 fn validate_sync_public_key(sync_public_key: Option<&str>) -> AppResult<Option<String>> {
-    let Some(sync_public_key) = sync_public_key.map(str::trim).filter(|value| !value.is_empty()) else {
+    let Some(sync_public_key) = sync_public_key
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
         return Ok(None);
     };
 

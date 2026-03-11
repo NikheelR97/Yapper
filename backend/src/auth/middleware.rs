@@ -4,7 +4,11 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use dashmap::DashMap;
-use std::{net::IpAddr, time::Instant};
+use std::{
+    net::IpAddr,
+    sync::Mutex,
+    time::{Duration, Instant},
+};
 
 use super::service::validate_access_token;
 use crate::{
@@ -169,20 +173,33 @@ impl AuthUser {
 /// Per-IP failed login tracker.
 /// 5 failed attempts → 15-minute lockout. No Redis needed.
 pub struct LoginRateLimiter {
-    state: DashMap<IpAddr, (u32, Option<Instant>)>,
+    state: DashMap<IpAddr, LoginRateLimitEntry>,
+    last_gc: Mutex<Instant>,
+}
+
+#[derive(Clone, Copy)]
+struct LoginRateLimitEntry {
+    failures: u32,
+    lockout_until: Option<Instant>,
+    last_event: Instant,
 }
 
 impl LoginRateLimiter {
+    const LOCKOUT_SECS: u64 = 900;
+    const GC_INTERVAL_SECS: u64 = 300;
+    const MAX_ENTRIES: usize = 50_000;
+
     pub fn new() -> Self {
         Self {
             state: DashMap::new(),
+            last_gc: Mutex::new(Instant::now()),
         }
     }
 
     pub fn is_locked(&self, ip: IpAddr) -> bool {
+        self.maybe_gc();
         if let Some(entry) = self.state.get(&ip) {
-            let (_, lockout_until) = *entry;
-            if let Some(until) = lockout_until {
+            if let Some(until) = entry.lockout_until {
                 if Instant::now() < until {
                     return true;
                 }
@@ -193,27 +210,91 @@ impl LoginRateLimiter {
 
     /// Record a failed login attempt. Returns true if IP is now locked out.
     pub fn record_failure(&self, ip: IpAddr) -> bool {
-        let mut entry = self.state.entry(ip).or_insert((0, None));
-        let (count, lockout) = &mut *entry;
+        self.maybe_gc();
+        self.enforce_capacity();
+
+        let now = Instant::now();
+        let mut entry = self.state.entry(ip).or_insert(LoginRateLimitEntry {
+            failures: 0,
+            lockout_until: None,
+            last_event: now,
+        });
 
         // Clear expired lockout
-        if let Some(until) = lockout {
-            if Instant::now() >= *until {
-                *count = 0;
-                *lockout = None;
+        if let Some(until) = entry.lockout_until {
+            if now >= until {
+                entry.failures = 0;
+                entry.lockout_until = None;
             }
         }
 
-        *count += 1;
-        if *count >= 5 {
-            *lockout = Some(Instant::now() + std::time::Duration::from_secs(900));
+        entry.failures += 1;
+        entry.last_event = now;
+        if entry.failures >= 5 {
+            entry.lockout_until = Some(now + Duration::from_secs(Self::LOCKOUT_SECS));
             return true;
         }
         false
     }
 
     pub fn record_success(&self, ip: IpAddr) {
+        self.maybe_gc();
         self.state.remove(&ip);
+    }
+
+    fn maybe_gc(&self) {
+        let now = Instant::now();
+        let mut last_gc = self
+            .last_gc
+            .lock()
+            .expect("login limiter gc mutex poisoned");
+        if now.duration_since(*last_gc) < Duration::from_secs(Self::GC_INTERVAL_SECS) {
+            return;
+        }
+        *last_gc = now;
+        drop(last_gc);
+
+        let mut expired = Vec::new();
+        for entry in self.state.iter() {
+            let remove = match entry.lockout_until {
+                Some(until) => now >= until,
+                None => {
+                    now.duration_since(entry.last_event) >= Duration::from_secs(Self::LOCKOUT_SECS)
+                }
+            };
+            if remove {
+                expired.push(*entry.key());
+            }
+        }
+        for ip in expired {
+            self.state.remove(&ip);
+        }
+    }
+
+    fn enforce_capacity(&self) {
+        if self.state.len() < Self::MAX_ENTRIES {
+            return;
+        }
+
+        let now = Instant::now();
+        let mut removable = self
+            .state
+            .iter()
+            .filter_map(|entry| {
+                let expired_lockout = entry.lockout_until.is_some_and(|until| now >= until);
+                if entry.lockout_until.is_none() || expired_lockout {
+                    Some((*entry.key(), entry.last_event))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        removable.sort_by_key(|(_, last_event)| *last_event);
+
+        let remove_count = self.state.len().saturating_sub(Self::MAX_ENTRIES) + 1;
+        for (ip, _) in removable.into_iter().take(remove_count) {
+            self.state.remove(&ip);
+        }
     }
 }
 

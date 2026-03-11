@@ -16,7 +16,7 @@ use governor::{
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use std::{num::NonZeroU32, sync::Arc};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use uuid::Uuid;
 
 use crate::{devices::DeviceTrustState, AppState};
@@ -27,6 +27,8 @@ const MAX_WS_FRAME_SIZE: usize = 64 * 1024;
 const MAX_FANOUT_MEMBERS: i64 = 500;
 /// Max concurrent WebSocket connections per user (prevents memory exhaustion).
 const MAX_CONNECTIONS_PER_USER: usize = 5;
+/// Max queued outbound messages per socket before the connection is dropped.
+const MAX_OUTBOUND_QUEUE: usize = 256;
 
 /// Per-user WebSocket message rate limiter (5 msg/sec, burst of 20).
 type MsgRateLimiter = Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>;
@@ -42,14 +44,29 @@ impl ConnectionId {
 }
 
 /// Per-connection sender. Messages sent here are forwarded to the WebSocket.
-pub type ConnTx = mpsc::UnboundedSender<WsOutbound>;
+pub type ConnTx = mpsc::Sender<WsOutbound>;
+
+#[derive(Clone)]
+pub struct ConnectionHandle {
+    tx: ConnTx,
+    close_tx: watch::Sender<bool>,
+}
+
+#[derive(Clone)]
+struct ConnectionMeta {
+    user_id: Uuid,
+    device_id: Option<Uuid>,
+    route_user_level: bool,
+    close_tx: watch::Sender<bool>,
+}
 
 /// The hub holds all active connections indexed by UserId -> ConnectionId -> Sender.
 /// DashMap gives lock-free concurrent reads (critical for high fan-out).
 pub struct Hub {
     /// user_id -> map of connection_id -> sender
-    connections: DashMap<Uuid, DashMap<ConnectionId, ConnTx>>,
-    device_connections: DashMap<Uuid, DashMap<ConnectionId, ConnTx>>,
+    connections: DashMap<Uuid, DashMap<ConnectionId, ConnectionHandle>>,
+    device_connections: DashMap<Uuid, DashMap<ConnectionId, ConnectionHandle>>,
+    connection_meta: DashMap<ConnectionId, ConnectionMeta>,
     /// Per-user message rate limiters — cleaned up on full disconnect.
     msg_limiters: DashMap<Uuid, MsgRateLimiter>,
     /// Typing auto-stop timers keyed by (channel_id, user_id). Aborted on new TypingStart.
@@ -65,6 +82,7 @@ impl Hub {
         Self {
             connections: DashMap::new(),
             device_connections: DashMap::new(),
+            connection_meta: DashMap::new(),
             msg_limiters: DashMap::new(),
             typing_timers: DashMap::new(),
             away_timers: DashMap::new(),
@@ -94,25 +112,35 @@ impl Hub {
         device_id: Option<Uuid>,
         route_user_level: bool,
         conn_id: ConnectionId,
-        tx: ConnTx,
+        handle: ConnectionHandle,
     ) -> bool {
         if route_user_level {
             let user_conns = self.connections.entry(user_id).or_default();
             if user_conns.len() >= MAX_CONNECTIONS_PER_USER {
                 return false;
             }
-            user_conns.insert(conn_id.clone(), tx.clone());
+            user_conns.insert(conn_id.clone(), handle.clone());
         }
         if let Some(device_id) = device_id {
             self.device_connections
                 .entry(device_id)
                 .or_default()
-                .insert(conn_id, tx);
+                .insert(conn_id.clone(), handle.clone());
         }
+        self.connection_meta.insert(
+            conn_id,
+            ConnectionMeta {
+                user_id,
+                device_id,
+                route_user_level,
+                close_tx: handle.close_tx,
+            },
+        );
         true
     }
 
     pub fn unregister(&self, user_id: &Uuid, device_id: Option<&Uuid>, conn_id: &ConnectionId) {
+        self.connection_meta.remove(conn_id);
         if let Some(user_conns) = self.connections.get(user_id) {
             user_conns.remove(conn_id);
             if user_conns.is_empty() {
@@ -132,6 +160,39 @@ impl Hub {
                 if device_conns.is_empty() {
                     drop(device_conns);
                     self.device_connections.remove(device_id);
+                }
+            }
+        }
+    }
+
+    fn disconnect_connection(&self, conn_id: &ConnectionId) {
+        let Some((conn_id, meta)) = self.connection_meta.remove(conn_id) else {
+            return;
+        };
+
+        let _ = meta.close_tx.send(true);
+
+        if meta.route_user_level {
+            if let Some(user_conns) = self.connections.get(&meta.user_id) {
+                user_conns.remove(&conn_id);
+                if user_conns.is_empty() {
+                    drop(user_conns);
+                    self.connections.remove(&meta.user_id);
+                    self.msg_limiters.remove(&meta.user_id);
+                    if let Some((_, h)) = self.away_timers.remove(&meta.user_id) {
+                        h.abort();
+                    }
+                    self.away_users.remove(&meta.user_id);
+                }
+            }
+        }
+
+        if let Some(device_id) = meta.device_id {
+            if let Some(device_conns) = self.device_connections.get(&device_id) {
+                device_conns.remove(&conn_id);
+                if device_conns.is_empty() {
+                    drop(device_conns);
+                    self.device_connections.remove(&device_id);
                 }
             }
         }
@@ -184,16 +245,30 @@ impl Hub {
     /// Send a message to all connections of a specific user.
     pub fn send_to_user(&self, user_id: &Uuid, msg: WsOutbound) {
         if let Some(user_conns) = self.connections.get(user_id) {
+            let mut stale = Vec::new();
             for entry in user_conns.iter() {
-                let _ = entry.value().send(msg.clone());
+                if entry.value().tx.try_send(msg.clone()).is_err() {
+                    stale.push(entry.key().clone());
+                }
+            }
+            drop(user_conns);
+            for conn_id in stale {
+                self.disconnect_connection(&conn_id);
             }
         }
     }
 
     pub fn send_to_device(&self, device_id: &Uuid, msg: WsOutbound) {
         if let Some(device_conns) = self.device_connections.get(device_id) {
+            let mut stale = Vec::new();
             for entry in device_conns.iter() {
-                let _ = entry.value().send(msg.clone());
+                if entry.value().tx.try_send(msg.clone()).is_err() {
+                    stale.push(entry.key().clone());
+                }
+            }
+            drop(device_conns);
+            for conn_id in stale {
+                self.disconnect_connection(&conn_id);
             }
         }
     }
@@ -286,7 +361,7 @@ pub enum WsOutbound {
 // ─── Shared helpers ──────────────────────────────────────────────────────────
 
 fn send_ws_error(tx: &ConnTx, code: u16, message: &str) {
-    let _ = tx.send(WsOutbound::Error {
+    let _ = tx.try_send(WsOutbound::Error {
         code,
         message: message.to_string(),
     });
@@ -310,19 +385,35 @@ pub async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> 
 async fn handle_socket(socket: WebSocket, state: AppState) {
     let (mut sender, mut receiver) = socket.split();
     let conn_id = ConnectionId::new();
-    let (tx, mut rx) = mpsc::unbounded_channel::<WsOutbound>();
+    let (tx, mut rx) = mpsc::channel::<WsOutbound>(MAX_OUTBOUND_QUEUE);
+    let (close_tx, mut close_rx) = watch::channel(false);
 
     let mut send_task = tokio::spawn(async move {
-        while let Some(msg) = rx.recv().await {
-            let text = match serde_json::to_string(&msg) {
-                Ok(t) => t,
-                Err(e) => {
-                    tracing::error!("WS serialize error: {e}");
-                    continue;
+        loop {
+            tokio::select! {
+                changed = close_rx.changed() => {
+                    if changed.is_ok() && *close_rx.borrow() {
+                        break;
+                    }
+                    if changed.is_err() {
+                        break;
+                    }
                 }
-            };
-            if sender.send(Message::Text(text)).await.is_err() {
-                break;
+                msg = rx.recv() => {
+                    let Some(msg) = msg else {
+                        break;
+                    };
+                    let text = match serde_json::to_string(&msg) {
+                        Ok(t) => t,
+                        Err(e) => {
+                            tracing::error!("WS serialize error: {e}");
+                            continue;
+                        }
+                    };
+                    if sender.send(Message::Text(text)).await.is_err() {
+                        break;
+                    }
+                }
             }
         }
     });
@@ -335,21 +426,21 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         }
     };
 
-    if !state
-        .hub
-        .register(
-            auth.user_id,
-            auth.device_id,
-            auth.trust_state != Some(DeviceTrustState::PendingTrust),
-            conn_id.clone(),
-            tx.clone(),
-        )
-    {
+    if !state.hub.register(
+        auth.user_id,
+        auth.device_id,
+        auth.trust_state != Some(DeviceTrustState::PendingTrust),
+        conn_id.clone(),
+        ConnectionHandle {
+            tx: tx.clone(),
+            close_tx: close_tx.clone(),
+        },
+    ) {
         send_ws_error(&tx, 4008, "Too many connections");
         send_task.abort();
         return;
     }
-    let _ = tx.send(WsOutbound::Ready {
+    let _ = tx.try_send(WsOutbound::Ready {
         user_id: auth.user_id,
     });
     if auth.trust_state != Some(DeviceTrustState::PendingTrust) {
@@ -380,7 +471,9 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     update_last_seen(auth.user_id, &state);
 
     // Only broadcast offline if the user has no remaining connections
-    if auth.trust_state != Some(DeviceTrustState::PendingTrust) && !state.hub.is_online(&auth.user_id) {
+    if auth.trust_state != Some(DeviceTrustState::PendingTrust)
+        && !state.hub.is_online(&auth.user_id)
+    {
         let last_seen = chrono::Utc::now().to_rfc3339();
         broadcast_presence(auth.user_id, false, Some(last_seen), false, &state).await;
     }
@@ -402,7 +495,7 @@ async fn run_receive_loop(
                         handle_inbound(text, user_id, device_id, state, tx).await;
                     }
                     Some(Ok(Message::Close(_))) | None => break,
-                    Some(Ok(Message::Ping(_))) => { let _ = tx.send(WsOutbound::Pong); }
+                    Some(Ok(Message::Ping(_))) => { let _ = tx.try_send(WsOutbound::Pong); }
                     _ => {}
                 }
             }
@@ -503,7 +596,7 @@ async fn wait_for_auth(
     receiver: &mut futures::stream::SplitStream<WebSocket>,
     state: &AppState,
 ) -> Option<WsAuth> {
-    let timeout = tokio::time::Duration::from_secs(10);
+    let timeout = tokio::time::Duration::from_secs(5);
     let result = tokio::time::timeout(timeout, receiver.next()).await;
 
     let frame = match result {
@@ -615,7 +708,8 @@ async fn deliver_offline_messages(
             let Ok(sender_device_id) = row.try_get::<Uuid, _>("sender_device_id") else {
                 continue;
             };
-            let Ok(sender_signal_device_id) = row.try_get::<i32, _>("sender_signal_device_id") else {
+            let Ok(sender_signal_device_id) = row.try_get::<i32, _>("sender_signal_device_id")
+            else {
                 continue;
             };
             let Ok(recipient_device_id) = row.try_get::<Uuid, _>("recipient_device_id") else {
@@ -642,7 +736,7 @@ async fn deliver_offline_messages(
                 "msg_num": msg_num,
             });
 
-            if tx.send(WsOutbound::Message { payload }).is_ok() {
+            if tx.try_send(WsOutbound::Message { payload }).is_ok() {
                 delivered_ids.push(envelope_id);
             }
         }
@@ -702,7 +796,7 @@ async fn deliver_offline_messages(
             "ephemeral_key": ek.as_ref().map(|k| BASE64.encode(k)), "opk_id": opk_id,
         });
 
-        if tx.send(WsOutbound::Message { payload }).is_ok() {
+        if tx.try_send(WsOutbound::Message { payload }).is_ok() {
             delivered_ids.push(msg_id);
         }
     }
@@ -777,7 +871,7 @@ async fn deliver_pending_key_dists(
             "ciphertext": BASE64.encode(&ct),
             "ek_public":  BASE64.encode(&ek),
         });
-        if tx.send(WsOutbound::Message { payload }).is_err() {
+        if tx.try_send(WsOutbound::Message { payload }).is_err() {
             tracing::debug!("Recipient disconnected during key dist delivery");
         }
     }
@@ -794,7 +888,7 @@ async fn deliver_pending_sync_events(device_id: Option<&Uuid>, state: &AppState,
 
     for event in &events {
         let payload = crate::devices::sync_event_payload(event);
-        if tx.send(WsOutbound::Message { payload }).is_err() {
+        if tx.try_send(WsOutbound::Message { payload }).is_err() {
             tracing::debug!("Device disconnected during sync event delivery");
             break;
         }
@@ -853,7 +947,7 @@ async fn handle_inbound(
 
     match msg {
         WsInbound::Ping => {
-            let _ = tx.send(WsOutbound::Pong);
+            let _ = tx.try_send(WsOutbound::Pong);
         }
         WsInbound::SendDm {
             conversation_id,
@@ -1314,10 +1408,17 @@ mod tests {
         let hub = Hub::new();
         let user_id = Uuid::new_v4();
         let conn_id = ConnectionId::new();
-        let (tx, _rx) = mpsc::unbounded_channel();
+        let (tx, _rx) = mpsc::channel(MAX_OUTBOUND_QUEUE);
+        let (close_tx, _close_rx) = watch::channel(false);
 
         assert!(!hub.is_online(&user_id));
-        assert!(hub.register(user_id, None, true, conn_id.clone(), tx));
+        assert!(hub.register(
+            user_id,
+            None,
+            true,
+            conn_id.clone(),
+            ConnectionHandle { tx, close_tx },
+        ));
         assert!(hub.is_online(&user_id));
         hub.unregister(&user_id, None, &conn_id);
         assert!(!hub.is_online(&user_id));
@@ -1329,13 +1430,27 @@ mod tests {
         let user_id = Uuid::new_v4();
         for _ in 0..MAX_CONNECTIONS_PER_USER {
             let conn_id = ConnectionId::new();
-            let (tx, _rx) = mpsc::unbounded_channel();
-            assert!(hub.register(user_id, None, true, conn_id, tx));
+            let (tx, _rx) = mpsc::channel(MAX_OUTBOUND_QUEUE);
+            let (close_tx, _close_rx) = watch::channel(false);
+            assert!(hub.register(
+                user_id,
+                None,
+                true,
+                conn_id,
+                ConnectionHandle { tx, close_tx },
+            ));
         }
         // One more should be rejected
         let conn_id = ConnectionId::new();
-        let (tx, _rx) = mpsc::unbounded_channel();
-        assert!(!hub.register(user_id, None, true, conn_id, tx));
+        let (tx, _rx) = mpsc::channel(MAX_OUTBOUND_QUEUE);
+        let (close_tx, _close_rx) = watch::channel(false);
+        assert!(!hub.register(
+            user_id,
+            None,
+            true,
+            conn_id,
+            ConnectionHandle { tx, close_tx },
+        ));
     }
 
     #[test]
@@ -1345,6 +1460,3 @@ mod tests {
         hub.send_to_user(&user_id, WsOutbound::Pong);
     }
 }
-
-
-
