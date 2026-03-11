@@ -1,0 +1,123 @@
+---
+---
+
+<header class="nav">
+  <div class="nav-inner">
+    <!-- Logo -->
+    <a href="/" class="logo" aria-label="Yapper home">
+      <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+        <defs>
+          <radialGradient id="sphere-nav" cx="38%" cy="35%" r="60%">
+            <stop offset="0%" stop-color="#c4b5fd" />
+            <stop offset="45%" stop-color="#7c3aed" />
+            <stop offset="100%" stop-color="#2e1065" />
+          </radialGradient>
+        </defs>
+        <circle cx="14" cy="14" r="13" fill="url(#sphere-nav)" />
+        <ellipse cx="14" cy="14" rx="6" ry="13" stroke="rgba(255,255,255,0.15)" stroke-width="1" fill="none" />
+        <ellipse cx="14" cy="14" rx="13" ry="5.5" stroke="rgba(255,255,255,0.15)" stroke-width="1" fill="none" />
+      </svg>
+      <span class="logo-text">Yapper</span>
+    </a>
+
+    <!-- Nav links -->
+    <nav aria-label="Site navigation">
+      <ul class="nav-links">
+        <li><a href="#features" class="nav-link">Features</a></li>
+        <li><a href="#safety" class="nav-link">Safety</a></li>
+        <li><a href="#pricing" class="nav-link">Pricing</a></li>
+      </ul>
+    </nav>
+
+    <!-- CTA -->
+    <a href="#hero" class="cta-btn">Join the Wishlist</a>
+  </div>
+</header>
+
+<style>
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 200;
+    height: 64px;
+    background: rgba(10, 10, 15, 0.9);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .nav-inner {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 0 1.5rem;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    gap: 2rem;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    text-decoration: none;
+    flex-shrink: 0;
+  }
+
+  .logo-text {
+    font-size: 1.0625rem;
+    font-weight: 700;
+    color: #f9fafb;
+    letter-spacing: -0.01em;
+  }
+
+  .nav-links {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    flex: 1;
+  }
+
+  .nav-link {
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: #9ca3af;
+    text-decoration: none;
+    padding: 0.375rem 0.75rem;
+    border-radius: 0.375rem;
+    transition: color 0.15s, background 0.15s;
+  }
+
+  .nav-link:hover {
+    color: #f9fafb;
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .cta-btn {
+    flex-shrink: 0;
+    background: var(--color-brand, #7c3aed);
+    color: white;
+    font-size: 0.875rem;
+    font-weight: 600;
+    padding: 0 1.125rem;
+    height: 36px;
+    border-radius: 9999px;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    transition: opacity 0.15s;
+  }
+
+  .cta-btn:hover {
+    opacity: 0.9;
+  }
+
+  @media (max-width: 640px) {
+    .nav-links {
+      display: none;
+    }
+  }
+</style>
