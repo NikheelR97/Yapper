@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE users\n        SET password_reset_token = $1, password_reset_expires_at = NOW() + INTERVAL '1 hour'\n        WHERE email = $2 AND deleted_at IS NULL\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7d594462b5a973a90a0fbb0207faddfeda1301150934e40ef8d06eccfd3537be"
+}

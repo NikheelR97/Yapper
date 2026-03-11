@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, account_type FROM users WHERE email = $1 AND deleted_at IS NULL",
+  "query": "SELECT id, account_type, email_verified FROM users WHERE email = $1 AND deleted_at IS NULL",
   "describe": {
     "columns": [
       {
@@ -12,6 +12,11 @@
         "ordinal": 1,
         "name": "account_type",
         "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "email_verified",
+        "type_info": "Bool"
       }
     ],
     "parameters": {
@@ -21,8 +26,9 @@
     },
     "nullable": [
       false,
+      false,
       false
     ]
   },
-  "hash": "64a63111ef3b9b139638bf8949577b53e25b73efb3fb584d7b260a8b8a142f23"
+  "hash": "2cd672ac0f812aeff8ea223d179c681dff8b5a57c4e147a759b8ab580a9b5e2c"
 }

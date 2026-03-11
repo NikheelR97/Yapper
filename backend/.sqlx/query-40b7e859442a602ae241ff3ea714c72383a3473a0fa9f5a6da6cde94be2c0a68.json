@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO oauth_login_codes (code_hash, user_id, provider, is_new, expires_at)\n        VALUES ($1, $2, $3, $4, NOW() + INTERVAL '5 minutes')\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Uuid",
+        "Text",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "40b7e859442a602ae241ff3ea714c72383a3473a0fa9f5a6da6cde94be2c0a68"
+}

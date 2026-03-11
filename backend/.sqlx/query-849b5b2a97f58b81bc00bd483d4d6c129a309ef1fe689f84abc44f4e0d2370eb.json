@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE oauth_login_codes\n        SET consumed_at = NOW()\n        WHERE code_hash = $1\n          AND consumed_at IS NULL\n          AND expires_at > NOW()\n        RETURNING user_id, is_new\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "is_new",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "849b5b2a97f58b81bc00bd483d4d6c129a309ef1fe689f84abc44f4e0d2370eb"
+}

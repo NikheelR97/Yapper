@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE users\n        SET password_hash = $1,\n            password_reset_token = NULL,\n            password_reset_expires_at = NULL\n        WHERE password_reset_token = $2\n          AND password_reset_expires_at > NOW()\n          AND deleted_at IS NULL\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "a517f959981d7b9a57092065ebe792cfe469c8dc89b80f26a5a9bac78e2d522c"
+}
