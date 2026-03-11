@@ -8,7 +8,7 @@
  * Key distribution uses ECIES (one-shot, no session state):
  *   1. Generate ephemeral X25519 key pair
  *   2. DH(ek_priv, recipient_dh_pub) → shared secret
- *   3. HKDF(shared || ek_pub || recipient_pub, "SenderKeyDist_v1") → enc_key
+ *   3. HKDF(shared || ek_pub || recipient_pub || sender_dh_pub, "SenderKeyDist_v1") → enc_key
  *   4. AES-256-GCM encrypt the SenderKeyDistPayload JSON
  *
  * Encryption of channel messages:
@@ -382,8 +382,10 @@ export async function decryptWithSenderKey(
 export async function encryptSenderKeyDist(
   payload: SenderKeyDistPayload,
   recipientDhPub: Uint8Array,
+  senderDhPub: Uint8Array,
 ): Promise<{ ciphertext: Uint8Array; ephemeralKey: Uint8Array }> {
   assertValidX25519PublicKey(recipientDhPub, "recipient DH public key");
+  assertValidX25519PublicKey(senderDhPub, "sender DH public key");
   const ekPriv = x25519.utils.randomSecretKey();
   const ekPub = x25519.getPublicKey(ekPriv);
 
@@ -392,8 +394,8 @@ export async function encryptSenderKeyDist(
     throw new Error("Rejected all-zero sender key distribution shared secret");
   }
 
-  // Bind both public keys to prevent key-compromise impersonation
-  const ikm = concat(shared, ekPub, recipientDhPub);
+  // Bind sender identity to prevent key-substitution by a malicious server
+  const ikm = concat(shared, ekPub, recipientDhPub, senderDhPub);
   const encKey = hkdf(sha256, ikm, ZERO_SALT, DIST_INFO, 32);
 
   const plaintext = new TextEncoder().encode(JSON.stringify(payload));
@@ -423,6 +425,7 @@ export async function decryptSenderKeyDist(
   ephemeralKeyPub: Uint8Array,
   myDhPriv: Uint8Array,
   myDhPub: Uint8Array,
+  senderDhPub?: Uint8Array,
 ): Promise<SenderKeyDistPayload> {
   assertValidX25519PublicKey(
     ephemeralKeyPub,
@@ -433,7 +436,10 @@ export async function decryptSenderKeyDist(
   if (isAllZero(shared)) {
     throw new Error("Rejected all-zero sender key distribution shared secret");
   }
-  const ikm = concat(shared, ephemeralKeyPub, myDhPub);
+  // Include sender DH pub key when available to bind distribution to sender identity
+  const ikm = senderDhPub
+    ? concat(shared, ephemeralKeyPub, myDhPub, senderDhPub)
+    : concat(shared, ephemeralKeyPub, myDhPub);
   const encKey = hkdf(sha256, ikm, ZERO_SALT, DIST_INFO, 32);
 
   const iv = ciphertext.slice(0, 12);

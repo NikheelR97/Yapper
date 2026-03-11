@@ -84,12 +84,17 @@ describe("sender_keys historical decrypt", () => {
       senderIdentity,
     );
 
-    const encrypted = await encryptSenderKeyDist(payload, recipientPublicKey);
+    const encrypted = await encryptSenderKeyDist(
+      payload,
+      recipientPublicKey,
+      senderIdentity.dhPublicKey,
+    );
     const decrypted = await decryptSenderKeyDist(
       encrypted.ciphertext,
       encrypted.ephemeralKey,
       recipientPrivateKey,
       recipientPublicKey,
+      senderIdentity.dhPublicKey,
     );
 
     expect(() =>

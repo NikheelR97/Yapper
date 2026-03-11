@@ -595,20 +595,32 @@ pub(crate) fn append_set_cookie_headers(
 
 pub(crate) fn extract_ip(headers: &HeaderMap, peer_ip: Option<IpAddr>, state: &AppState) -> IpAddr {
     let peer_ip = peer_ip.unwrap_or(IpAddr::from([127, 0, 0, 1]));
-    if !state.trusted_proxy_ips.contains(&peer_ip) {
-        return peer_ip;
+
+    if std::env::var("FLY_APP_NAME").is_ok() {
+        // Production: behind Fly.io load balancer — only trust Fly-Client-IP
+        // (set by Fly.io proxy; clients cannot forge it)
+        return headers
+            .get("Fly-Client-IP")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(peer_ip);
     }
 
-    headers
-        .get("Fly-Client-IP")
-        .or_else(|| headers.get("CF-Connecting-IP"))
-        .or_else(|| headers.get("X-Forwarded-For"))
-        .or_else(|| headers.get("X-Real-IP"))
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.split(',').next())
-        .map(str::trim)
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(peer_ip)
+    // Local dev / other envs: trust proxy headers only from known proxy IPs
+    if state.trusted_proxy_ips.contains(&peer_ip) {
+        if let Some(ip) = headers
+            .get("CF-Connecting-IP")
+            .or_else(|| headers.get("X-Forwarded-For"))
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.split(',').next())
+            .map(str::trim)
+            .and_then(|s| s.parse().ok())
+        {
+            return ip;
+        }
+    }
+
+    peer_ip
 }
 
 pub(crate) async fn send_verification_email(

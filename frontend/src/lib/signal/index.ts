@@ -730,6 +730,7 @@ export async function joinChannel(channelId: string): Promise<void> {
       const { ciphertext, ephemeralKey } = await encryptSenderKeyDist(
         distPayload,
         recipientDhPub,
+        identity.dhPublicKey,
       );
       distributions.push({
         to_user_id: member.user_id,
@@ -786,24 +787,37 @@ async function fetchAndStorePendingDists(
     try {
       const ct = b64ToBytes(dist.ciphertext);
       const ek = b64ToBytes(dist.ek_public);
+      // Fetch sender bundle before decryption to bind ECIES to sender identity (M-01)
+      const senderDeviceId = dist.from_device_id ?? null;
+      let senderBundle: Awaited<ReturnType<typeof fetchDeviceKeyBundle>> | null =
+        null;
+      if (senderDeviceId) {
+        senderBundle = await fetchDeviceKeyBundle(
+          dist.from_user,
+          senderDeviceId,
+        ).catch(() => null);
+      }
+      const senderDhPub = senderBundle
+        ? b64ToBytes(senderBundle.identity_dh_key)
+        : undefined;
       const payload = await decryptSenderKeyDist(
         ct,
         ek,
         identity.dhPrivateKey,
         identity.dhPublicKey,
+        senderDhPub,
       );
-      const senderDeviceId =
-        dist.from_device_id ?? payload.senderDeviceId ?? "legacy";
-      if (payload.identitySignature && senderDeviceId !== "legacy") {
-        const senderBundle = await fetchDeviceKeyBundle(
-          dist.from_user,
-          senderDeviceId,
-        );
+      const resolvedSenderDeviceId =
+        senderDeviceId ?? payload.senderDeviceId ?? "legacy";
+      if (payload.identitySignature && resolvedSenderDeviceId !== "legacy") {
+        const bundleForVerify =
+          senderBundle ??
+          (await fetchDeviceKeyBundle(dist.from_user, resolvedSenderDeviceId));
         verifySenderKeyDistPayload(
           payload,
-          b64ToBytes(senderBundle.identity_sig_key),
+          b64ToBytes(bundleForVerify.identity_sig_key),
           dist.from_user,
-          senderDeviceId,
+          resolvedSenderDeviceId,
         );
       }
       const incomingChainKey = b64ToBytes(payload.chainKey);
@@ -811,7 +825,7 @@ async function fetchAndStorePendingDists(
       const existing = await ks.loadReceiverKey(
         payload.channelId,
         dist.from_user,
-        senderDeviceId,
+        resolvedSenderDeviceId,
       );
 
       if (
@@ -830,7 +844,7 @@ async function fetchAndStorePendingDists(
       const record: SenderKeyRecord = {
         channelId: payload.channelId,
         senderId: dist.from_user,
-        senderDeviceId,
+        senderDeviceId: resolvedSenderDeviceId,
         chainKey: incomingChainKey,
         signingPubKey: incomingSigningKey,
         iteration: payload.iteration,
@@ -947,22 +961,35 @@ export async function receiveSenderKeyDist(event: {
   try {
     const ct = b64ToBytes(event.ciphertext);
     const ek = b64ToBytes(event.ek_public);
+    // Fetch sender bundle before decryption to bind ECIES to sender identity (M-01)
+    const knownDeviceId = event.from_device_id ?? null;
+    let senderBundle: Awaited<ReturnType<typeof fetchDeviceKeyBundle>> | null =
+      null;
+    if (knownDeviceId) {
+      senderBundle = await fetchDeviceKeyBundle(
+        event.from_user,
+        knownDeviceId,
+      ).catch(() => null);
+    }
+    const senderDhPub = senderBundle
+      ? b64ToBytes(senderBundle.identity_dh_key)
+      : undefined;
     const payload = await decryptSenderKeyDist(
       ct,
       ek,
       identity.dhPrivateKey,
       identity.dhPublicKey,
+      senderDhPub,
     );
     const senderDeviceId =
-      event.from_device_id ?? payload.senderDeviceId ?? "legacy";
+      knownDeviceId ?? payload.senderDeviceId ?? "legacy";
     if (payload.identitySignature && senderDeviceId !== "legacy") {
-      const senderBundle = await fetchDeviceKeyBundle(
-        event.from_user,
-        senderDeviceId,
-      );
+      const bundleForVerify =
+        senderBundle ??
+        (await fetchDeviceKeyBundle(event.from_user, senderDeviceId));
       verifySenderKeyDistPayload(
         payload,
-        b64ToBytes(senderBundle.identity_sig_key),
+        b64ToBytes(bundleForVerify.identity_sig_key),
         event.from_user,
         senderDeviceId,
       );

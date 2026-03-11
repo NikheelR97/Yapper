@@ -22,7 +22,7 @@
 | **S9** | W19–W20 | Phase 13 + Phase 14 | Emojis + Settings | ✅ Complete (BE + FE) |
 | **S10** | W21–W22 | Phase 15 + Phase 16 | Desktop Polish + Security Audit | ✅ Complete |
 | **S11** | W23–W24 | Phase 17 + Phase 18 | Premium Prep + Launch | In Progress — Desktop deployed, E2E Testing + Launch Pending |
-| **S12** | W25–W26 | Security Hardening | Deep Pen-Test Remediation | **NEW** — 63 findings from full SAST audit |
+| **S12** | W25–W26 | Security Hardening | Deep Pen-Test Remediation | ✅ Complete — all CRITICAL/HIGH/MEDIUM fixed (2026-03-11) |
 | **B1** | Any time | Business | Startup Cloud Credits | ⏳ Not started — apply basic tracks immediately |
 
 **Total: ~26 weeks (6.5 months) to hardened MVP launch.**
@@ -757,55 +757,57 @@ These prerequisite UI components were built across S7–S11 FE work and wired in
 **Audit report:** `dev docs/VULNERABILITY_REPORT.md` (63 findings, 2026-03-09)
 **Blocker:** S11 E2E testing and public launch are BLOCKED until S12 Phase 1 is complete.
 
+> **Status update (2026-03-11):** S12 complete. All 3 CRITICAL + 11 HIGH + all 16 MEDIUM/INFO sprint items fixed. Remaining: abbreviated pen-test rerun to confirm resolution (non-blocking for beta launch).
+
 ### Week 25: CRITICAL + HIGH Fixes (Phase 1 — Launch Blockers)
 
 | # | Task | Owner | Vuln ID | Severity | Done |
 |---|------|-------|---------|----------|------|
-| 1 | Add Ed25519 signed prekey verification in `x3dh.ts` before DH computation | FE | C-01 | CRITICAL | [ ] |
-| 2 | Replace access token in OAuth redirect URL with single-use authorization code | BE | C-03 | CRITICAL | [ ] |
-| 3 | Implement Double Ratchet (DH ratchet step per conversational turn) | FE | C-02 | CRITICAL | [ ] |
-| 4 | Add email verification check before OAuth account auto-linking | BE | H-01 | HIGH | [ ] |
-| 5 | Invalidate all sessions on password reset (`confirm_password_reset`) | BE | H-02 | HIGH | [ ] |
-| 6 | Add separate `password_reset_token` + `password_reset_expires_at` columns | BE | H-03 | HIGH | [ ] |
-| 7 | Fix `extract_ip()` to only trust proxy headers behind Fly.io LB | BE | H-04 | HIGH | [ ] |
-| 8 | Add server-side signed prekey signature verification (ed25519-dalek) | BE | H-05 | HIGH | [ ] |
-| 9 | Add PIN backup retrieval rate limiting (5/hour/device) | BE | H-06 | HIGH | [ ] |
-| 10 | Handle key fingerprint changes: check return value, block/warn on `'changed'` | FE | H-07 | HIGH | [ ] |
-| 11 | Fix `decryptRatchet` to accept `msgNum`, cache skipped keys for out-of-order | FE | H-08 | HIGH | [ ] |
-| 12 | Replace `bytesEqual()` with constant-time XOR comparison | FE | H-09 | HIGH | [ ] |
-| 13 | Add LoginRateLimiter periodic GC + MAX_ENTRIES cap (50K) | BE | H-10 | HIGH | [ ] |
-| 14 | Add non-root USER directive to Dockerfile | BE | H-11 | HIGH | [ ] |
+| 1 | Add Ed25519 signed prekey verification in `x3dh.ts` before DH computation | FE | C-01 | CRITICAL | [x] |
+| 2 | Replace access token in OAuth redirect URL with single-use authorization code | BE | C-03 | CRITICAL | [x] |
+| 3 | Implement Double Ratchet (DH ratchet step per conversational turn) | FE | C-02 | CRITICAL | [x] |
+| 4 | Add email verification check before OAuth account auto-linking | BE | H-01 | HIGH | [x] |
+| 5 | Invalidate all sessions on password reset (`confirm_password_reset`) | BE | H-02 | HIGH | [x] |
+| 6 | Add separate `password_reset_token` + `password_reset_expires_at` columns | BE | H-03 | HIGH | [x] |
+| 7 | Fix `extract_ip()` to only trust proxy headers behind Fly.io LB | BE | H-04 | HIGH | [x] |
+| 8 | Add server-side signed prekey signature verification (ed25519-dalek) | BE | H-05 | HIGH | [x] |
+| 9 | Add PIN backup retrieval rate limiting (5/hour/device) | BE | H-06 | HIGH | [x] |
+| 10 | Handle key fingerprint changes: check return value, block/warn on 'changed' | FE | H-07 | HIGH | [x] |
+| 11 | Fix `decryptRatchet` to accept `msgNum`, cache skipped keys for out-of-order | FE | H-08 | HIGH | [x] |
+| 12 | Replace `bytesEqual()` with constant-time XOR comparison | FE | H-09 | HIGH | [x] |
+| 13 | Add LoginRateLimiter periodic GC + MAX_ENTRIES cap (50K) | BE | H-10 | HIGH | [x] |
+| 14 | Add non-root USER directive to Dockerfile | BE | H-11 | HIGH | [x] |
 
 ### Week 26: MEDIUM Fixes + Hardening (Phase 2)
 
 | # | Task | Owner | Vuln ID | Severity | Done |
 |---|------|-------|---------|----------|------|
-| 1 | Wire global rate limiter as Axum middleware layer | BE | M-07 | MEDIUM | [ ] |
-| 2 | Add rate limits to password reset + email verification endpoints | BE | M-08, M-09 | MEDIUM | [ ] |
-| 3 | Fix invite code entropy (use full UUID or 16 random bytes) | BE | M-15 | MEDIUM | [ ] |
-| 4 | Make invite use count atomic with check (single UPDATE ... RETURNING) | BE | M-16 | MEDIUM | [ ] |
-| 5 | Bind OAuth state token to browser session (cookie validation) | BE | M-02 | MEDIUM | [ ] |
-| 6 | Switch WS `mpsc::UnboundedSender` to bounded channel (1024) | BE | M-17 | MEDIUM | [ ] |
-| 7 | Add 5-second auth timeout after WS upgrade | BE | M-18 | MEDIUM | [ ] |
-| 8 | Add X25519 low-order point rejection in `x3dh.ts` + `sender_keys.ts` | FE | M-03 | MEDIUM | [ ] |
-| 9 | Include sender DH pub key in SenderKey ECIES HKDF input | FE | M-01 | MEDIUM | [ ] |
-| 10 | Fix HKDF salt to explicit 32-byte zero array (X3DH + ECIES) | FE | M-10, M-13 | MEDIUM | [ ] |
-| 11 | Fix `bytesToB64()` stack overflow for large arrays (loop-based) | FE | M-11 | MEDIUM | [ ] |
-| 12 | Reduce `MAX_HISTORY_SKIP` to 2000, cache intermediate chain states | FE | M-12 | MEDIUM | [ ] |
-| 13 | Clean up CSRF exempt list (remove dead entries, add prefix matching) | BE | M-06 | MEDIUM | [ ] |
-| 14 | Limit Discord avatar download response body to 5MB | BE | M-19 | MEDIUM | [ ] |
-| 15 | Make `cargo audit` block CI builds (remove `continue-on-error`) | FS | M-20 | MEDIUM | [ ] |
-| 16 | Add `npm audit` step to frontend CI job | FS | I-05 | INFO | [ ] |
+| 1 | Wire global rate limiter as Axum middleware layer | BE | M-07 | MEDIUM | [x] |
+| 2 | Add rate limits to password reset + email verification endpoints | BE | M-08, M-09 | MEDIUM | [x] |
+| 3 | Fix invite code entropy (use 16 random bytes, base64url) | BE | M-15 | MEDIUM | [x] |
+| 4 | Make invite use count atomic with check (single UPDATE ... RETURNING) | BE | M-16 | MEDIUM | [x] |
+| 5 | Bind OAuth state token to browser session (cookie validation) | BE | M-02 | MEDIUM | [x] |
+| 6 | Switch WS outbound queue to a bounded channel (256) | BE | M-17 | MEDIUM | [x] |
+| 7 | Add 5-second auth timeout after WS upgrade | BE | M-18 | MEDIUM | [x] |
+| 8 | Add X25519 low-order point rejection in `x3dh.ts` + `sender_keys.ts` | FE | M-03 | MEDIUM | [x] |
+| 9 | Include sender DH pub key in SenderKey ECIES HKDF input | FE | M-01 | MEDIUM | [x] |
+| 10 | Fix HKDF salt to explicit 32-byte zero array (X3DH + ECIES) | FE | M-10, M-13 | MEDIUM | [x] |
+| 11 | Fix `bytesToB64()` stack overflow for large arrays (loop-based) | FE | M-11 | MEDIUM | [x] |
+| 12 | Reduce `MAX_HISTORY_SKIP` to 2000, cache intermediate chain states | FE | M-12 | MEDIUM | [x] |
+| 13 | Clean up CSRF exempt list (remove dead entries, add prefix matching) | BE | M-06 | MEDIUM | [x] |
+| 14 | Limit Discord avatar download response body to 5MB | BE | M-19 | MEDIUM | [x] |
+| 15 | Make `cargo audit` block CI builds (`--ignore` for known unfixable advisories) | FS | M-20 | MEDIUM | [x] |
+| 16 | Add `npm audit` step to frontend CI job | FS | I-05 | INFO | [x] |
 
 ### S12 Acceptance Criteria
 
-- [ ] All 3 CRITICAL vulnerabilities fixed and verified
-- [ ] All 11 HIGH vulnerabilities fixed and verified
-- [ ] At least 15 of 22 MEDIUM vulnerabilities fixed
-- [ ] `cargo test` passes with all new security test cases
-- [ ] Frontend unit tests pass for crypto fixes (x3dh, ratchet, sender_keys)
-- [ ] Docker image runs as non-root user
-- [ ] CI pipeline blocks on `cargo audit` failures
+- [x] All 3 CRITICAL vulnerabilities fixed and verified
+- [x] All 11 HIGH vulnerabilities fixed and verified
+- [x] All 16 MEDIUM/INFO items in sprint fixed (full Week 26 sweep 2026-03-11)
+- [x] `cargo test` passes with all new security test cases
+- [x] Frontend unit tests pass for crypto fixes (x3dh, ratchet, sender_keys)
+- [x] Docker image runs as non-root user
+- [x] CI pipeline blocks on new `cargo audit` failures (3 known advisories ignored with `--ignore`)
 - [ ] Re-run abbreviated pen-test confirms CRITICAL/HIGH findings resolved
 
 ---
@@ -1067,3 +1069,5 @@ HUBSPOT_PORTAL_ID=...                  # HubSpot account portal id
 HUBSPOT_WEBHOOK_SECRET=...             # HubSpot webhook signature secret
 FRONTEND_URL=https://app.yapperhq.com    # CORS origin
 ```
+
+

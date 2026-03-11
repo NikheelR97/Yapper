@@ -68,9 +68,15 @@ jobs:
         run: cargo install cargo-audit --locked
 
       - name: Security audit
-        run: cargo audit
+        run: |
+          cargo audit \
+            --ignore RUSTSEC-2023-0071 \
+            --ignore RUSTSEC-2024-0363 \
+            --ignore RUSTSEC-2024-0421
+        # RUSTSEC-2023-0071: rsa/Marvin Attack — via sqlx-mysql (not a live code path; Postgres only)
+        # RUSTSEC-2024-0363: sqlx 0.7.4 — fix requires sqlx 0.8 major migration; tracked in backlog
+        # RUSTSEC-2024-0421: idna via validator 0.18 — fix requires validator upgrade; tracked in backlog
         working-directory: backend
-        continue-on-error: true  # RUSTSEC-2023-0071 (rsa/Marvin Attack) has no fix; we use Postgres only so sqlx-mysql is not a live code path. RUSTSEC-2024-0363 requires sqlx 0.8 migration; RUSTSEC-2024-0421 requires validator upgrade. Track in backlog.
 
       - name: Check sqlx query cache
         run: cargo sqlx prepare --check
