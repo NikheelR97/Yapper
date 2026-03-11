@@ -1,15 +1,15 @@
 <script lang="ts">
-	import { onMount, tick } from 'svelte';
+	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import {
 		serversStore,
 		fetchServers,
 		fetchChannels,
-		createServer,
-		createInvite,
 		joinByInvite,
 	} from '$stores/servers.js';
 	import type { Channel } from '$stores/servers.js';
+	import CreateServerModal from '$lib/components/chat/CreateServerModal.svelte';
+	import InviteModal from '$lib/components/chat/InviteModal.svelte';
 
 	export let activeServerId: string;
 	export let activeChannelId: string;
@@ -17,15 +17,9 @@
 	let channels: Channel[] = [];
 	let loadingChannels = false;
 
-	// Create server modal state
+	// Modal state
 	let showCreateModal = false;
-	let newServerName = '';
-	let creating = false;
-	let createServerInput: HTMLInputElement | null = null;
-
-	// Invite state
-	let inviteCode = '';
-	let showInvitePanel = false;
+	let showInviteModal = false;
 
 	// Join by invite state
 	let joinCode = '';
@@ -44,15 +38,6 @@
 	// Reload channels when the active server changes
 	$: if (activeServerId) {
 		loadChannels(activeServerId);
-	}
-
-	$: if (showCreateModal) {
-		void focusCreateServerInput();
-	}
-
-	async function focusCreateServerInput() {
-		await tick();
-		createServerInput?.focus();
 	}
 
 	async function loadChannels(serverId: string) {
@@ -74,30 +59,6 @@
 		goto(`/servers/${serverId}/channels/${channelId}`);
 	}
 
-	async function handleCreateServer() {
-		if (!newServerName.trim() || creating) return;
-		creating = true;
-		try {
-			const server = await createServer(newServerName.trim());
-			newServerName = '';
-			showCreateModal = false;
-			// Navigate to the new server (no channels yet)
-			goto(`/servers/${server.id}/channels`);
-		} finally {
-			creating = false;
-		}
-	}
-
-	async function handleGetInvite() {
-		if (!activeServerId) return;
-		inviteCode = await createInvite(activeServerId);
-		showInvitePanel = true;
-	}
-
-	function copyInvite() {
-		navigator.clipboard.writeText(inviteCode).catch(() => {});
-	}
-
 	async function handleJoinByInvite() {
 		if (!joinCode.trim() || joining) return;
 		joining = true;
@@ -111,6 +72,8 @@
 			joining = false;
 		}
 	}
+
+	$: activeServer = $serversStore.servers.find((s) => s.id === activeServerId);
 </script>
 
 <aside class="sidebar">
@@ -156,13 +119,12 @@
 	<!-- Channel list panel -->
 	<div class="channel-panel">
 		{#if activeServerId}
-			{@const activeServer = $serversStore.servers.find((s) => s.id === activeServerId)}
 			<header class="channel-panel-header">
 				<span class="server-name">{activeServer?.name ?? '…'}</span>
 				{#if activeServer}
 					<button
 						class="invite-btn"
-						on:click={handleGetInvite}
+						on:click={() => (showInviteModal = true)}
 						title="Create invite link"
 						aria-label="Create invite link"
 					>
@@ -173,14 +135,6 @@
 					</button>
 				{/if}
 			</header>
-
-			{#if showInvitePanel}
-				<div class="invite-panel">
-					<span class="invite-code">{inviteCode}</span>
-					<button class="copy-btn" on:click={copyInvite}>Copy</button>
-					<button class="close-btn" on:click={() => (showInvitePanel = false)} aria-label="Close">✕</button>
-				</div>
-			{/if}
 
 			{#if loadingChannels}
 				<div class="channel-loading">Loading…</div>
@@ -226,40 +180,14 @@
 	</div>
 </aside>
 
-<!-- Create Server Modal -->
-{#if showCreateModal}
-	<!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-	<div class="modal-backdrop" on:click={() => (showCreateModal = false)}>
-		<div
-			class="modal"
-			role="dialog"
-			aria-modal="true"
-			aria-label="Create server"
-			tabindex="-1"
-			on:click|stopPropagation
-		>
-			<h2 class="modal-title">Create a Server</h2>
-			<form on:submit|preventDefault={handleCreateServer}>
-				<input
-					bind:this={createServerInput}
-					bind:value={newServerName}
-					placeholder="Server name"
-					class="modal-input"
-					maxlength="100"
-					required
-				/>
-				<div class="modal-actions">
-					<button type="button" class="modal-cancel" on:click={() => (showCreateModal = false)}>
-						Cancel
-					</button>
-					<button type="submit" class="modal-submit" disabled={creating || !newServerName.trim()}>
-						{creating ? 'Creating…' : 'Create'}
-					</button>
-				</div>
-			</form>
-		</div>
-	</div>
-{/if}
+<CreateServerModal open={showCreateModal} on:close={() => (showCreateModal = false)} />
+
+<InviteModal
+	open={showInviteModal}
+	serverId={activeServerId ?? ''}
+	serverName={activeServer?.name ?? ''}
+	on:close={() => (showInviteModal = false)}
+/>
 
 <style>
 	.sidebar {
@@ -361,36 +289,6 @@
 	}
 	.invite-btn:hover { color: var(--color-text-primary); }
 
-	.invite-panel {
-		display: flex;
-		align-items: center;
-		gap: 0.375rem;
-		padding: 0.5rem 0.75rem;
-		background: var(--color-bg-surface);
-		border-bottom: 1px solid var(--color-border);
-		font-size: 0.75rem;
-		flex-shrink: 0;
-	}
-	.invite-code {
-		flex: 1;
-		font-family: monospace;
-		color: var(--color-text-primary);
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-	.copy-btn, .close-btn {
-		background: none;
-		border: 1px solid var(--color-border);
-		border-radius: 0.25rem;
-		padding: 0.125rem 0.375rem;
-		font-size: 0.6875rem;
-		cursor: pointer;
-		color: var(--color-text-muted);
-		flex-shrink: 0;
-	}
-	.copy-btn:hover, .close-btn:hover { color: var(--color-text-primary); }
-
 	.channel-loading,
 	.channel-empty {
 		padding: 1rem 0.75rem;
@@ -484,73 +382,4 @@
 		color: #fca5a5;
 	}
 
-	/* ── Create Server Modal ── */
-	.modal-backdrop {
-		position: fixed;
-		inset: 0;
-		background: rgba(0, 0, 0, 0.6);
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		z-index: 100;
-	}
-
-	.modal {
-		background: var(--color-bg-elevated);
-		border: 1px solid var(--color-border);
-		border-radius: 0.75rem;
-		padding: 1.5rem;
-		width: 320px;
-		display: flex;
-		flex-direction: column;
-		gap: 1rem;
-	}
-
-	.modal-title {
-		font-size: 1.125rem;
-		font-weight: 700;
-		color: var(--color-text-primary);
-		margin: 0;
-	}
-
-	.modal-input {
-		width: 100%;
-		background: var(--color-bg-surface);
-		border: 1px solid var(--color-border);
-		border-radius: 0.5rem;
-		padding: 0.625rem 0.75rem;
-		font-size: 0.9375rem;
-		color: var(--color-text-primary);
-		box-sizing: border-box;
-	}
-	.modal-input::placeholder { color: var(--color-text-muted); }
-
-	.modal-actions {
-		display: flex;
-		justify-content: flex-end;
-		gap: 0.5rem;
-	}
-
-	.modal-cancel {
-		background: none;
-		border: 1px solid var(--color-border);
-		border-radius: 0.375rem;
-		padding: 0.5rem 1rem;
-		font-size: 0.875rem;
-		color: var(--color-text-muted);
-		cursor: pointer;
-	}
-	.modal-cancel:hover { color: var(--color-text-primary); }
-
-	.modal-submit {
-		background: var(--color-brand);
-		border: none;
-		border-radius: 0.375rem;
-		padding: 0.5rem 1rem;
-		font-size: 0.875rem;
-		color: white;
-		font-weight: 600;
-		cursor: pointer;
-	}
-	.modal-submit:disabled { opacity: 0.5; cursor: default; }
 </style>

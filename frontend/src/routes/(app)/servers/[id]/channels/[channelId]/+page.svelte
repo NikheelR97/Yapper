@@ -16,6 +16,7 @@
 	import MessageInput from "$lib/components/chat/MessageInput.svelte";
 	import TypingIndicator from "$lib/components/chat/TypingIndicator.svelte";
 	import LiveCanvas from "$lib/components/canvas/LiveCanvas.svelte";
+	import ChannelHeader from "$lib/components/chat/ChannelHeader.svelte";
 
 	let showCanvas = true;
 
@@ -85,58 +86,11 @@
 <div class="channel-page">
 	<div class="chat-area" class:canvas-open={showCanvas}>
 		<!-- Header -->
-		<header class="chat-header">
-			<span class="channel-name">#{channelName || "…"}</span>
-			<button
-				class="canvas-toggle"
-				on:click={() => (showCanvas = !showCanvas)}
-				title={showCanvas ? "Hide Canvas" : "Show Canvas"}
-				aria-pressed={showCanvas}
-			>
-				<svg
-					width="15"
-					height="15"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					aria-hidden="true"
-				>
-					<rect x="3" y="3" width="7" height="7" /><rect
-						x="14"
-						y="3"
-						width="7"
-						height="7"
-					/>
-					<rect x="14" y="14" width="7" height="7" /><rect
-						x="3"
-						y="14"
-						width="7"
-						height="7"
-					/>
-				</svg>
-			</button>
-			<span class="e2ee-badge" title="End-to-end encrypted">
-				<svg
-					width="12"
-					height="12"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2.5"
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					aria-hidden="true"
-				>
-					<rect x="3" y="11" width="18" height="11" rx="2" ry="2"
-					></rect>
-					<path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-				</svg>
-				E2EE
-			</span>
-		</header>
+		<ChannelHeader
+			{channelName}
+			{showCanvas}
+			on:toggleCanvas={() => (showCanvas = !showCanvas)}
+		/>
 
 		<!-- Message area -->
 		<div class="message-area" bind:this={listEl}>
@@ -180,54 +134,6 @@
 		flex: 1;
 		min-width: 0;
 		background: var(--color-bg-base);
-	}
-
-	.chat-header {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.75rem 1rem;
-		border-bottom: 1px solid var(--color-border);
-		background: var(--color-bg-elevated);
-		flex-shrink: 0;
-	}
-
-	.channel-name {
-		font-weight: 600;
-		color: var(--color-text-primary);
-		font-size: 0.9375rem;
-		flex: 1;
-	}
-
-	.canvas-toggle {
-		padding: 0.3rem;
-		border: 1px solid var(--color-border);
-		border-radius: var(--radius-sm);
-		background: transparent;
-		color: var(--color-text-muted);
-		cursor: pointer;
-		display: flex;
-		align-items: center;
-		transition:
-			border-color var(--transition-fast),
-			color var(--transition-fast);
-	}
-
-	.canvas-toggle:hover,
-	.canvas-toggle[aria-pressed="true"] {
-		border-color: var(--color-brand);
-		color: var(--color-brand-light);
-	}
-
-	.e2ee-badge {
-		display: flex;
-		align-items: center;
-		gap: 0.3rem;
-		font-size: 0.6875rem;
-		font-weight: 600;
-		color: var(--color-text-muted);
-		text-transform: uppercase;
-		letter-spacing: 0.04em;
 	}
 
 	.message-area {
