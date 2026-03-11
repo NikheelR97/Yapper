@@ -22,7 +22,7 @@
     },
     {
       q: 'Will it be available on iOS and Android at launch?',
-      a: 'Yes. Web PWA, iOS (via Capacitor), Android (via Capacitor), macOS, and Windows (via Tauri) are all planned for launch. One SvelteKit codebase, five targets.',
+      a: 'Yes. Web, iOS, Android, macOS, and Windows are all planned for launch.',
     },
   ];
 
