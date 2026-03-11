@@ -142,7 +142,7 @@
 							<select
 								class="inline-select"
 								bind:value={expiry}
-								on:change={() => { if (expiry === 'never' || expiry === 'unlimited') expiry = '24h'; }}
+								on:change={() => { if (expiry === 'never') expiry = '24h'; }}
 								disabled={expiry === 'never'}
 							>
 								<option value="24h">24 hours</option>

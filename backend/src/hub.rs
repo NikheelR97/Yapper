@@ -1137,6 +1137,7 @@ async fn store_and_route_dm(
 
 // ─── Send Channel ────────────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_send_channel(
     channel_id: Uuid,
     ciphertext: String,
