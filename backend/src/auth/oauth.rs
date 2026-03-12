@@ -171,7 +171,9 @@ pub async fn discord_redirect(
         csrf
     };
     gc_oauth_states(&state.oauth_states);
-    state.oauth_states.insert(state_token.clone(), Instant::now());
+    state
+        .oauth_states
+        .insert(state_token.clone(), Instant::now());
 
     let auth_url = url::Url::parse_with_params(
         "https://discord.com/api/oauth2/authorize",
@@ -312,7 +314,9 @@ pub async fn google_redirect(
         csrf
     };
     gc_oauth_states(&state.oauth_states);
-    state.oauth_states.insert(state_token.clone(), Instant::now());
+    state
+        .oauth_states
+        .insert(state_token.clone(), Instant::now());
 
     let auth_url = url::Url::parse_with_params(
         "https://accounts.google.com/o/oauth2/v2/auth",
