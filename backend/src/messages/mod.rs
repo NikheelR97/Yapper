@@ -634,7 +634,7 @@ async fn send_message_v2(
                 (message_id, recipient_user_id, recipient_device_id, sender_user_id, sender_device_id,
                  ciphertext, ek_public, opk_id, msg_num, ratchet_pub, previous_chain_len, crypto_version,
                  delivered_at, created_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
             "#,
         )
         .bind(message_id)
