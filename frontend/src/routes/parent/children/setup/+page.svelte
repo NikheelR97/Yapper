@@ -2,6 +2,8 @@
 	import { goto } from '$app/navigation';
 	import { createChild, type ChildSettings } from '$stores/parental.js';
 	import { toast } from '$stores/toast.js';
+	import { authStore, setAuth } from '$stores/auth.js';
+	import { get } from 'svelte/store';
 
 	let step = 1;
 	let totalSteps = 3;
@@ -103,6 +105,11 @@
 				dateOfBirth: dobStr,
 				settings,
 			});
+			// Update authStore so accountType reflects 'parent' immediately
+			const s = get(authStore);
+			if (s.user && s.user.accountType !== 'parent') {
+				setAuth({ ...s.user, accountType: 'parent' }, s.accessToken!, s.csrfToken, s.device);
+			}
 			toast.success('Child account created!');
 			await goto('/parent/dashboard');
 		} catch (e: any) {

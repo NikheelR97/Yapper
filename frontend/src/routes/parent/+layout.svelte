@@ -13,14 +13,21 @@
 
 	let ready = false;
 
+	$: isSetupPage = $page.url.pathname === '/parent/children/setup';
+
 	onMount(async () => {
 		const state = get(authStore);
 		if (!state.user) {
 			await goto('/login');
 			return;
 		}
+		// Allow any logged-in user to access the setup wizard (creates their parent account)
 		if (state.user.accountType !== 'parent') {
-			await goto('/');
+			if (!get(page).url.pathname.startsWith('/parent/children/setup')) {
+				await goto('/');
+				return;
+			}
+			ready = true;
 			return;
 		}
 		await loadChildren();
@@ -39,6 +46,9 @@
 </script>
 
 {#if ready}
+	{#if isSetupPage}
+		<slot />
+	{:else}
 	<div class="parent-shell">
 		<!-- Top nav -->
 		<nav class="top-nav">
@@ -112,6 +122,7 @@
 			</main>
 		</div>
 	</div>
+	{/if}
 {:else}
 	<div class="loading-shell">
 		<div class="loader"></div>
