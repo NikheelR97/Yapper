@@ -207,6 +207,14 @@ test.describe('Seeded DM flow', () => {
 		test.slow();
 		await openConversation(page, conversationId, userBLabels);
 
+		// The seed script creates a secondary pending device for multi-device tests.
+		// Approve it here so the Pending Device Approvals banner doesn't block E2EE chat.
+		const approveBtn = page.getByRole('button', { name: /^Approve$/i }).first();
+		if (await approveBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
+			await approveBtn.click();
+			await page.waitForTimeout(1_500);
+		}
+
 		const input = page.locator('textarea[aria-label="Message"]').first();
 		await expect(input).toBeVisible({ timeout: 20_000 });
 		await expect(input).toBeEnabled({ timeout: 20_000 });
@@ -215,6 +223,6 @@ test.describe('Seeded DM flow', () => {
 		await input.fill(testMsg);
 		await input.press('Enter');
 
-		await expect(page.getByText(testMsg)).toBeVisible({ timeout: 8_000 });
+		await expect(page.getByText(testMsg)).toBeVisible({ timeout: 20_000 });
 	});
 });

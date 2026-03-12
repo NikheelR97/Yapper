@@ -611,8 +611,11 @@ async fn get_key_bundles_v2(
     let consume_opk = query.consume_opk.unwrap_or(false);
     let device_ids = parse_device_ids_filter(query.device_ids.as_deref())?;
 
-    let rows = match (consume_opk, device_ids.as_ref()) {
-        (true, Some(device_ids)) => {
+    // Step 1: Fetch device + identity + signed-prekey rows (no OPK consumption yet).
+    // LATERAL (UPDATE ...) is not valid PostgreSQL syntax, so OPK consumption is
+    // handled separately below via a CTE-based UPDATE.
+    let rows = match device_ids.as_ref() {
+        Some(device_ids) => {
             sqlx::query(
                 r#"
                 SELECT d.id AS device_id,
@@ -621,111 +624,7 @@ async fn get_key_bundles_v2(
                        ik.signing_key,
                        sp.key_id AS signed_prekey_id,
                        sp.public_key AS signed_prekey,
-                       sp.signature AS signed_prekey_sig,
-                       opk.key_id AS one_time_prekey_id,
-                       opk.public_key AS one_time_prekey
-                FROM devices d
-                JOIN identity_keys ik
-                  ON ik.user_id = d.user_id
-                 AND ik.device_id = d.signal_device_id
-                JOIN LATERAL (
-                    SELECT key_id, public_key, signature
-                    FROM signed_prekeys
-                    WHERE user_id = d.user_id
-                      AND device_id = d.signal_device_id
-                      AND expires_at > NOW()
-                    ORDER BY created_at DESC
-                    LIMIT 1
-                ) sp ON TRUE
-                LEFT JOIN LATERAL (
-                    UPDATE one_time_prekeys
-                    SET consumed = TRUE
-                    WHERE id = (
-                        SELECT id
-                        FROM one_time_prekeys
-                        WHERE user_id = d.user_id
-                          AND device_id = d.signal_device_id
-                          AND consumed = FALSE
-                        ORDER BY id
-                        LIMIT 1
-                        FOR UPDATE SKIP LOCKED
-                    )
-                    RETURNING key_id, public_key
-                ) opk ON TRUE
-                WHERE d.user_id = $1
-                  AND d.revoked_at IS NULL
-                  AND d.trust_state = 'trusted'
-                  AND d.id = ANY($2)
-                ORDER BY d.created_at ASC
-                "#,
-            )
-            .bind(user_id)
-            .bind(device_ids)
-            .fetch_all(state.db.pool())
-            .await?
-        }
-        (true, None) => {
-            sqlx::query(
-                r#"
-                SELECT d.id AS device_id,
-                       d.signal_device_id,
-                       ik.public_key,
-                       ik.signing_key,
-                       sp.key_id AS signed_prekey_id,
-                       sp.public_key AS signed_prekey,
-                       sp.signature AS signed_prekey_sig,
-                       opk.key_id AS one_time_prekey_id,
-                       opk.public_key AS one_time_prekey
-                FROM devices d
-                JOIN identity_keys ik
-                  ON ik.user_id = d.user_id
-                 AND ik.device_id = d.signal_device_id
-                JOIN LATERAL (
-                    SELECT key_id, public_key, signature
-                    FROM signed_prekeys
-                    WHERE user_id = d.user_id
-                      AND device_id = d.signal_device_id
-                      AND expires_at > NOW()
-                    ORDER BY created_at DESC
-                    LIMIT 1
-                ) sp ON TRUE
-                LEFT JOIN LATERAL (
-                    UPDATE one_time_prekeys
-                    SET consumed = TRUE
-                    WHERE id = (
-                        SELECT id
-                        FROM one_time_prekeys
-                        WHERE user_id = d.user_id
-                          AND device_id = d.signal_device_id
-                          AND consumed = FALSE
-                        ORDER BY id
-                        LIMIT 1
-                        FOR UPDATE SKIP LOCKED
-                    )
-                    RETURNING key_id, public_key
-                ) opk ON TRUE
-                WHERE d.user_id = $1
-                  AND d.revoked_at IS NULL
-                  AND d.trust_state = 'trusted'
-                ORDER BY d.created_at ASC
-                "#,
-            )
-            .bind(user_id)
-            .fetch_all(state.db.pool())
-            .await?
-        }
-        (false, Some(device_ids)) => {
-            sqlx::query(
-                r#"
-                SELECT d.id AS device_id,
-                       d.signal_device_id,
-                       ik.public_key,
-                       ik.signing_key,
-                       sp.key_id AS signed_prekey_id,
-                       sp.public_key AS signed_prekey,
-                       sp.signature AS signed_prekey_sig,
-                       NULL::INTEGER AS one_time_prekey_id,
-                       NULL::BYTEA AS one_time_prekey
+                       sp.signature AS signed_prekey_sig
                 FROM devices d
                 JOIN identity_keys ik
                   ON ik.user_id = d.user_id
@@ -751,7 +650,7 @@ async fn get_key_bundles_v2(
             .fetch_all(state.db.pool())
             .await?
         }
-        (false, None) => {
+        None => {
             sqlx::query(
                 r#"
                 SELECT d.id AS device_id,
@@ -760,9 +659,7 @@ async fn get_key_bundles_v2(
                        ik.signing_key,
                        sp.key_id AS signed_prekey_id,
                        sp.public_key AS signed_prekey,
-                       sp.signature AS signed_prekey_sig,
-                       NULL::INTEGER AS one_time_prekey_id,
-                       NULL::BYTEA AS one_time_prekey
+                       sp.signature AS signed_prekey_sig
                 FROM devices d
                 JOIN identity_keys ik
                   ON ik.user_id = d.user_id
@@ -788,34 +685,72 @@ async fn get_key_bundles_v2(
         }
     };
 
-    let bundles = rows
-        .into_iter()
-        .map(|row| -> Result<KeyBundleV2, sqlx::Error> {
-            let dh_bytes: Vec<u8> = row.try_get("public_key")?;
-            let sig_bytes: Vec<u8> = row.try_get("signing_key")?;
-            let spk_pub: Vec<u8> = row.try_get("signed_prekey")?;
-            let spk_sig: Vec<u8> = row.try_get("signed_prekey_sig")?;
-            let opk_id: Option<i32> = row.try_get("one_time_prekey_id").ok().flatten();
-            let opk_pub: Option<Vec<u8>> = row.try_get("one_time_prekey").ok().flatten();
-            Ok(KeyBundleV2 {
-                user_id,
-                device_id: row.try_get("device_id")?,
-                signal_device_id: row.try_get("signal_device_id")?,
-                identity_dh_key: BASE64.encode(&dh_bytes),
-                identity_sig_key: BASE64.encode(&sig_bytes),
-                signed_prekey_id: row.try_get("signed_prekey_id")?,
-                signed_prekey: BASE64.encode(&spk_pub),
-                signed_prekey_sig: BASE64.encode(&spk_sig),
-                one_time_prekey_id: opk_id,
-                one_time_prekey: opk_pub.map(|bytes| BASE64.encode(&bytes)),
-            })
-        })
-        .collect::<Result<Vec<_>, sqlx::Error>>()?;
-
-    if bundles.is_empty() {
+    if rows.is_empty() {
         return Err(AppError::NotFound(
             "User has no trusted device bundles".into(),
         ));
+    }
+
+    // Step 2: Build bundles; atomically consume one OPK per device when requested.
+    // Uses a writable CTE so the FOR UPDATE SKIP LOCKED lock is in a top-level SELECT
+    // (valid) rather than in a subquery of a DML statement (invalid in PostgreSQL).
+    let mut bundles = Vec::with_capacity(rows.len());
+    for row in rows {
+        let signal_device_id: i32 = row.try_get("signal_device_id")?;
+
+        let (opk_id, opk_pub) = if consume_opk {
+            let opk_row = sqlx::query(
+                r#"
+                WITH cte AS (
+                    SELECT id, key_id, public_key
+                    FROM one_time_prekeys
+                    WHERE user_id = $1
+                      AND device_id = $2
+                      AND consumed = FALSE
+                    ORDER BY id
+                    LIMIT 1
+                    FOR UPDATE SKIP LOCKED
+                )
+                UPDATE one_time_prekeys
+                SET consumed = TRUE
+                FROM cte
+                WHERE one_time_prekeys.id = cte.id
+                RETURNING one_time_prekeys.key_id, one_time_prekeys.public_key
+                "#,
+            )
+            .bind(user_id)
+            .bind(signal_device_id)
+            .fetch_optional(state.db.pool())
+            .await?;
+
+            match opk_row {
+                Some(r) => {
+                    let key_id: Option<i32> = r.try_get("key_id").ok();
+                    let pub_key: Option<Vec<u8>> = r.try_get("public_key").ok();
+                    (key_id, pub_key)
+                }
+                None => (None, None),
+            }
+        } else {
+            (None, None)
+        };
+
+        let dh_bytes: Vec<u8> = row.try_get("public_key")?;
+        let sig_bytes: Vec<u8> = row.try_get("signing_key")?;
+        let spk_pub: Vec<u8> = row.try_get("signed_prekey")?;
+        let spk_sig: Vec<u8> = row.try_get("signed_prekey_sig")?;
+        bundles.push(KeyBundleV2 {
+            user_id,
+            device_id: row.try_get("device_id")?,
+            signal_device_id: row.try_get("signal_device_id")?,
+            identity_dh_key: BASE64.encode(&dh_bytes),
+            identity_sig_key: BASE64.encode(&sig_bytes),
+            signed_prekey_id: row.try_get("signed_prekey_id")?,
+            signed_prekey: BASE64.encode(&spk_pub),
+            signed_prekey_sig: BASE64.encode(&spk_sig),
+            one_time_prekey_id: opk_id,
+            one_time_prekey: opk_pub.map(|bytes| BASE64.encode(&bytes)),
+        });
     }
 
     Ok(Json(bundles))
