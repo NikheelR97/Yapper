@@ -86,7 +86,10 @@ pub fn router() -> Router<AppState> {
         .route("/me/friend-requests", get(list_friend_requests))
         .route("/by/:username/friend-request", post(send_friend_request))
         .route("/by/:username/friend-request", put(accept_friend_request))
-        .route("/by/:username/friend-request", delete(reject_friend_request))
+        .route(
+            "/by/:username/friend-request",
+            delete(reject_friend_request),
+        )
         .route("/by/:username/hype-moments", get(get_hype_moments))
 }
 
@@ -587,7 +590,9 @@ async fn accept_friend_request(
     .await?;
 
     if result.rows_affected() == 0 {
-        return Err(AppError::NotFound("No pending friend request from that user".into()));
+        return Err(AppError::NotFound(
+            "No pending friend request from that user".into(),
+        ));
     }
 
     Ok(Json(serde_json::json!({ "status": "accepted" })))
