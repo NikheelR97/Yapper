@@ -45,6 +45,9 @@ export interface SearchUser {
 	username: string;
 	display_name: string | null;
 	avatar_url: string | null;
+	friend_request_permission: 'everyone' | 'friends_of_friends' | 'nobody';
+	is_friend: boolean;
+	request_sent: boolean;
 }
 
 export interface SearchServer {

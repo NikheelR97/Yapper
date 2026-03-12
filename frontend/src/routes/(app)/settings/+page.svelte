@@ -25,6 +25,7 @@
 		| "notifications"
 		| "premium"
 		| "connections"
+		| "family"
 		| "developer";
 
 	let activeSection: Section = "profile";
@@ -58,6 +59,7 @@
 			badge: isPremium ? undefined : "NEW",
 		},
 		{ id: "connections", label: "Connected Accounts" },
+		{ id: "family", label: "Family Controls" },
 		{ id: "developer", label: "For Developers" },
 	];
 
@@ -208,6 +210,64 @@
 			<Premium />
 		{:else if activeSection === "connections"}
 			<DiscordImport />
+		{:else if activeSection === "family"}
+			<div class="family-section">
+				<h2 class="section-heading">Family Controls</h2>
+				<p class="section-desc">
+					Manage child accounts and review their activity. You see metadata only — message content is always end-to-end encrypted.
+				</p>
+
+				{#if user?.accountType === 'parent'}
+					<a class="family-btn family-btn-primary" href="/parent/dashboard">
+						Open Parent Dashboard →
+					</a>
+					<a class="family-btn family-btn-secondary" href="/parent/children/setup">
+						+ Add Another Child Account
+					</a>
+				{:else if user?.accountType === 'child'}
+					<div class="family-info-card">
+						<span class="family-info-icon">🛡</span>
+						<div>
+							<strong>Managed Account</strong>
+							<p>This account is managed by a parent. Some features may require parental approval.</p>
+						</div>
+					</div>
+				{:else}
+					<div class="family-explainer">
+						<div class="family-explainer-item">
+							<span>🛡</span>
+							<div>
+								<strong>Approve Friend Requests</strong>
+								<p>Review who your child connects with before friendships are established.</p>
+							</div>
+						</div>
+						<div class="family-explainer-item">
+							<span>🌐</span>
+							<div>
+								<strong>Approve Server Joins</strong>
+								<p>Your child's server join requests come to you first.</p>
+							</div>
+						</div>
+						<div class="family-explainer-item">
+							<span>⏱</span>
+							<div>
+								<strong>Screen Time</strong>
+								<p>Set daily limits and view usage reports.</p>
+							</div>
+						</div>
+						<div class="family-explainer-item">
+							<span>🔒</span>
+							<div>
+								<strong>E2EE Preserved</strong>
+								<p>Message content is never visible — only activity metadata.</p>
+							</div>
+						</div>
+					</div>
+					<a class="family-btn family-btn-primary" href="/parent/children/setup">
+						Set Up Family Controls →
+					</a>
+				{/if}
+			</div>
 		{:else if activeSection === "developer"}
 			<DeveloperTools />
 		{/if}
@@ -708,6 +768,119 @@
 		.nav-header {
 			display: none;
 		}
+	}
+
+	/* ── Family section ── */
+	.family-section {
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+		max-width: 520px;
+	}
+
+	.section-heading {
+		font-size: 1.1rem;
+		font-weight: 700;
+		color: var(--color-text-primary);
+		margin: 0;
+	}
+
+	.section-desc {
+		font-size: 0.875rem;
+		color: var(--color-text-secondary, #9ca3af);
+		margin: 0;
+		line-height: 1.5;
+	}
+
+	.family-btn {
+		display: inline-block;
+		padding: 0.65rem 1.25rem;
+		border-radius: 8px;
+		font-size: 0.875rem;
+		font-weight: 600;
+		text-decoration: none;
+		transition: opacity 150ms;
+	}
+
+	.family-btn-primary {
+		background: var(--color-brand, #7c3aed);
+		color: white;
+	}
+
+	.family-btn-secondary {
+		background: rgba(255, 255, 255, 0.06);
+		color: var(--color-text-primary);
+		border: 1px solid rgba(255, 255, 255, 0.1);
+	}
+
+	.family-btn:hover {
+		opacity: 0.85;
+		text-decoration: none;
+	}
+
+	.family-info-card {
+		display: flex;
+		gap: 0.75rem;
+		align-items: flex-start;
+		padding: 1rem;
+		background: rgba(255, 255, 255, 0.04);
+		border: 1px solid rgba(255, 255, 255, 0.08);
+		border-radius: 10px;
+		font-size: 0.875rem;
+		color: var(--color-text-secondary, #9ca3af);
+	}
+
+	.family-info-icon {
+		font-size: 1.25rem;
+		flex-shrink: 0;
+	}
+
+	.family-info-card strong {
+		display: block;
+		color: var(--color-text-primary);
+		margin-bottom: 0.2rem;
+	}
+
+	.family-info-card p {
+		margin: 0;
+	}
+
+	.family-explainer {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	.family-explainer-item {
+		display: flex;
+		gap: 0.75rem;
+		align-items: flex-start;
+		padding: 0.875rem 1rem;
+		background: rgba(255, 255, 255, 0.03);
+		border: 1px solid rgba(255, 255, 255, 0.07);
+		border-radius: 10px;
+		font-size: 0.875rem;
+	}
+
+	.family-explainer-item span {
+		font-size: 1.1rem;
+		flex-shrink: 0;
+		margin-top: 1px;
+	}
+
+	.family-explainer-item strong {
+		display: block;
+		font-size: 0.875rem;
+		font-weight: 600;
+		color: var(--color-text-primary);
+		margin-bottom: 0.2rem;
+	}
+
+	.family-explainer-item p {
+		margin: 0;
+		color: var(--color-text-muted, #6b7280);
+		font-size: 0.8125rem;
+		line-height: 1.4;
 	}
 </style>
 

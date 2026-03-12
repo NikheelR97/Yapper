@@ -7,11 +7,17 @@
     $: path = $page.url.pathname;
     $: user = $authStore.user;
 
-    const navItems = [
+    $: isParent = user?.accountType === 'parent';
+
+    const baseNavItems = [
         { label: "Channels", href: "/servers", match: "/servers" },
         { label: "Direct", href: "/dm", match: "/dm" },
         { label: "Explore", href: "/explore", match: "/explore" },
     ];
+
+    $: navItems = isParent
+        ? [...baseNavItems, { label: "Family", href: "/parent/dashboard", match: "/parent" }]
+        : baseNavItems;
 
     function isActive(match: string): boolean {
         return path.startsWith(match);

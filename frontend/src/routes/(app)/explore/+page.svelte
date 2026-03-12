@@ -13,6 +13,8 @@
 	import LiveServerCard from '$lib/components/explore/LiveServerCard.svelte';
 	import CommunityCard from '$lib/components/explore/CommunityCard.svelte';
 	import { fetchServers } from '$stores/servers.js';
+	import { api } from '$api/client.js';
+	import { toast } from '$stores/toast.js';
 
 	let searchInput = '';
 	let searchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -20,6 +22,7 @@
 	let viewMode: 'grid' | 'list' = 'grid';
 	let joinError = '';
 	let joiningId = '';
+	let sentRequests = new Set<string>();
 
 	$: state = $exploreStore;
 	$: isSearching = searchInput.trim().length > 0;
@@ -49,6 +52,16 @@
 	function handleTagSelect(e: CustomEvent<string | null>) {
 		activeTag = e.detail;
 		searchInput = '';
+	}
+
+	async function handleAddFriend(username: string) {
+		try {
+			await api.post(`/api/v1/users/by/${encodeURIComponent(username)}/friend-request`, {});
+			sentRequests = new Set([...sentRequests, username]);
+			toast.success('Friend request sent!');
+		} catch (e: any) {
+			toast.error(e.message ?? 'Failed to send friend request');
+		}
 	}
 
 	async function handleJoin(id: string) {
@@ -157,16 +170,31 @@
 						<div class="user-list">
 							{#each state.searchUsers as u}
 								<div class="user-row">
-									<div class="user-avatar">
-										{#if u.avatar_url}
-											<img src={u.avatar_url} alt={u.username} />
-										{:else}
-											<span>{u.username.charAt(0).toUpperCase()}</span>
-										{/if}
-									</div>
+									<button class="user-avatar-btn" on:click={() => goto(`/profile/${u.username}`)}>
+										<div class="user-avatar">
+											{#if u.avatar_url}
+												<img src={u.avatar_url} alt={u.username} />
+											{:else}
+												<span>{u.username.charAt(0).toUpperCase()}</span>
+											{/if}
+										</div>
+									</button>
 									<div class="user-info">
-										<span class="display-name">{u.display_name ?? u.username}</span>
+										<button class="user-name-btn" on:click={() => goto(`/profile/${u.username}`)}>
+											<span class="display-name">{u.display_name ?? u.username}</span>
+										</button>
 										<span class="username">@{u.username}</span>
+									</div>
+									<div class="user-actions">
+										{#if u.is_friend}
+											<span class="friend-badge">Friends</span>
+										{:else if sentRequests.has(u.username) || u.request_sent}
+											<span class="pending-badge">Request Sent</span>
+										{:else if u.friend_request_permission !== 'nobody'}
+											<button class="btn-add-friend" on:click={() => handleAddFriend(u.username)}>
+												+ Add
+											</button>
+										{/if}
 									</div>
 								</div>
 							{/each}
@@ -458,9 +486,31 @@
 		object-fit: cover;
 	}
 
+	.user-avatar-btn {
+		background: none;
+		border: none;
+		padding: 0;
+		cursor: pointer;
+		flex-shrink: 0;
+	}
+
 	.user-info {
+		flex: 1;
 		display: flex;
 		flex-direction: column;
+		min-width: 0;
+	}
+
+	.user-name-btn {
+		background: none;
+		border: none;
+		padding: 0;
+		cursor: pointer;
+		text-align: left;
+	}
+
+	.user-name-btn:hover .display-name {
+		text-decoration: underline;
 	}
 
 	.display-name {
@@ -471,6 +521,46 @@
 
 	.username {
 		font-size: 0.75rem;
+		color: var(--color-text-muted);
+	}
+
+	.user-actions {
+		flex-shrink: 0;
+		display: flex;
+		align-items: center;
+	}
+
+	.btn-add-friend {
+		background: var(--color-brand, #7c3aed);
+		color: white;
+		border: none;
+		border-radius: 6px;
+		padding: 0.3rem 0.75rem;
+		font-size: 0.8rem;
+		font-weight: 600;
+		cursor: pointer;
+		transition: opacity 150ms;
+	}
+
+	.btn-add-friend:hover {
+		opacity: 0.85;
+	}
+
+	.friend-badge,
+	.pending-badge {
+		font-size: 0.75rem;
+		font-weight: 600;
+		padding: 0.3rem 0.65rem;
+		border-radius: 6px;
+	}
+
+	.friend-badge {
+		background: rgba(124, 58, 237, 0.15);
+		color: var(--color-brand-light, #a78bfa);
+	}
+
+	.pending-badge {
+		background: rgba(255, 255, 255, 0.06);
 		color: var(--color-text-muted);
 	}
 

@@ -189,7 +189,7 @@ struct SearchQuery {
 
 /// GET /search?q= — find public servers and users matching the query (pg_trgm).
 async fn search(
-    _auth: AuthUser,
+    auth: AuthUser,
     State(state): State<AppState>,
     Query(params): Query<SearchQuery>,
 ) -> AppResult<impl IntoResponse> {
@@ -229,17 +229,34 @@ async fn search(
         })
         .collect();
 
-    // Users — similarity search on username + display_name
+    // Users — similarity search on username + display_name, with privacy + friendship status
     let user_rows = sqlx::query(
-        "SELECT id, username, display_name, avatar_url,
-                similarity(username || ' ' || COALESCE(display_name, ''), $1) AS score
-         FROM users
-         WHERE (username || ' ' || COALESCE(display_name, '')) % $1
-           AND deleted_at IS NULL
+        "SELECT u.id, u.username, u.display_name, u.avatar_url,
+                similarity(u.username || ' ' || COALESCE(u.display_name, ''), $1) AS score,
+                COALESCE(ups.friend_request_permission, 'everyone') AS friend_request_permission,
+                EXISTS (
+                    SELECT 1 FROM friendships f
+                    WHERE f.status = 'accepted'
+                      AND ((f.user_id = $2 AND f.friend_id = u.id)
+                        OR (f.user_id = u.id AND f.friend_id = $2))
+                ) AS is_friend,
+                EXISTS (
+                    SELECT 1 FROM friendships f
+                    WHERE f.status = 'pending'
+                      AND f.requested_by = $2
+                      AND ((f.user_id = $2 AND f.friend_id = u.id)
+                        OR (f.user_id = u.id AND f.friend_id = $2))
+                ) AS request_sent
+         FROM users u
+         LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
+         WHERE (u.username || ' ' || COALESCE(u.display_name, '')) % $1
+           AND u.deleted_at IS NULL
+           AND u.id != $2
          ORDER BY score DESC
          LIMIT 10",
     )
     .bind(&q)
+    .bind(auth.user_id)
     .fetch_all(state.db.pool())
     .await?;
 
@@ -247,10 +264,13 @@ async fn search(
         .iter()
         .map(|r| {
             serde_json::json!({
-                "id":           r.try_get::<Uuid, _>("id").ok(),
-                "username":     r.try_get::<String, _>("username").unwrap_or_default(),
-                "display_name": r.try_get::<Option<String>, _>("display_name").ok().flatten(),
-                "avatar_url":   r.try_get::<Option<String>, _>("avatar_url").ok().flatten(),
+                "id":                        r.try_get::<Uuid, _>("id").ok(),
+                "username":                  r.try_get::<String, _>("username").unwrap_or_default(),
+                "display_name":              r.try_get::<Option<String>, _>("display_name").ok().flatten(),
+                "avatar_url":                r.try_get::<Option<String>, _>("avatar_url").ok().flatten(),
+                "friend_request_permission": r.try_get::<String, _>("friend_request_permission").unwrap_or_else(|_| "everyone".into()),
+                "is_friend":                 r.try_get::<bool, _>("is_friend").unwrap_or(false),
+                "request_sent":              r.try_get::<bool, _>("request_sent").unwrap_or(false),
             })
         })
         .collect();
