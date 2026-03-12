@@ -26,7 +26,7 @@ use axum::{
     extract::{Multipart, Path, State},
     http::{header, StatusCode},
     response::IntoResponse,
-    routing::{delete, get, patch, post},
+    routing::{delete, get, patch, post, put},
     Json, Router,
 };
 use chrono::Utc;
@@ -83,7 +83,10 @@ pub fn router() -> Router<AppState> {
         .route("/by/:username", get(get_profile))
         .route("/by/:username/follow", post(follow_user))
         .route("/by/:username/follow", delete(unfollow_user))
+        .route("/me/friend-requests", get(list_friend_requests))
         .route("/by/:username/friend-request", post(send_friend_request))
+        .route("/by/:username/friend-request", put(accept_friend_request))
+        .route("/by/:username/friend-request", delete(reject_friend_request))
         .route("/by/:username/hype-moments", get(get_hype_moments))
 }
 
@@ -504,11 +507,13 @@ pub async fn send_friend_request(
     };
 
     sqlx::query(
-        "INSERT INTO friendships (user_id_1, user_id_2, status) VALUES ($1, $2, 'pending')
+        "INSERT INTO friendships (user_id_1, user_id_2, status, requested_by) \
+         VALUES ($1, $2, 'pending', $3) \
          ON CONFLICT (user_id_1, user_id_2) DO NOTHING",
     )
     .bind(uid1)
     .bind(uid2)
+    .bind(auth.user_id)
     .execute(state.db.pool())
     .await?;
 
@@ -516,6 +521,102 @@ pub async fn send_friend_request(
         StatusCode::CREATED,
         Json(serde_json::json!({ "status": "pending" })),
     ))
+}
+
+/// GET /api/v1/users/me/friend-requests — list pending incoming friend requests.
+async fn list_friend_requests(
+    auth: AuthUser,
+    State(state): State<AppState>,
+) -> AppResult<impl IntoResponse> {
+    let rows = sqlx::query(
+        "SELECT u.id, u.username, u.display_name, u.avatar_url
+         FROM friendships f
+         JOIN users u ON u.id = CASE
+             WHEN f.user_id_1 = $1 THEN f.user_id_2
+             ELSE f.user_id_1
+         END
+         WHERE (f.user_id_1 = $1 OR f.user_id_2 = $1)
+           AND f.status = 'pending'
+           AND f.requested_by IS NOT NULL
+           AND f.requested_by != $1
+           AND u.deleted_at IS NULL",
+    )
+    .bind(auth.user_id)
+    .fetch_all(state.db.pool())
+    .await?;
+
+    let requests: Vec<serde_json::Value> = rows
+        .iter()
+        .map(|r| {
+            serde_json::json!({
+                "id":          r.try_get::<Uuid, _>("id").unwrap_or_default(),
+                "username":    r.try_get::<String, _>("username").unwrap_or_default(),
+                "displayName": r.try_get::<Option<String>, _>("display_name").unwrap_or(None),
+                "avatarUrl":   r.try_get::<Option<String>, _>("avatar_url").unwrap_or(None),
+            })
+        })
+        .collect();
+
+    Ok(Json(serde_json::json!({ "requests": requests })))
+}
+
+/// PUT /api/v1/users/by/:username/friend-request — accept a pending friend request.
+async fn accept_friend_request(
+    auth: AuthUser,
+    State(state): State<AppState>,
+    Path(username): Path<String>,
+) -> AppResult<impl IntoResponse> {
+    let requester_id = resolve_user(&username, &state).await?;
+
+    let (uid1, uid2) = if requester_id < auth.user_id {
+        (requester_id, auth.user_id)
+    } else {
+        (auth.user_id, requester_id)
+    };
+
+    let result = sqlx::query(
+        "UPDATE friendships SET status = 'accepted'
+         WHERE user_id_1 = $1 AND user_id_2 = $2
+           AND status = 'pending'
+           AND requested_by = $3",
+    )
+    .bind(uid1)
+    .bind(uid2)
+    .bind(requester_id)
+    .execute(state.db.pool())
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound("No pending friend request from that user".into()));
+    }
+
+    Ok(Json(serde_json::json!({ "status": "accepted" })))
+}
+
+/// DELETE /api/v1/users/by/:username/friend-request — reject or cancel a friend request.
+async fn reject_friend_request(
+    auth: AuthUser,
+    State(state): State<AppState>,
+    Path(username): Path<String>,
+) -> AppResult<impl IntoResponse> {
+    let other_id = resolve_user(&username, &state).await?;
+
+    let (uid1, uid2) = if other_id < auth.user_id {
+        (other_id, auth.user_id)
+    } else {
+        (auth.user_id, other_id)
+    };
+
+    sqlx::query(
+        "DELETE FROM friendships
+         WHERE user_id_1 = $1 AND user_id_2 = $2 AND status = 'pending'",
+    )
+    .bind(uid1)
+    .bind(uid2)
+    .execute(state.db.pool())
+    .await?;
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 // ─── Activity feed ────────────────────────────────────────────────────────────
