@@ -425,21 +425,20 @@ export async function decryptSenderKeyDist(
   ephemeralKeyPub: Uint8Array,
   myDhPriv: Uint8Array,
   myDhPub: Uint8Array,
-  senderDhPub?: Uint8Array,
+  senderDhPub: Uint8Array,
 ): Promise<SenderKeyDistPayload> {
   assertValidX25519PublicKey(
     ephemeralKeyPub,
     "sender key distribution ephemeral public key",
   );
   assertValidX25519PublicKey(myDhPub, "local DH public key");
+  assertValidX25519PublicKey(senderDhPub, "sender DH public key");
   const shared = x25519.getSharedSecret(myDhPriv, ephemeralKeyPub);
   if (isAllZero(shared)) {
     throw new Error("Rejected all-zero sender key distribution shared secret");
   }
-  // Include sender DH pub key when available to bind distribution to sender identity
-  const ikm = senderDhPub
-    ? concat(shared, ephemeralKeyPub, myDhPub, senderDhPub)
-    : concat(shared, ephemeralKeyPub, myDhPub);
+  // Bind sender identity to prevent key-substitution by a malicious server
+  const ikm = concat(shared, ephemeralKeyPub, myDhPub, senderDhPub);
   const encKey = hkdf(sha256, ikm, ZERO_SALT, DIST_INFO, 32);
 
   const iv = ciphertext.slice(0, 12);

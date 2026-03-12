@@ -630,7 +630,7 @@
         gap: 0.375rem;
         padding: 0.5rem 0.375rem;
         width: 52px;
-        background: #0d0d14;
+        background: var(--color-bg-deeper, #0d0d14);
         border-right: 1px solid var(--color-border);
         overflow-y: auto;
         scrollbar-width: none;

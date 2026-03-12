@@ -112,7 +112,7 @@
         align-items: center;
         height: 48px;
         padding: 0 0.75rem;
-        background: #0d0d14;
+        background: var(--color-bg-nav, #0d0d14);
         border-bottom: 1px solid rgba(255, 255, 255, 0.06);
         flex-shrink: 0;
         gap: 0.5rem;

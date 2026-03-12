@@ -787,19 +787,21 @@ async function fetchAndStorePendingDists(
     try {
       const ct = b64ToBytes(dist.ciphertext);
       const ek = b64ToBytes(dist.ek_public);
-      // Fetch sender bundle before decryption to bind ECIES to sender identity (M-01)
+      // Require sender device ID — distributions without it cannot be authenticated
       const senderDeviceId = dist.from_device_id ?? null;
-      let senderBundle: Awaited<ReturnType<typeof fetchDeviceKeyBundle>> | null =
-        null;
-      if (senderDeviceId) {
-        senderBundle = await fetchDeviceKeyBundle(
-          dist.from_user,
-          senderDeviceId,
-        ).catch(() => null);
+      if (!senderDeviceId) {
+        console.warn(
+          "[Signal] Skipping key dist with no from_device_id from " +
+            dist.from_user,
+        );
+        continue;
       }
-      const senderDhPub = senderBundle
-        ? b64ToBytes(senderBundle.identity_dh_key)
-        : undefined;
+      // Fetch sender bundle to bind ECIES to sender identity (M-01)
+      const senderBundle = await fetchDeviceKeyBundle(
+        dist.from_user,
+        senderDeviceId,
+      );
+      const senderDhPub = b64ToBytes(senderBundle.identity_dh_key);
       const payload = await decryptSenderKeyDist(
         ct,
         ek,
@@ -807,17 +809,12 @@ async function fetchAndStorePendingDists(
         identity.dhPublicKey,
         senderDhPub,
       );
-      const resolvedSenderDeviceId =
-        senderDeviceId ?? payload.senderDeviceId ?? "legacy";
-      if (payload.identitySignature && resolvedSenderDeviceId !== "legacy") {
-        const bundleForVerify =
-          senderBundle ??
-          (await fetchDeviceKeyBundle(dist.from_user, resolvedSenderDeviceId));
+      if (payload.identitySignature) {
         verifySenderKeyDistPayload(
           payload,
-          b64ToBytes(bundleForVerify.identity_sig_key),
+          b64ToBytes(senderBundle.identity_sig_key),
           dist.from_user,
-          resolvedSenderDeviceId,
+          senderDeviceId,
         );
       }
       const incomingChainKey = b64ToBytes(payload.chainKey);
@@ -825,7 +822,7 @@ async function fetchAndStorePendingDists(
       const existing = await ks.loadReceiverKey(
         payload.channelId,
         dist.from_user,
-        resolvedSenderDeviceId,
+        senderDeviceId,
       );
 
       if (
@@ -844,7 +841,7 @@ async function fetchAndStorePendingDists(
       const record: SenderKeyRecord = {
         channelId: payload.channelId,
         senderId: dist.from_user,
-        senderDeviceId: resolvedSenderDeviceId,
+        senderDeviceId: senderDeviceId,
         chainKey: incomingChainKey,
         signingPubKey: incomingSigningKey,
         iteration: payload.iteration,
@@ -961,19 +958,21 @@ export async function receiveSenderKeyDist(event: {
   try {
     const ct = b64ToBytes(event.ciphertext);
     const ek = b64ToBytes(event.ek_public);
-    // Fetch sender bundle before decryption to bind ECIES to sender identity (M-01)
-    const knownDeviceId = event.from_device_id ?? null;
-    let senderBundle: Awaited<ReturnType<typeof fetchDeviceKeyBundle>> | null =
-      null;
-    if (knownDeviceId) {
-      senderBundle = await fetchDeviceKeyBundle(
-        event.from_user,
-        knownDeviceId,
-      ).catch(() => null);
+    // Require sender device ID — distributions without it cannot be authenticated
+    const senderDeviceId = event.from_device_id ?? null;
+    if (!senderDeviceId) {
+      console.warn(
+        "[Signal] Skipping key_dist with no from_device_id from " +
+          event.from_user,
+      );
+      return;
     }
-    const senderDhPub = senderBundle
-      ? b64ToBytes(senderBundle.identity_dh_key)
-      : undefined;
+    // Fetch sender bundle to bind ECIES to sender identity (M-01)
+    const senderBundle = await fetchDeviceKeyBundle(
+      event.from_user,
+      senderDeviceId,
+    );
+    const senderDhPub = b64ToBytes(senderBundle.identity_dh_key);
     const payload = await decryptSenderKeyDist(
       ct,
       ek,
@@ -981,15 +980,10 @@ export async function receiveSenderKeyDist(event: {
       identity.dhPublicKey,
       senderDhPub,
     );
-    const senderDeviceId =
-      knownDeviceId ?? payload.senderDeviceId ?? "legacy";
-    if (payload.identitySignature && senderDeviceId !== "legacy") {
-      const bundleForVerify =
-        senderBundle ??
-        (await fetchDeviceKeyBundle(event.from_user, senderDeviceId));
+    if (payload.identitySignature) {
       verifySenderKeyDistPayload(
         payload,
-        b64ToBytes(bundleForVerify.identity_sig_key),
+        b64ToBytes(senderBundle.identity_sig_key),
         event.from_user,
         senderDeviceId,
       );

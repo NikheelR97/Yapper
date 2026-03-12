@@ -126,6 +126,28 @@ pub fn run() {
                 });
             }
 
+            // ── Window vibrancy (Mica on Win11, Acrylic on Win10, Vibrancy on macOS) ──
+            #[cfg(desktop)]
+            if let Some(window) = app.get_webview_window("main") {
+                #[cfg(target_os = "windows")]
+                {
+                    use window_vibrancy::{apply_acrylic, apply_mica};
+                    if apply_mica(&window, Some(true)).is_err() {
+                        let _ = apply_acrylic(&window, Some((0, 0, 0, 60)));
+                    }
+                }
+                #[cfg(target_os = "macos")]
+                {
+                    use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
+                    let _ = apply_vibrancy(
+                        &window,
+                        NSVisualEffectMaterial::HudWindow,
+                        None,
+                        Some(12.0),
+                    );
+                }
+            }
+
             Ok(())
         })
         // ── Window events ──────────────────────────────────────────────────

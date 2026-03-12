@@ -68,7 +68,7 @@
 <style>
 	.title-bar {
 		height: 32px;
-		background: #0a0a0f;
+		background: transparent;
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
