@@ -10,7 +10,7 @@
 
 import { get, writable } from 'svelte/store';
 import { authStore } from '$stores/auth.js';
-import { receiveSenderKeyDist } from '$lib/signal/index.js';
+import { receiveSenderKeyDist, handleKeyDistRequest } from '$lib/signal/index.js';
 
 const WS_URL = (import.meta.env.VITE_API_URL ?? 'http://localhost:8080').replace(
 	/^http/,
@@ -57,6 +57,17 @@ onWsMessage('key_dist_v2', (payload) => {
 			ek_public: string;
 		}
 	).catch((err) => console.error('[signal] Failed to process key_dist_v2:', err));
+});
+
+// When a new device joins a channel, redistribute our sender key to it.
+onWsMessage('key_dist_request', (payload) => {
+	handleKeyDistRequest(
+		payload as {
+			channel_id: string;
+			requester_user_id: string;
+			requester_device_id: string;
+		}
+	).catch((err) => console.error('[signal] Failed to handle key_dist_request:', err));
 });
 
 /** Register a handler for a specific message type inside `payload.type`. */

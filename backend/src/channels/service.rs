@@ -396,6 +396,41 @@ pub async fn store_key_distributions(
         }
     }
 
+    // After storing all distributions, broadcast a key_dist_request to all
+    // OTHER online channel members so they redistribute their sender key to
+    // the joining device.
+    let member_rows = sqlx::query(
+        "SELECT DISTINCT u.id as user_id \
+         FROM server_members sm \
+         JOIN channels c ON c.server_id = sm.server_id \
+         JOIN users u ON u.id = sm.user_id \
+         WHERE c.id = $1 AND u.id != $2 AND u.deleted_at IS NULL",
+    )
+    .bind(channel_id)
+    .bind(from_user)
+    .fetch_all(state.db.pool())
+    .await
+    .unwrap_or_default();
+
+    let other_user_ids: Vec<Uuid> = member_rows
+        .iter()
+        .filter_map(|r| r.try_get::<Uuid, _>("user_id").ok())
+        .collect();
+
+    if !other_user_ids.is_empty() {
+        state.hub.broadcast(
+            &other_user_ids,
+            crate::hub::WsOutbound::Message {
+                payload: serde_json::json!({
+                    "type": "key_dist_request",
+                    "channel_id": channel_id,
+                    "requester_user_id": from_user,
+                    "requester_device_id": from_device_id,
+                }),
+            },
+        );
+    }
+
     Ok(())
 }
 

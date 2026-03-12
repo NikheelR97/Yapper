@@ -1049,3 +1049,75 @@ export async function receiveSenderKeyDist(event: {
     );
   }
 }
+
+/**
+ * Handle a real-time key_dist_request WS event.
+ * A new device just joined the channel and needs our sender key.
+ * Encrypts and posts our current SenderKey distribution to that device.
+ */
+export async function handleKeyDistRequest(event: {
+  channel_id: string;
+  requester_user_id: string;
+  requester_device_id: string;
+}): Promise<void> {
+  const identity = await ks.loadIdentityKeyPair();
+  if (!identity) return;
+  const myUserId = get(authStore).user?.id;
+  const myDeviceId = get(authStore).device?.id;
+  if (!myUserId || !myDeviceId) return;
+  // Don't send to ourselves
+  if (
+    event.requester_user_id === myUserId &&
+    event.requester_device_id === myDeviceId
+  )
+    return;
+
+  const senderKey = await ks.loadSenderKey(event.channel_id);
+  if (!senderKey) return; // We don't have a key for this channel
+
+  const distPayload: SenderKeyDistPayload = signSenderKeyDistPayload(
+    {
+      channelId: event.channel_id,
+      senderUserId: myUserId,
+      senderDeviceId: myDeviceId,
+      chainKey: bytesToB64(senderKey.chainKey),
+      signingPubKey: bytesToB64(senderKey.signingPubKey),
+      iteration: senderKey.iteration,
+    },
+    identity,
+  );
+
+  try {
+    const recipientBundle = await fetchDeviceKeyBundle(
+      event.requester_user_id,
+      event.requester_device_id,
+    );
+    const recipientDhPub = b64ToBytes(recipientBundle.identity_dh_key);
+    const { ciphertext, ephemeralKey } = await encryptSenderKeyDist(
+      distPayload,
+      recipientDhPub,
+      identity.dhPublicKey,
+    );
+    await api.post(
+      "/api/v1/channels/" + event.channel_id + "/sender-key-dist",
+      {
+        distributions: [
+          {
+            to_user_id: event.requester_user_id,
+            to_device_id: event.requester_device_id,
+            ciphertext: bytesToB64(ciphertext),
+            ek_public: bytesToB64(ephemeralKey),
+          },
+        ],
+      },
+    );
+    console.debug(
+      "[Signal] Redistributed sender key for channel " +
+        event.channel_id +
+        " to device " +
+        event.requester_device_id,
+    );
+  } catch (e) {
+    console.warn("[Signal] Failed to redistribute sender key:", e);
+  }
+}
