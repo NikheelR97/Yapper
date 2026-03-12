@@ -127,7 +127,19 @@ fn validate_oauth_state(
     cookie_state.as_deref() == Some(expected_state) && state_store.remove(expected_state).is_some()
 }
 
-// ─── Callback query params ────────────────────────────────────────────────────
+// ─── Redirect + Callback query params ─────────────────────────────────────────
+
+/// Optional query params on the initial redirect endpoint (e.g. `?platform=desktop`).
+#[derive(Debug, Deserialize, Default)]
+pub struct OAuthRedirectQuery {
+    platform: Option<String>,
+}
+
+impl OAuthRedirectQuery {
+    fn is_desktop(&self) -> bool {
+        self.platform.as_deref() == Some("desktop")
+    }
+}
 
 #[derive(Debug, Deserialize)]
 pub struct OAuthCallbackParams {
@@ -144,13 +156,22 @@ pub struct OAuthErrorParams {
 
 // ─── Discord OAuth ─────────────────────────────────────────────────────────────
 
-pub async fn discord_redirect(State(state): State<AppState>) -> impl IntoResponse {
+pub async fn discord_redirect(
+    State(state): State<AppState>,
+    Query(query): Query<OAuthRedirectQuery>,
+) -> impl IntoResponse {
     let client_id = std::env::var("DISCORD_CLIENT_ID").unwrap_or_else(|_| "missing".to_string());
     let redirect_uri = format!("{}/auth/oauth/discord/callback", api_base());
 
     let csrf = new_state_token();
+    // Embed `:desktop` suffix in the state token so the callback knows which frontend to redirect to.
+    let state_token = if query.is_desktop() {
+        format!("{csrf}:desktop")
+    } else {
+        csrf
+    };
     gc_oauth_states(&state.oauth_states);
-    state.oauth_states.insert(csrf.clone(), Instant::now());
+    state.oauth_states.insert(state_token.clone(), Instant::now());
 
     let auth_url = url::Url::parse_with_params(
         "https://discord.com/api/oauth2/authorize",
@@ -159,13 +180,13 @@ pub async fn discord_redirect(State(state): State<AppState>) -> impl IntoRespons
             ("redirect_uri", redirect_uri.as_str()),
             ("response_type", "code"),
             ("scope", "identify email"),
-            ("state", csrf.as_str()),
+            ("state", state_token.as_str()),
         ],
     )
     .expect("Discord auth URL is valid");
 
     (
-        AppendHeaders([(header::SET_COOKIE, oauth_state_cookie_header(&csrf))]),
+        AppendHeaders([(header::SET_COOKIE, oauth_state_cookie_header(&state_token))]),
         Redirect::to(auth_url.as_str()),
     )
         .into_response()
@@ -180,6 +201,7 @@ pub async fn discord_callback(
     if !validate_oauth_state(&headers, &params.state, &state.oauth_states) {
         return oauth_error_redirect("invalid_state");
     }
+    let is_desktop = params.state.ends_with(":desktop");
 
     let client_id = std::env::var("DISCORD_CLIENT_ID").unwrap_or_default();
     let client_secret = std::env::var("DISCORD_CLIENT_SECRET").unwrap_or_default();
@@ -248,8 +270,15 @@ pub async fn discord_callback(
         )
     });
 
+    let frontend = if is_desktop {
+        "http://tauri.localhost".to_string()
+    } else {
+        frontend_base()
+    };
+
     match issue_oauth_code(
         &state,
+        &frontend,
         OAuthUserInfo {
             provider_id: discord_user.id,
             provider: "discord",
@@ -269,13 +298,21 @@ pub async fn discord_callback(
 
 // ─── Google OAuth ─────────────────────────────────────────────────────────────
 
-pub async fn google_redirect(State(state): State<AppState>) -> impl IntoResponse {
+pub async fn google_redirect(
+    State(state): State<AppState>,
+    Query(query): Query<OAuthRedirectQuery>,
+) -> impl IntoResponse {
     let client_id = std::env::var("GOOGLE_CLIENT_ID").unwrap_or_else(|_| "missing".to_string());
     let redirect_uri = format!("{}/auth/oauth/google/callback", api_base());
 
     let csrf = new_state_token();
+    let state_token = if query.is_desktop() {
+        format!("{csrf}:desktop")
+    } else {
+        csrf
+    };
     gc_oauth_states(&state.oauth_states);
-    state.oauth_states.insert(csrf.clone(), Instant::now());
+    state.oauth_states.insert(state_token.clone(), Instant::now());
 
     let auth_url = url::Url::parse_with_params(
         "https://accounts.google.com/o/oauth2/v2/auth",
@@ -284,14 +321,14 @@ pub async fn google_redirect(State(state): State<AppState>) -> impl IntoResponse
             ("redirect_uri", redirect_uri.as_str()),
             ("response_type", "code"),
             ("scope", "openid email profile"),
-            ("state", csrf.as_str()),
+            ("state", state_token.as_str()),
             ("access_type", "online"),
         ],
     )
     .expect("Google auth URL is valid");
 
     (
-        AppendHeaders([(header::SET_COOKIE, oauth_state_cookie_header(&csrf))]),
+        AppendHeaders([(header::SET_COOKIE, oauth_state_cookie_header(&state_token))]),
         Redirect::to(auth_url.as_str()),
     )
         .into_response()
@@ -306,6 +343,7 @@ pub async fn google_callback(
     if !validate_oauth_state(&headers, &params.state, &state.oauth_states) {
         return oauth_error_redirect("invalid_state");
     }
+    let is_desktop = params.state.ends_with(":desktop");
 
     let client_id = std::env::var("GOOGLE_CLIENT_ID").unwrap_or_default();
     let client_secret = std::env::var("GOOGLE_CLIENT_SECRET").unwrap_or_default();
@@ -363,8 +401,15 @@ pub async fn google_callback(
         .unwrap_or("user")
         .to_string();
 
+    let frontend = if is_desktop {
+        "http://tauri.localhost".to_string()
+    } else {
+        frontend_base()
+    };
+
     match issue_oauth_code(
         &state,
+        &frontend,
         OAuthUserInfo {
             provider_id: google_user.id,
             provider: "google",
@@ -408,6 +453,7 @@ pub struct ConsumedOAuthCode {
 
 async fn issue_oauth_code(
     state: &AppState,
+    frontend: &str,
     info: OAuthUserInfo,
 ) -> AppResult<axum::response::Response> {
     let pool = state.db.pool();
@@ -512,7 +558,7 @@ async fn issue_oauth_code(
     .await?;
 
     let redirect_url = url::Url::parse_with_params(
-        &format!("{}/oauth/callback", frontend_base()),
+        &format!("{}/oauth/callback", frontend),
         &[
             ("code", oauth_code.as_str()),
             ("is_new", if is_new { "true" } else { "false" }),
@@ -802,6 +848,7 @@ pub async fn apple_callback(
 
     match issue_oauth_code(
         &state,
+        &frontend_base(),
         OAuthUserInfo {
             provider_id: claims.sub,
             provider: "apple",

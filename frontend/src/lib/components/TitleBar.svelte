@@ -45,24 +45,22 @@
 		</div>
 
 		<div class="window-controls">
-			<button
-				class="wc-btn"
-				on:click={minimize}
-				title="Minimize"
-				aria-label="Minimize">─</button
-			>
-			<button
-				class="wc-btn"
-				on:click={toggleMaximize}
-				title="Maximize"
-				aria-label="Maximize">□</button
-			>
-			<button
-				class="wc-btn close"
-				on:click={close}
-				title="Close"
-				aria-label="Close">✕</button
-			>
+			<button class="wc-btn" on:click={minimize} title="Minimize" aria-label="Minimize">
+				<svg width="10" height="1" viewBox="0 0 10 1" fill="none" aria-hidden="true">
+					<rect width="10" height="1" fill="currentColor" />
+				</svg>
+			</button>
+			<button class="wc-btn" on:click={toggleMaximize} title="Maximize" aria-label="Maximize">
+				<svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+					<rect x="0.5" y="0.5" width="9" height="9" stroke="currentColor" stroke-width="1" fill="none" />
+				</svg>
+			</button>
+			<button class="wc-btn close" on:click={close} title="Close" aria-label="Close">
+				<svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
+					<line x1="0.5" y1="0.5" x2="9.5" y2="9.5" stroke="currentColor" stroke-width="1.2" />
+					<line x1="9.5" y1="0.5" x2="0.5" y2="9.5" stroke="currentColor" stroke-width="1.2" />
+				</svg>
+			</button>
 		</div>
 	</div>
 {/if}
@@ -119,16 +117,16 @@
 	}
 
 	.wc-btn {
-		width: 30px;
+		width: 46px;
 		height: 32px;
 		background: none;
 		border: none;
 		color: #9ca3af;
-		font-size: 12px;
 		cursor: pointer;
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		padding: 0;
 		transition:
 			background 100ms,
 			color 100ms;
@@ -140,7 +138,7 @@
 	}
 
 	.wc-btn.close:hover {
-		background: #ef4444;
+		background: #c42b1c;
 		color: white;
 	}
 </style>

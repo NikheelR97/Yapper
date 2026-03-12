@@ -31,6 +31,11 @@ pub fn run() {
         .manage(AppSettingsState::default())
         // ── Setup ──────────────────────────────────────────────────────────
         .setup(|app| {
+            // Ensure the app data directory exists so Stronghold can write the vault file.
+            if let Ok(data_dir) = app.path().app_data_dir() {
+                let _ = std::fs::create_dir_all(&data_dir);
+            }
+
             let handle = app.handle().clone();
 
             // ── Global shortcuts ──────────────────────────────────────────
