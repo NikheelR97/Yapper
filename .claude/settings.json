@@ -1,0 +1,35 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'f=\"$CLAUDE_TOOL_INPUT_FILE_PATH\"; case \"$f\" in *.rs) cd /d/Development/Claude/yapper/backend && cargo fmt -- \"$f\" 2>&1 | head -5 ;; *.svelte|*.ts) cd /d/Development/Claude/yapper/frontend && npx prettier --write \"$f\" --log-level warn 2>&1 | head -5 ;; esac'"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'f=\"$CLAUDE_TOOL_INPUT_FILE_PATH\"; case \"$f\" in *.rs) echo \"[cargo check]\"; cd /d/Development/Claude/yapper/backend && cargo check --message-format short 2>&1 | grep -E \"^error\" | head -10 ;; *.svelte|*.ts) echo \"[svelte-check]\"; cd /d/Development/Claude/yapper/frontend && npx svelte-check --threshold error 2>&1 | grep -E \"Error\" | head -10 ;; migrations/*.sql) echo \"[reminder] Run: cargo sqlx prepare in backend/\" ;; esac'"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'cmd=\"$CLAUDE_TOOL_INPUT_COMMAND\"; if echo \"$cmd\" | grep -qE \"git push.*--force|git push.*-f\"; then echo \"BLOCKED: force push detected. Use --force-with-lease or confirm with user first.\"; exit 1; fi'"
+          }
+        ]
+      }
+    ]
+  }
+}

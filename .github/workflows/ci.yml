@@ -39,14 +39,28 @@ jobs:
         with:
           components: clippy, rustfmt
 
-      - name: Cache Cargo
+      - name: Cache Cargo registry + build
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: backend
 
+      # Cache installed cargo binaries separately — avoids ~5 min reinstall per run
+      - name: Cache cargo tools (sqlx-cli, cargo-audit)
+        uses: actions/cache@v4
+        id: cargo-tools-cache
+        with:
+          path: ~/.cargo/bin
+          key: cargo-tools-${{ runner.os }}-${{ hashFiles('backend/Cargo.lock') }}
+          restore-keys: cargo-tools-${{ runner.os }}-
+
       - name: Install sqlx-cli
+        if: steps.cargo-tools-cache.outputs.cache-hit != 'true'
         run: cargo install sqlx-cli --no-default-features --features postgres --locked
         working-directory: backend
+
+      - name: Install cargo-audit
+        if: steps.cargo-tools-cache.outputs.cache-hit != 'true'
+        run: cargo install cargo-audit --locked
 
       - name: Run migrations
         run: sqlx migrate run
@@ -63,9 +77,6 @@ jobs:
       - name: Run tests
         run: cargo test
         working-directory: backend
-
-      - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
 
       - name: Security audit
         run: |
@@ -115,7 +126,7 @@ jobs:
         working-directory: frontend
         continue-on-error: true  # advisory-only for now; promote to blocking once clean
 
-      - name: Build
+      - name: Build (verify no compile errors)
         run: npm run build
         working-directory: frontend
 
@@ -143,6 +154,7 @@ jobs:
         working-directory: marketing
 
   # ─── Deploy (main branch only) ───────────────────────────────────────────────
+
   deploy-frontend:
     name: Deploy frontend to Cloudflare Pages
     runs-on: ubuntu-latest
@@ -163,11 +175,12 @@ jobs:
         run: npm ci
         working-directory: frontend
 
-      - name: Build
+      - name: Build (production)
         run: npm run build
         working-directory: frontend
         env:
           VITE_API_URL: https://api.yapperhq.com
+          VITE_FIREBASE_VAPID_KEY: BOrz15S2L_kg0_R5Tam_gbtO_Zf3LzTVFwzQGbCsDFLZgi6fG5DUk3KjIMLs4N3oGeaGkJcbxfeBlHGzDF5k8Cc
           VITE_SENTRY_DSN: https://2fe4d6f44e9985a1ac07cec40fb24e33@o4510987106123776.ingest.de.sentry.io/4510987113398352
 
       - name: Deploy to Cloudflare Pages
@@ -180,7 +193,8 @@ jobs:
   deploy-backend:
     name: Deploy backend to Fly.io
     runs-on: ubuntu-latest
-    needs: [backend, frontend]
+    # Only depends on backend — decoupled from frontend so both deploys run in parallel
+    needs: [backend]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:
@@ -190,10 +204,25 @@ jobs:
         uses: superfly/flyctl-actions/setup-flyctl@master
 
       - name: Deploy to Fly.io
-        run: flyctl deploy --remote-only
+        run: flyctl deploy --remote-only --wait-timeout 120
         working-directory: backend
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      - name: Smoke test — verify API health
+        run: |
+          echo "Waiting for machines to stabilise..."
+          sleep 15
+          for i in 1 2 3; do
+            if curl --silent --fail --max-time 10 https://api.yapperhq.com/health | grep -q '"status"'; then
+              echo "Health check passed"
+              exit 0
+            fi
+            echo "Attempt $i failed — retrying in 10s..."
+            sleep 10
+          done
+          echo "Health check failed after 3 attempts"
+          exit 1
 
   deploy-marketing:
     name: Deploy marketing to Cloudflare Pages

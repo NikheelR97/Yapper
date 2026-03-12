@@ -1,0 +1,65 @@
+version: 2
+
+updates:
+  # ── Frontend (SvelteKit + Tauri) ───────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Africa/Johannesburg
+    groups:
+      # Group related packages into single PRs to reduce noise
+      svelte:
+        patterns: ["svelte", "@sveltejs/*"]
+      tauri:
+        patterns: ["@tauri-apps/*"]
+      noble-crypto:
+        patterns: ["@noble/*"]
+      capacitor:
+        patterns: ["@capacitor/*"]
+      testing:
+        patterns: ["vitest", "@vitest/*", "@playwright/*", "@testing-library/*"]
+    ignore:
+      # Avoid major-version bumps — review manually
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  # ── Marketing site (Astro) ─────────────────────────────────────────────────
+  - package-ecosystem: npm
+    directory: /marketing
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Africa/Johannesburg
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  # ── Backend (Rust) ─────────────────────────────────────────────────────────
+  - package-ecosystem: cargo
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Africa/Johannesburg
+    groups:
+      aws:
+        patterns: ["aws-sdk-*", "aws-*"]
+      axum-tower:
+        patterns: ["axum", "tower", "tower-http", "hyper"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  # ── GitHub Actions ─────────────────────────────────────────────────────────
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Africa/Johannesburg
