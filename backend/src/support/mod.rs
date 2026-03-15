@@ -122,13 +122,12 @@ async fn create_ticket(
     }
 
     // Enforce per-user ticket cap
-    let ticket_count: i64 =
-        sqlx::query("SELECT COUNT(*) FROM support_tickets WHERE user_id = $1")
-            .bind(auth.user_id)
-            .fetch_one(state.db.pool())
-            .await
-            .map(|r| r.try_get::<i64, _>(0).unwrap_or(0))
-            .unwrap_or(0);
+    let ticket_count: i64 = sqlx::query("SELECT COUNT(*) FROM support_tickets WHERE user_id = $1")
+        .bind(auth.user_id)
+        .fetch_one(state.db.pool())
+        .await
+        .map(|r| r.try_get::<i64, _>(0).unwrap_or(0))
+        .unwrap_or(0);
 
     if ticket_count >= MAX_TICKETS_PER_USER {
         return Err(AppError::BadRequest(format!(
