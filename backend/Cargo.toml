@@ -86,7 +86,7 @@ tokio = { version = "1", features = ["full", "test-util"] }
 axum-test = "14"
 
 [profile.release]
-opt-level = 3
-lto = "thin"
-codegen-units = 1
+opt-level = 2       # 2 vs 3 is negligible for an I/O-bound server
+lto = false         # thin LTO serialises the final link step; not worth the cost
+codegen-units = 16  # parallel LLVM codegen units (default); was 1
 strip = true
