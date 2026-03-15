@@ -2,6 +2,8 @@
 	import { api } from "$api/client.js";
 	import { toast } from "$stores/toast.js";
 	import { onMount } from "svelte";
+	import { isTauri as _isTauri } from "$lib/plugins/tauri-compat.js";
+	const isTauri = _isTauri();
 
 	let dm_permission: "everyone" | "friends" | "nobody" = "everyone";
 	let friend_request_permission:
@@ -10,11 +12,6 @@
 		| "nobody" = "everyone";
 	let show_last_seen = true;
 	let saving = false;
-
-	// Detect if running in Tauri
-	const isTauri =
-		typeof window !== "undefined" &&
-		!!((window as any).__TAURI_INTERNALS__ || (window as any).__TAURI__);
 
 	// Pre-populate from the API
 	onMount(async () => {

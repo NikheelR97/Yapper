@@ -1,7 +1,7 @@
 # YAPPER — Developer Handover Document
 
-**Last updated:** 2026-03-03 (rev 2)
-**Project status:** Active development — S0–S9 largely complete; Emojis + Settings fully wired end-to-end; S10–S11 frontend built, desktop/security/launch pending
+**Last updated:** 2026-03-16 (rev 3)
+**Project status:** Active development — S0–S12 complete; Support tickets + HubSpot integration live; CI build pipeline optimised (GHA layer cache, ~90s deploys)
 **Full implementation plan:** `C:\Users\rajma\.claude\plans\quizzical-yawning-starfish.md`
 
 ---
@@ -456,6 +456,8 @@ Mitigations for Neon cold starts (500ms–2s):
 | 16 | Security Audit | Pending | Pre-launch hardening, GDPR/COPPA compliance verification, `SECURITY_AUDIT.md` |
 | 17 | Premium Placeholder | FE ✅ — BE Pending | `Premium.svelte`, `GoproLock.svelte`, settings GoPro promo card built; BE `is_premium` flag pending |
 | 18 | Launch Prep | Pending | Fly.io production deploy, Sentry, E2E test suite, app store submissions |
+| 19 | Support Tickets | ✅ Complete | `POST/GET /api/v1/support/tickets`, HubSpot CRM integration, `Support.svelte` settings page |
+| 20 | Build Pipeline | ✅ Complete | GHA Docker layer cache, `flyctl deploy --image`, Cargo profile tuning (~90s deploys) |
 
 ### Global UI Infrastructure (Complete — 2026-03-03)
 
@@ -641,19 +643,22 @@ For any developer picking up this project:
 - [x] Review the security standards in Section 4 — these are non-negotiable
 - [ ] Check the current phase status and pick up where it left off
 
-### Where to Pick Up Next (as of 2026-03-03, rev 2)
+### Where to Pick Up Next (as of 2026-03-16, rev 3)
 
-**All frontend UI is built. Most of S9 is now done.** Priority order:
+**S0–S12 complete. Support tickets live. Build pipeline optimised.** Priority order:
 
-1. **S9 — Settings BE (remaining)**: profile avatar/banner upload endpoint, GDPR data export ZIP (`GET /api/v1/users/me/export`), 30-day soft-delete (`DELETE /api/v1/account`)
-2. **S8 — Screen Time BE** (`backend/src/screentime/`): `POST /api/v1/screentime/report`, `GET /api/v1/parental/children/{id}/screentime`; then wire Capacitor native plugins (iOS `ScreenTimePlugin.swift`, Android `ScreenTimePlugin.kt`)
-3. **S8 — Discord BE** (`backend/src/discord/`): Discord profile importer (OAuth2 → avatar re-upload to R2); `backend/src/bots/` module (bot auth, `POST /api/v1/bots/import-discord`)
-4. **S10 — Tauri Polish**: system tray plugin, native notifications, Stronghold key storage, auto-updater, deep links, installer configs (NSIS/DMG/AppImage)
-5. **S10 — Security Audit**: rate limit audit, CORS/CSP/HSTS review, GDPR/COPPA verification, `cargo audit`, `npm audit`, `SECURITY_AUDIT.md`
-6. **S11 — Launch**: Sentry integration, full Playwright E2E test suite, production deploy, app store submissions
+1. **E2E Testing** — Write Playwright tests (`e2e-nightly.yml` is configured, test accounts needed: `E2E_USER_EMAIL/PASSWORD` as GitHub Secrets)
+2. **macOS DMG build** — Run on Mac: `cargo tauri build --target universal-apple-darwin`
+3. **iOS build** — Run on Mac: `cd frontend/ios && pod install`, then Xcode archive + App Store Connect upload
+4. **Google Play submission** — Build AAB, create Play Console listing ($25 one-time)
+5. **Marketing site update** — Update hero copy, add download links for Windows installer
+6. **Wishlist email blast** — Send launch announcement to all wishlist subscribers via Resend
+7. **Generate Tauri signing keys** — `cargo tauri signer generate`, set `TAURI_SIGNING_PRIVATE_KEY` + `TAURI_SIGNING_PASSWORD` as GitHub Secrets
+8. **Apple OAuth credentials** — Create Apple Sign-In service ID, configure redirect URIs
 
-**Completed since last handover (2026-03-03 rev 1 → rev 2):**
-- Emoji system wired end-to-end: `fetchServerEmojis()` in servers store, `:shortcode:` rendering in MessageList (XSS-safe), EmojiPicker integrated into MessageInput with cursor-position insert
-- Settings appearance + notifications endpoints: DB tables (`user_appearance_settings`, `user_notification_settings`), `GET/PATCH /api/v1/users/me/appearance`, `GET/PATCH /api/v1/users/me/notifications`, Postgres `TIME` → `HH:MM` trimming for `<input type="time">`
-- Child setup wizard: Step 1 now collects `username`, `email`, `password` (required by `CreateChildInput`); `createChild()` in parental store maps camelCase → snake_case correctly
-- Bug fixes: `clearAuth()` missing `csrfToken`, register page response type, `child.displayName` → `child.display_name` in parent pages, explore page server-join flow, `[] as Vec<String>` invalid in `json!()` macro
+**Completed since last handover (2026-03-03 rev 2 → rev 3):**
+- Support tickets: `POST/GET /api/v1/support/tickets`, migration 000026, HubSpot CRM Tickets API (`HUBSPOT_ACCESS_TOKEN` on Fly.io), `Support.svelte` with type selector/priority chips/ticket history in settings
+- Build pipeline: GHA Docker layer caching (`type=gha,mode=max`), `flyctl deploy --image <sha>`, Cargo profile tuning (`codegen-units=16, lto=false`). Deploy time: ~700s → ~90s steady-state
+- All 17 Dependabot PRs merged — npm/Cargo/GH Actions fully up to date
+- Project management: Linear integration guide at `dev docs/LINEAR_INTEGRATION.md`
+- Docs: `dev docs/BUILD_SPEED_OPTIMISATION.md`, `dev docs/LINEAR_INTEGRATION.md`

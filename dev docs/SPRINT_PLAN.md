@@ -23,6 +23,7 @@
 | **S10** | W21–W22 | Phase 15 + Phase 16 | Desktop Polish + Security Audit | ✅ Complete |
 | **S11** | W23–W24 | Phase 17 + Phase 18 | Premium Prep + Launch | In Progress — Desktop deployed, E2E Testing + Launch Pending |
 | **S12** | W25–W26 | Security Hardening | Deep Pen-Test Remediation | ✅ Complete — all CRITICAL/HIGH/MEDIUM fixed (2026-03-11) |
+| **S13** | W27 | Support + Infra | Support Tickets + Build Pipeline | ✅ Complete (2026-03-16) — HubSpot integration, GHA Docker cache, ~90s deploys |
 | **B1** | Any time | Business | Startup Cloud Credits | ⏳ Not started — apply basic tracks immediately |
 
 **Total: ~26 weeks (6.5 months) to hardened MVP launch.**

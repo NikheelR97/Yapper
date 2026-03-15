@@ -1,20 +1,21 @@
-# ─── Build stage ─────────────────────────────────────────────────────────────
-FROM rust:1.93-alpine AS builder
-
+# ─── Chef stage — installs cargo-chef ────────────────────────────────────────
+FROM rust:1.83-alpine AS chef
 RUN apk add --no-cache musl-dev openssl-dev openssl-libs-static pkgconfig
-
+RUN cargo install cargo-chef --locked
 WORKDIR /app
 
-# Cache dependencies separately from source for faster rebuilds
-COPY Cargo.toml Cargo.lock ./
-RUN mkdir src && echo "fn main() {}" > src/main.rs
-RUN cargo build --release 2>/dev/null || true
-RUN rm -rf src
-
-# Build actual source
+# ─── Planner stage — computes the dependency recipe ──────────────────────────
+FROM chef AS planner
 COPY . .
-# Touch main.rs to force rebuild (dependency cache is warm)
-RUN touch src/main.rs
+RUN cargo chef prepare --recipe-path recipe.json
+
+# ─── Builder stage — caches deps then builds source ──────────────────────────
+FROM chef AS builder
+COPY --from=planner /app/recipe.json recipe.json
+# This layer is cached as long as dependencies don't change
+RUN cargo chef cook --release --recipe-path recipe.json
+
+COPY . .
 ENV SQLX_OFFLINE=true
 RUN cargo build --release
 

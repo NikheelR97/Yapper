@@ -4,6 +4,7 @@
 	import { setAuth } from '$stores/auth.js';
 	import type { User } from '$stores/auth.js';
 	import { getDeviceBootstrap, normalizeServerDevice } from '$lib/device/bootstrap.js';
+	import { isTauri as _isTauri } from '$lib/plugins/tauri-compat.js';
 
 	let email = '';
 	let password = '';
@@ -11,7 +12,7 @@
 	let loading = false;
 
 	const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:8080';
-	const isTauri = typeof window !== 'undefined' && !!((window as any).__TAURI_INTERNALS__ || (window as any).__TAURI__);
+	const isTauri = _isTauri();
 	const oauthSuffix = isTauri ? '?platform=desktop' : '';
 
 	function navigateOAuth(provider: 'discord' | 'google') {

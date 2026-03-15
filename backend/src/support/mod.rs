@@ -91,15 +91,8 @@ fn ticket_type_prefix(t: &str) -> &'static str {
     }
 }
 
-// ─── POST /tickets ─────────────────────────────────────────────────────────────
-
-/// Creates a support ticket, stores it locally, and forwards it to HubSpot.
-async fn create_ticket(
-    auth: AuthUser,
-    State(state): State<AppState>,
-    Json(body): Json<CreateTicketInput>,
-) -> AppResult<impl IntoResponse> {
-    // Precondition checks
+/// Validates CreateTicketInput fields; returns BadRequest on the first violation.
+fn validate_input(body: &CreateTicketInput) -> AppResult<()> {
     if !validate_ticket_type(&body.ticket_type) {
         return Err(AppError::BadRequest(
             "ticket_type must be one of: bug, idea, improvement".into(),
@@ -120,6 +113,18 @@ async fn create_ticket(
             "description must be 1–{MAX_DESCRIPTION_LEN} characters"
         )));
     }
+    Ok(())
+}
+
+// ─── POST /tickets ─────────────────────────────────────────────────────────────
+
+/// Creates a support ticket, stores it locally, and forwards it to HubSpot.
+async fn create_ticket(
+    auth: AuthUser,
+    State(state): State<AppState>,
+    Json(body): Json<CreateTicketInput>,
+) -> AppResult<impl IntoResponse> {
+    validate_input(&body)?;
 
     // Enforce per-user ticket cap
     let ticket_count: i64 = sqlx::query("SELECT COUNT(*) FROM support_tickets WHERE user_id = $1")

@@ -69,7 +69,9 @@
 	async function logout() {
 		try {
 			await api.delete("/api/v2/auth/logout");
-		} catch {}
+		} catch {
+			// Best-effort server-side session revocation — always clear local auth
+		}
 		clearAuth();
 		await goto("/login");
 	}
@@ -163,7 +165,7 @@
 	}
 
 	onMount(() => {
-		void loadDevices();
+		void loadDevices(); // fire-and-forget: errors surfaced via devices=[]
 	});
 </script>
 

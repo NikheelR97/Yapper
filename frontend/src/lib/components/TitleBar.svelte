@@ -1,10 +1,9 @@
 <script lang="ts">
 	import { page } from "$app/stores";
+	import { isTauri as _isTauri } from "$lib/plugins/tauri-compat.js";
 
 	// Only show in Tauri
-	const isTauri =
-		typeof window !== "undefined" &&
-		!!((window as any).__TAURI_INTERNALS__ || (window as any).__TAURI__);
+	const isTauri = _isTauri();
 
 	$: channelName = $page.url.pathname.includes("/channels/")
 		? "#" + ($page.url.pathname.split("/").pop() ?? "general")

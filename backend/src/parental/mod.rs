@@ -21,6 +21,13 @@ use axum::{
 use sqlx::Row;
 use uuid::Uuid;
 
+const MAX_USERNAME_LEN: usize = 32;
+const MIN_USERNAME_LEN: usize = 2;
+const MAX_DISPLAY_NAME_LEN: usize = 50;
+const MAX_EMAIL_LEN: usize = 254;
+const MAX_PASSWORD_BYTES: usize = 1024;
+const MIN_PASSWORD_LEN: usize = 8;
+
 use crate::{
     auth::AuthUser,
     error::{AppError, AppResult},
@@ -88,6 +95,29 @@ async fn create_child(
         ));
     }
 
+    // Validate string fields before any DB or crypto work (Rule 3 — validate at boundaries)
+    if body.password.len() < MIN_PASSWORD_LEN || body.password.len() > MAX_PASSWORD_BYTES {
+        return Err(AppError::BadRequest(
+            format!("Password must be {MIN_PASSWORD_LEN}–{MAX_PASSWORD_BYTES} characters").into(),
+        ));
+    }
+    let username = body.username.trim();
+    if username.len() < MIN_USERNAME_LEN || username.len() > MAX_USERNAME_LEN {
+        return Err(AppError::BadRequest(
+            format!("Username must be {MIN_USERNAME_LEN}–{MAX_USERNAME_LEN} characters").into(),
+        ));
+    }
+    let display_name = body.display_name.trim();
+    if display_name.is_empty() || display_name.len() > MAX_DISPLAY_NAME_LEN {
+        return Err(AppError::BadRequest(
+            format!("Display name must be 1–{MAX_DISPLAY_NAME_LEN} characters").into(),
+        ));
+    }
+    let email = body.email.trim();
+    if email.is_empty() || email.len() > MAX_EMAIL_LEN || !email.contains('@') {
+        return Err(AppError::BadRequest("Invalid email address".into()));
+    }
+
     // Hash password using existing auth helper
     let password_hash = crate::auth::service::hash_password(&body.password)
         .map_err(|e| AppError::Internal(anyhow::anyhow!(e)))?;
@@ -100,9 +130,9 @@ async fn create_child(
          VALUES ($1, $2, $3, $4, 'child', TRUE, $5, NOW())
          RETURNING id",
     )
-    .bind(&body.username)
-    .bind(&body.display_name)
-    .bind(&body.email)
+    .bind(username)
+    .bind(display_name)
+    .bind(email)
     .bind(&password_hash)
     .bind(dob)
     .fetch_one(state.db.pool())
@@ -140,8 +170,8 @@ async fn create_child(
         StatusCode::CREATED,
         Json(serde_json::json!({
             "child_id":     child_id,
-            "username":     body.username,
-            "display_name": body.display_name,
+            "username":     username,
+            "display_name": display_name,
             "account_type": "child",
             "parental_controls_enabled": true,
         })),
