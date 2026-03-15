@@ -54,6 +54,7 @@ mod parental;
 mod premium;
 mod screentime;
 mod servers;
+mod support;
 mod users;
 
 use auth::{JwtKeys, LoginRateLimiter, OAuthStateStore};
@@ -244,6 +245,7 @@ fn api_router() -> Router<AppState> {
         .nest("/discord", discord::router())
         .nest("/premium", premium::router())
         .nest("/notifications", notifications::router())
+        .nest("/support", support::router())
         .layer(axum::middleware::from_fn(csrf::csrf_check))
 }
 

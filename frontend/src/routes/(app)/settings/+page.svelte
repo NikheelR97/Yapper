@@ -15,6 +15,7 @@
 	import DiscordImport from "$components/settings/DiscordImport.svelte";
 	import DeveloperTools from "$components/settings/DeveloperTools.svelte";
 	import ChangePassword from "$components/settings/ChangePassword.svelte";
+	import Support from "$components/settings/Support.svelte";
 
 	type Section =
 		| "profile"
@@ -26,7 +27,8 @@
 		| "premium"
 		| "connections"
 		| "family"
-		| "developer";
+		| "developer"
+		| "support";
 
 	let activeSection: Section = "profile";
 	let showDeleteConfirm = false;
@@ -61,6 +63,7 @@
 		{ id: "connections", label: "Connected Accounts" },
 		{ id: "family", label: "Family Controls" },
 		{ id: "developer", label: "For Developers" },
+		{ id: "support", label: "Support" },
 	];
 
 	async function logout() {
@@ -270,6 +273,8 @@
 			</div>
 		{:else if activeSection === "developer"}
 			<DeveloperTools />
+		{:else if activeSection === "support"}
+			<Support />
 		{/if}
 	</main>
 
