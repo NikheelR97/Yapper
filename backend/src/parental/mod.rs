@@ -97,21 +97,21 @@ async fn create_child(
 
     // Validate string fields before any DB or crypto work (Rule 3 — validate at boundaries)
     if body.password.len() < MIN_PASSWORD_LEN || body.password.len() > MAX_PASSWORD_BYTES {
-        return Err(AppError::BadRequest(
-            format!("Password must be {MIN_PASSWORD_LEN}–{MAX_PASSWORD_BYTES} characters").into(),
-        ));
+        return Err(AppError::BadRequest(format!(
+            "Password must be {MIN_PASSWORD_LEN}–{MAX_PASSWORD_BYTES} characters"
+        )));
     }
     let username = body.username.trim();
     if username.len() < MIN_USERNAME_LEN || username.len() > MAX_USERNAME_LEN {
-        return Err(AppError::BadRequest(
-            format!("Username must be {MIN_USERNAME_LEN}–{MAX_USERNAME_LEN} characters").into(),
-        ));
+        return Err(AppError::BadRequest(format!(
+            "Username must be {MIN_USERNAME_LEN}–{MAX_USERNAME_LEN} characters"
+        )));
     }
     let display_name = body.display_name.trim();
     if display_name.is_empty() || display_name.len() > MAX_DISPLAY_NAME_LEN {
-        return Err(AppError::BadRequest(
-            format!("Display name must be 1–{MAX_DISPLAY_NAME_LEN} characters").into(),
-        ));
+        return Err(AppError::BadRequest(format!(
+            "Display name must be 1–{MAX_DISPLAY_NAME_LEN} characters"
+        )));
     }
     let email = body.email.trim();
     if email.is_empty() || email.len() > MAX_EMAIL_LEN || !email.contains('@') {
