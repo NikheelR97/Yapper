@@ -6,7 +6,7 @@
   let errorMsg = '';
   let count = 0;
 
-  const workerBase = apiUrl || 'https://yapper-wishlist-api.YOUR-SUBDOMAIN.workers.dev';
+  const workerBase = apiUrl || 'https://yapperhq.com';
 
   // Fetch signup count on mount
   async function fetchCount() {
