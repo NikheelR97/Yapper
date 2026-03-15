@@ -1,16 +1,14 @@
-# ─── Chef stage — installs cargo-chef ────────────────────────────────────────
-FROM rust:1.85-alpine AS chef
-RUN apk add --no-cache musl-dev openssl-dev openssl-libs-static pkgconfig
-RUN cargo install cargo-chef --locked
-WORKDIR /app
-
 # ─── Planner stage — computes the dependency recipe ──────────────────────────
-FROM chef AS planner
+FROM lukemathwalker/cargo-chef:latest-rust-alpine AS planner
+RUN apk add --no-cache musl-dev openssl-dev openssl-libs-static pkgconfig
+WORKDIR /app
 COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
 
 # ─── Builder stage — caches deps then builds source ──────────────────────────
-FROM chef AS builder
+FROM lukemathwalker/cargo-chef:latest-rust-alpine AS builder
+RUN apk add --no-cache musl-dev openssl-dev openssl-libs-static pkgconfig
+WORKDIR /app
 COPY --from=planner /app/recipe.json recipe.json
 # This layer is cached as long as dependencies don't change
 RUN cargo chef cook --release --recipe-path recipe.json
