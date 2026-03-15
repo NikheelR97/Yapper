@@ -47,12 +47,13 @@ jobs:
         run: npx playwright test --shard=${{ matrix.shard }}
         working-directory: frontend
         env:
-          PLAYWRIGHT_BASE_URL: ${{ env.BASE_URL }}
-          # Test account credentials injected from secrets
-          E2E_USER_EMAIL: ${{ secrets.E2E_USER_EMAIL }}
-          E2E_USER_PASSWORD: ${{ secrets.E2E_USER_PASSWORD }}
-          E2E_USER2_EMAIL: ${{ secrets.E2E_USER2_EMAIL }}
-          E2E_USER2_PASSWORD: ${{ secrets.E2E_USER2_PASSWORD }}
+          BASE_URL: ${{ env.BASE_URL }}
+          VITE_API_URL: https://api.yapperhq.com
+          # Test account credentials — names must match what the specs read
+          E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+          E2E_EMAIL_2: ${{ secrets.E2E_EMAIL_2 }}
+          E2E_PASSWORD_2: ${{ secrets.E2E_PASSWORD_2 }}
 
       - name: Upload Playwright report
         if: always()
