@@ -26,10 +26,10 @@ ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
 
 # Auth
 argon2 = "0.5"
-jsonwebtoken = "9"
+jsonwebtoken = "10"
 oauth2 = "4"
 url = "2"
-validator = { version = "0.18", features = ["derive"] }
+validator = { version = "0.20", features = ["derive"] }
 sha2 = "0.10"
 hmac = "0.12"
 getrandom = "0.2"
