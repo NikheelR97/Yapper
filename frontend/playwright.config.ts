@@ -43,10 +43,12 @@ export default defineConfig({
 		},
 	],
 
-	webServer: {
-		command: 'npm run dev',
-		url: 'http://localhost:5173',
-		reuseExistingServer: !process.env.CI,
-		timeout: 120_000,
-	},
+	webServer: process.env.BASE_URL && !process.env.BASE_URL.includes('localhost')
+		? undefined
+		: {
+				command: 'npm run dev',
+				url: 'http://localhost:5173',
+				reuseExistingServer: !process.env.CI,
+				timeout: 120_000,
+			},
 });

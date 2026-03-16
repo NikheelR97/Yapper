@@ -39,6 +39,7 @@ test.describe('Explore - authenticated', () => {
 	});
 
 	test('renders core explore controls and handles join attempts', async ({ page }) => {
+		test.slow(); // real login + Signal key bootstrap can push past the 30 s default
 		await loginAs(page);
 		const searchInput = page.getByRole('searchbox', { name: 'Search' });
 		await expect(searchInput).toBeVisible({ timeout: 30_000 });

@@ -1,5 +1,12 @@
 import { test, expect, type Browser } from '@playwright/test';
-import { loginViaApi, setInstallationId } from './auth-helper.js';
+import {
+	loginViaApi,
+	setInstallationId,
+	seedTrustedPrimaryDevice,
+	seedTrustedPrimaryDeviceB,
+	PRIMARY_INSTALLATION_ID,
+	B_PRIMARY_INSTALLATION_ID,
+} from './auth-helper.js';
 
 /**
  * Cross-user channel E2E encryption tests.
@@ -19,9 +26,9 @@ const USER_A_PASS = process.env.E2E_PASSWORD ?? '';
 const USER_B_EMAIL = process.env.E2E_EMAIL_2 ?? '';
 const USER_B_PASS = process.env.E2E_PASSWORD_2 ?? '';
 
-// Fixed installation IDs so the backend reuses the same device records across runs.
-const USER_A_CHANNEL_INSTALLATION = 'ac000000-0000-4000-8000-000000000001';
-const USER_B_CHANNEL_INSTALLATION = 'bc000000-0000-4000-8000-000000000001';
+// Use the seeded primary installation IDs so both devices are trusted across runs.
+const USER_A_CHANNEL_INSTALLATION = PRIMARY_INSTALLATION_ID;
+const USER_B_CHANNEL_INSTALLATION = B_PRIMARY_INSTALLATION_ID;
 
 interface Session {
 	accessToken: string;
@@ -120,6 +127,38 @@ test.describe('Channel E2EE — cross-user message decryption', () => {
 		!USER_A_EMAIL || !USER_B_EMAIL,
 		'Set E2E_EMAIL, E2E_PASSWORD, E2E_EMAIL_2, E2E_PASSWORD_2 to run cross-user E2E tests',
 	);
+
+	test.beforeAll(async ({ browser }) => {
+		// Extend hook timeout: two browser logins + Signal key bootstrap can take ~2 min
+		test.setTimeout(180_000);
+		seedTrustedPrimaryDevice();
+		seedTrustedPrimaryDeviceB();
+
+		// Both users must have their Signal prekeys uploaded before any channel test
+		// runs. Without this, A can't encrypt the SenderKey distribution for B and
+		// B will see "Unable to decrypt".
+		for (const [email, pass, installId] of [
+			[USER_A_EMAIL, USER_A_PASS, USER_A_CHANNEL_INSTALLATION],
+			[USER_B_EMAIL, USER_B_PASS, USER_B_CHANNEL_INSTALLATION],
+		] as [string, string, string][]) {
+			if (!email || !pass) continue;
+			const ctx = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+			try {
+				const pg = await ctx.newPage();
+				await setInstallationId(pg, installId);
+				await pg.goto('/login');
+				await pg.fill('#email', email);
+				await pg.fill('#password', pass);
+				await pg.getByRole('button', { name: /Sign In/i }).click();
+				await pg.waitForURL(/\/explore/, { timeout: 30_000 });
+				await expect(pg.locator('[aria-label="Loading Yapper"]')).toHaveCount(0, {
+					timeout: 45_000,
+				});
+			} finally {
+				await ctx.close();
+			}
+		}
+	});
 
 	test(
 		'User B can read a channel message sent by User A (Sender Key decryption regression)',

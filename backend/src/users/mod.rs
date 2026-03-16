@@ -512,7 +512,8 @@ pub async fn send_friend_request(
     sqlx::query(
         "INSERT INTO friendships (user_id_1, user_id_2, status, requested_by) \
          VALUES ($1, $2, 'pending', $3) \
-         ON CONFLICT (user_id_1, user_id_2) DO NOTHING",
+         ON CONFLICT (user_id_1, user_id_2) \
+         DO UPDATE SET status = 'pending', requested_by = EXCLUDED.requested_by",
     )
     .bind(uid1)
     .bind(uid2)
@@ -614,7 +615,7 @@ async fn reject_friend_request(
 
     sqlx::query(
         "DELETE FROM friendships
-         WHERE user_id_1 = $1 AND user_id_2 = $2 AND status = 'pending'",
+         WHERE user_id_1 = $1 AND user_id_2 = $2",
     )
     .bind(uid1)
     .bind(uid2)

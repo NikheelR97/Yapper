@@ -33,6 +33,8 @@ export const PRIMARY_INSTALLATION_ID =
 	process.env.E2E_PRIMARY_INSTALLATION_ID ?? '11111111-1111-4111-8111-111111111111';
 export const SECONDARY_INSTALLATION_ID =
 	process.env.E2E_SECONDARY_INSTALLATION_ID ?? '22222222-2222-4222-8222-222222222222';
+/** Stable installation ID for the primary device of the second test account (E2E_EMAIL_2). */
+export const B_PRIMARY_INSTALLATION_ID = 'bb000000-0000-4000-8000-000000000002';
 
 const DEFAULT_USER = {
 	id: 'e2e-user',
@@ -294,5 +296,36 @@ export function seedTrustedPrimaryDevice(): void {
 				? String((error as { stderr?: Buffer | string }).stderr ?? '')
 				: String(error);
 		throw new Error(`seedTrustedPrimaryDevice failed: ${details}`.trim());
+	}
+}
+
+/**
+ * Seed a trusted primary device for the second test account (E2E_EMAIL_2).
+ * Uses B_PRIMARY_INSTALLATION_ID so the device is stable across runs.
+ */
+export function seedTrustedPrimaryDeviceB(): void {
+	const email2 = process.env.E2E_EMAIL_2;
+	const pass2 = process.env.E2E_PASSWORD_2;
+	if (!email2 || !pass2) return;
+	try {
+		execFileSync(process.execPath, ['tests/seed-devices.mjs'], {
+			cwd: process.cwd(),
+			env: {
+				...process.env,
+				E2E_EMAIL: email2,
+				E2E_PASSWORD: pass2,
+				E2E_APPROVE_PENDING_DEVICE: '0',
+				E2E_RESET_SECONDARY_DEVICE: '0',
+				E2E_PRIMARY_INSTALLATION_ID: B_PRIMARY_INSTALLATION_ID,
+				E2E_SECONDARY_INSTALLATION_ID: B_PRIMARY_INSTALLATION_ID,
+			},
+			stdio: 'pipe',
+		});
+	} catch (error) {
+		const details =
+			error && typeof error === 'object' && 'stderr' in error
+				? String((error as { stderr?: Buffer | string }).stderr ?? '')
+				: String(error);
+		throw new Error(`seedTrustedPrimaryDeviceB failed: ${details}`.trim());
 	}
 }

@@ -240,7 +240,7 @@ test.describe('Social — friend requests', () => {
 
 		const pending = await listIncomingFriendRequests(sessionB);
 		const fromA = (pending as Array<Record<string, unknown>>).find(
-			(r) => String(r.fromUserId ?? r.from_user_id ?? (r.from_user as Record<string, unknown>)?.id) === sessionA.userId,
+			(r) => String(r.fromUserId ?? r.from_user_id ?? (r.from_user as Record<string, unknown>)?.id ?? r.id) === sessionA.userId,
 		);
 		expect(fromA).toBeDefined();
 	});

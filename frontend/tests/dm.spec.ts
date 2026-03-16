@@ -3,7 +3,9 @@ import {
 	loginViaApi,
 	mockAuthEndpoints,
 	PRIMARY_INSTALLATION_ID,
+	B_PRIMARY_INSTALLATION_ID,
 	seedTrustedPrimaryDevice,
+	seedTrustedPrimaryDeviceB,
 	setInstallationId,
 } from './auth-helper.js';
 
@@ -22,7 +24,7 @@ const USER_A_PASS = process.env.E2E_PASSWORD ?? '';
 const USER_B_EMAIL = process.env.E2E_EMAIL_2 ?? '';
 const USER_B_PASS = process.env.E2E_PASSWORD_2 ?? '';
 const USER_A_INSTALLATION_ID = PRIMARY_INSTALLATION_ID;
-const USER_B_INSTALLATION_ID = '44444444-4444-4444-8444-444444444444';
+const USER_B_INSTALLATION_ID = B_PRIMARY_INSTALLATION_ID;
 
 interface SessionBootstrap {
 	userId: string;
@@ -177,8 +179,30 @@ test.describe('Seeded DM flow', () => {
 	let conversationId = '';
 	let userBLabels: string[] = [];
 
-	test.beforeAll(() => {
+	test.beforeAll(async ({ browser }) => {
+		// Extend hook timeout: browser login + Signal key bootstrap can take ~75 s
+		test.setTimeout(120_000);
 		seedTrustedPrimaryDevice();
+		// Seed user B's device and upload their Signal keys via a browser login
+		// so encryptDm can find their key bundle when user A sends a DM.
+		if (USER_B_EMAIL && USER_B_PASS) {
+			seedTrustedPrimaryDeviceB();
+			const ctx = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+			try {
+				const pg = await ctx.newPage();
+				await setInstallationId(pg, USER_B_INSTALLATION_ID);
+				await pg.goto('/login');
+				await pg.fill('#email', USER_B_EMAIL);
+				await pg.fill('#password', USER_B_PASS);
+				await pg.getByRole('button', { name: /Sign In/i }).click();
+				await pg.waitForURL(/\/explore/, { timeout: 30_000 });
+				await expect(pg.locator('[aria-label="Loading Yapper"]')).toHaveCount(0, {
+					timeout: 45_000,
+				});
+			} finally {
+				await ctx.close();
+			}
+		}
 	});
 
 	test.beforeEach(async ({ page }) => {
