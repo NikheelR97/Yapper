@@ -191,6 +191,8 @@ test.describe('Seeded DM flow', () => {
 	});
 
 	test.beforeEach(async ({ page }) => {
+		// 3 API calls + browser login + await initializeSignalKeys() can exceed 30s
+		test.setTimeout(120_000);
 		const sessionA = await createSessionBootstrap(
 			USER_A_EMAIL,
 			USER_A_PASS,

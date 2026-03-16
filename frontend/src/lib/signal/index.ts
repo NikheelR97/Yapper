@@ -682,6 +682,20 @@ export async function joinChannel(channelId: string): Promise<void> {
   const senderKey = generateSenderKey(channelId);
   await ks.storeSenderKey(senderKey);
 
+  // Store a receiver key for self so loadChannelMessages() can decrypt our
+  // own historical messages after re-navigation (decryptChannel uses
+  // loadReceiverKey for all senders including ourselves).
+  await ks.storeReceiverKey({
+    channelId,
+    senderId: myUserId,
+    senderDeviceId: myDeviceId,
+    chainKey: senderKey.chainKey,
+    signingPubKey: senderKey.signingPubKey,
+    iteration: senderKey.iteration,
+    initialChainKey: senderKey.chainKey,
+    initialIteration: senderKey.iteration,
+  });
+
   const members = await api.get<Array<{ user_id: string; username: string }>>(
     "/api/v1/channels/" + channelId + "/members",
   );
