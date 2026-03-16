@@ -825,11 +825,16 @@
 			});
 			wsConnect();
 			if (currentDeviceTrusted()) {
-				await processTrustedSyncEvents();
-				await initializeSignalKeys();
 				startAppServices();
-				await loadPendingApprovals();
-				startTrustedDevicePolling();
+				ready = true;
+				// Run in background — none of these affect the initial render.
+				// initializeSignalKeys is the slow one on first-ever sign-in:
+				// generates 100 OPKs + 3 sequential HTTP uploads (~2–5 s).
+				// On subsequent logins it's a fast no-op (bootstrapComplete flag).
+				void processTrustedSyncEvents().finally(() => startTrustedDevicePolling());
+				void initializeSignalKeys();
+				void loadPendingApprovals();
+				return;
 			} else {
 				await refreshPendingDeviceStatus();
 				if (!currentDeviceTrusted()) {
