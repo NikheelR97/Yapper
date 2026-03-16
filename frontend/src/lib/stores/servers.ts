@@ -7,7 +7,13 @@
 
 import { writable, get } from 'svelte/store';
 import { api } from '$api/client.js';
-import { decryptChannel, encryptChannel, prepareChannel } from '$signal/index.js';
+import {
+	decryptChannel,
+	encryptChannel,
+	fetchPendingKeyDists,
+	onSenderKeyReady,
+	prepareChannel,
+} from '$signal/index.js';
 import { onWsMessage, sendChannelMessage as wsSendChannel } from '$stores/ws.js';
 import { authStore } from '$stores/auth.js';
 import type { Message } from '$stores/conversations.js';
@@ -74,6 +80,7 @@ export const serversStore = writable<ServersState>({ servers: [], loading: false
 
 // Per-channel message lists
 const channelMessageStores = new Map<string, ReturnType<typeof writable<Message[]>>>();
+const pendingChannelDecryptTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 export function getChannelMessageStore(channelId: string) {
 	if (!channelMessageStores.has(channelId)) {
@@ -87,6 +94,92 @@ const channelsCache = new Map<string, Channel[]>();
 
 export function invalidateChannels(serverId: string): void {
 	channelsCache.delete(serverId);
+}
+
+function clearPendingChannelDecryptTimer(messageId: string): void {
+	const timer = pendingChannelDecryptTimers.get(messageId);
+	if (!timer) return;
+	clearTimeout(timer);
+	pendingChannelDecryptTimers.delete(messageId);
+}
+
+function scheduleChannelDecryptFailure(messageId: string, channelId: string): void {
+	clearPendingChannelDecryptTimer(messageId);
+	const timer = setTimeout(() => {
+		const store = getChannelMessageStore(channelId);
+		store.update((messages) =>
+			messages.map((message) =>
+				message.id === messageId && message.text === null
+					? { ...message, decryptError: true }
+					: message
+			)
+		);
+		pendingChannelDecryptTimers.delete(messageId);
+	}, 2_500);
+	pendingChannelDecryptTimers.set(messageId, timer);
+}
+
+async function retryChannelMessagesForSender(
+	channelId: string,
+	senderId: string,
+	senderDeviceId: string
+): Promise<void> {
+	const store = getChannelMessageStore(channelId);
+	const currentMessages = get(store);
+	const unresolvedMessages = currentMessages.filter(
+		(message) =>
+			message.senderId === senderId && (message.decryptError || message.text === null)
+	);
+	if (!unresolvedMessages.length) return;
+
+	const historyMessages = await listChannelHistoryMessages(channelId);
+	const historyById = new Map(historyMessages.map((message) => [message.id, message]));
+	const resolved = new Map<
+		string,
+		{ text: string; decryptError: false; messageType: string }
+	>();
+
+	for (const message of unresolvedMessages) {
+		const rawMessage = historyById.get(message.id);
+		if (
+			!rawMessage ||
+			rawMessage.sender_id !== senderId ||
+			(rawMessage.sender_device_id ?? 'legacy') !== senderDeviceId ||
+			!rawMessage.ciphertext
+		) {
+			continue;
+		}
+
+		try {
+			const text = await decryptChannel(
+				rawMessage.channel_id,
+				rawMessage.sender_id,
+				rawMessage.sender_device_id ?? 'legacy',
+				{
+					ciphertext: rawMessage.ciphertext,
+					msg_num: rawMessage.msg_num,
+				},
+				{ allowHistorical: true }
+			);
+			resolved.set(message.id, {
+				text,
+				decryptError: false,
+				messageType: rawMessage.message_type ?? message.messageType,
+			});
+			clearPendingChannelDecryptTimer(message.id);
+		} catch {
+			// Leave unresolved messages as-is; another key distribution may still arrive.
+		}
+	}
+
+	if (!resolved.size) return;
+
+	store.update((messages) =>
+		messages.map((message) => {
+			const next = resolved.get(message.id);
+			return next ? { ...message, ...next } : message;
+		})
+	);
 }
 
 // ─── Fetch Servers ────────────────────────────────────────────────────────────
@@ -161,6 +254,7 @@ export async function loadChannelMessages(channelId: string): Promise<void> {
 	const raw = mergeChannelHistoryMessages(remoteMessages, cachedMessages);
 	await storeChannelHistoryMessages(remoteMessages);
 
+	let hadDecryptFailure = false;
 	const messages: Message[] = await Promise.all(
 		raw.map(async (m) => {
 			// Bot messages use plaintext column; all user messages use ciphertext
@@ -207,6 +301,7 @@ export async function loadChannelMessages(channelId: string): Promise<void> {
 					messageType: m.message_type ?? 'text',
 				};
 			} catch {
+				hadDecryptFailure = true;
 				return {
 					id: m.id,
 					conversationId: m.channel_id,
@@ -221,6 +316,9 @@ export async function loadChannelMessages(channelId: string): Promise<void> {
 	);
 
 	store.set(messages);
+	if (hadDecryptFailure) {
+		void fetchPendingKeyDists(channelId).catch(() => {});
+	}
 }
 
 // ─── Send Channel Message ─────────────────────────────────────────────────────
@@ -254,13 +352,14 @@ export async function sendMessage(channelId: string, text: string): Promise<void
 
 /** Register the global WS handler for incoming channel messages. Call once on app init. */
 export function registerChannelHandler(): () => void {
-	return onWsMessage('channel', async (payload) => {
+	const unregisterMessageHandler = onWsMessage('channel', async (payload) => {
 		const msg = payload as {
 			id: string;
 			channel_id: string;
 			sender_id: string;
 			sender_device_id?: string | null;
 			ciphertext: string;
+			message_type?: string;
 			msg_num: number | null;
 			created_at?: string;
 		};
@@ -302,8 +401,10 @@ export function registerChannelHandler(): () => void {
 					msg_num: msg.msg_num,
 				}
 			);
+			clearPendingChannelDecryptTimer(msg.id);
 		} catch {
-			decryptError = true;
+			void fetchPendingKeyDists(msg.channel_id).catch(() => {});
+			scheduleChannelDecryptFailure(msg.id, msg.channel_id);
 		}
 
 		const store = getChannelMessageStore(msg.channel_id);
@@ -316,10 +417,27 @@ export function registerChannelHandler(): () => void {
 				text,
 				decryptError,
 				createdAt,
-				messageType: 'text',
+				messageType: msg.message_type ?? 'text',
 			},
 		]);
 	});
+
+	const unregisterSenderKeyReady = onSenderKeyReady((event) =>
+		retryChannelMessagesForSender(
+			event.channelId,
+			event.senderUserId,
+			event.senderDeviceId
+		)
+	);
+
+	return () => {
+		unregisterMessageHandler();
+		unregisterSenderKeyReady();
+		for (const timer of pendingChannelDecryptTimers.values()) {
+			clearTimeout(timer);
+		}
+		pendingChannelDecryptTimers.clear();
+	};
 }
 
 // ─── Create Server ────────────────────────────────────────────────────────────

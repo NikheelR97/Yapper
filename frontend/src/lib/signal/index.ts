@@ -102,6 +102,31 @@ function currentSignalDeviceId(): number {
   return get(authStore).device?.signalDeviceId ?? 1;
 }
 
+interface SenderKeyReadyEvent {
+  channelId: string;
+  senderUserId: string;
+  senderDeviceId: string;
+}
+
+const senderKeyReadyListeners = new Set<
+  (event: SenderKeyReadyEvent) => void | Promise<void>
+>();
+
+function notifySenderKeyReady(event: SenderKeyReadyEvent): void {
+  for (const listener of senderKeyReadyListeners) {
+    Promise.resolve(listener(event)).catch((error) => {
+      console.warn("[Signal] SenderKey ready listener failed:", error);
+    });
+  }
+}
+
+export function onSenderKeyReady(
+  listener: (event: SenderKeyReadyEvent) => void | Promise<void>,
+): () => void {
+  senderKeyReadyListeners.add(listener);
+  return () => senderKeyReadyListeners.delete(listener);
+}
+
 function normalizeKeyBundle(bundle: KeyBundleV2Response): KeyBundle {
   return {
     userId: bundle.user_id,
@@ -865,6 +890,11 @@ async function fetchAndStorePendingDists(
           initialChainKey: existing.initialChainKey ?? incomingChainKey,
           initialIteration: existing.initialIteration ?? payload.iteration,
         });
+        notifySenderKeyReady({
+          channelId: payload.channelId,
+          senderUserId: dist.from_user,
+          senderDeviceId,
+        });
         continue;
       }
 
@@ -879,6 +909,11 @@ async function fetchAndStorePendingDists(
         initialIteration: payload.iteration,
       };
       await ks.storeReceiverKey(record);
+      notifySenderKeyReady({
+        channelId: payload.channelId,
+        senderUserId: dist.from_user,
+        senderDeviceId,
+      });
     } catch (e) {
       console.warn(
         "[Signal] Failed to decrypt SenderKey dist from " +
@@ -1044,6 +1079,11 @@ export async function receiveSenderKeyDist(event: {
           " in channel " +
           event.channel_id,
       );
+      notifySenderKeyReady({
+        channelId: payload.channelId,
+        senderUserId: event.from_user,
+        senderDeviceId,
+      });
       return;
     }
 
@@ -1066,6 +1106,11 @@ export async function receiveSenderKeyDist(event: {
         " for channel " +
         event.channel_id,
     );
+    notifySenderKeyReady({
+      channelId: payload.channelId,
+      senderUserId: event.from_user,
+      senderDeviceId,
+    });
   } catch (e) {
     console.warn(
       "[Signal] Failed to process key_dist from " + event.from_user + ":",
