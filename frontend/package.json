@@ -44,7 +44,7 @@
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.57.0",
     "dotenv-cli": "^11.0.0",
-    "eslint": "^9.0.0",
+    "eslint": "^9.39.4",
     "eslint-plugin-svelte": "^2.0.0",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^28.1.0",
