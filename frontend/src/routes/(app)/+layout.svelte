@@ -82,7 +82,22 @@
 	const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8080";
 	const DEVICE_SYNC_CHUNK_SIZE = 24 * 1024;
 	const trustedSyncPublicKeys = new Map<string, string>();
-	const approvedUnsyncedDeviceIds = new Set<string>();
+	const APPROVED_UNSYNCED_KEY = "yapper_approved_unsynced_devices";
+	function loadApprovedUnsyncedDeviceIds(): Set<string> {
+		if (typeof window === "undefined") return new Set();
+		try {
+			const raw = window.localStorage.getItem(APPROVED_UNSYNCED_KEY);
+			if (!raw) return new Set();
+			const arr = JSON.parse(raw);
+			if (Array.isArray(arr)) return new Set<string>(arr.filter((x): x is string => typeof x === "string"));
+		} catch { /* ignore */ }
+		return new Set();
+	}
+	function saveApprovedUnsyncedDeviceIds(ids: Set<string>): void {
+		if (typeof window === "undefined") return;
+		window.localStorage.setItem(APPROVED_UNSYNCED_KEY, JSON.stringify([...ids]));
+	}
+	const approvedUnsyncedDeviceIds = loadApprovedUnsyncedDeviceIds();
 	const incomingSyncTransfers = new Map<string, { total: number; chunks: string[] }>();
 	const seenDeviceSyncEventIds = new Set<string>();
 	let lastPendingTrustRequestAt = 0;
@@ -238,6 +253,7 @@
 
 		trustedSyncPublicKeys.delete(targetDeviceId);
 		approvedUnsyncedDeviceIds.delete(targetDeviceId);
+		saveApprovedUnsyncedDeviceIds(approvedUnsyncedDeviceIds);
 		return true;
 	}
 
@@ -354,6 +370,7 @@
 			}
 
 			approvedUnsyncedDeviceIds.add(targetDeviceId);
+			saveApprovedUnsyncedDeviceIds(approvedUnsyncedDeviceIds);
 			if (trustedSyncPublicKeys.has(targetDeviceId)) {
 				try {
 					const synced = await syncTrustedSnapshotToDevice(targetDeviceId);
@@ -375,6 +392,7 @@
 			}
 			trustedSyncPublicKeys.delete(revokedDeviceId);
 			approvedUnsyncedDeviceIds.delete(revokedDeviceId);
+			saveApprovedUnsyncedDeviceIds(approvedUnsyncedDeviceIds);
 		}
 	}
 
@@ -692,10 +710,12 @@
 					toast.success("Device approved. Encrypted history sync sent.");
 				} else {
 					approvedUnsyncedDeviceIds.add(deviceId);
+					saveApprovedUnsyncedDeviceIds(approvedUnsyncedDeviceIds);
 					toast.success("Device approved. Waiting for the other device to refresh.");
 				}
 			} catch (e: any) {
 				approvedUnsyncedDeviceIds.add(deviceId);
+				saveApprovedUnsyncedDeviceIds(approvedUnsyncedDeviceIds);
 				toast.error(e.message ?? "Device approved, but encrypted history sync failed");
 			}
 		} catch (e: any) {
