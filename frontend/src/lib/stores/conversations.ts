@@ -275,18 +275,30 @@ export function registerDmHandler(): () => void {
 
 		const createdAt = message.created_at ?? new Date().toISOString();
 		const store = getMessageStore(message.conversation_id);
-		store.update((messages) => [
-			...messages,
-			{
-				id: message.id,
-				conversationId: message.conversation_id,
-				senderId: message.sender_id,
-				text,
-				decryptError,
-				createdAt,
-				messageType: inferDmMessageType(text),
-			},
-		]);
+		store.update((messages) => {
+			const existing = messages.findIndex((m) => m.id === message.id);
+			if (existing !== -1) {
+				// Message already in store (optimistic update from sendMessage).
+				// Only overwrite if this delivery carries a successful decryption;
+				// never clobber the optimistic plaintext with a decryptError.
+				if (decryptError) return messages;
+				const updated = [...messages];
+				updated[existing] = { ...updated[existing], text, decryptError };
+				return updated;
+			}
+			return [
+				...messages,
+				{
+					id: message.id,
+					conversationId: message.conversation_id,
+					senderId: message.sender_id,
+					text,
+					decryptError,
+					createdAt,
+					messageType: inferDmMessageType(text),
+				},
+			];
+		});
 		touchConversation(message.conversation_id, createdAt);
 	});
 }

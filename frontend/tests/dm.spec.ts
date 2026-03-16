@@ -170,6 +170,10 @@ test.describe('DM index - authenticated', () => {
 
 test.describe('Seeded DM flow', () => {
 	test.use({ storageState: { cookies: [], origins: [] } });
+	// beforeEach does 2 API logins + browser login + waitForAppReady (up to 45s each).
+	// test.setTimeout inside beforeEach only affects the test body, not the hook itself.
+	// Set the timeout at describe scope so both the hook and test body use 120s.
+	test.describe.configure({ timeout: 120_000 });
 
 	test.skip(
 		!USER_A_EMAIL || !USER_B_EMAIL,
@@ -191,8 +195,6 @@ test.describe('Seeded DM flow', () => {
 	});
 
 	test.beforeEach(async ({ page }) => {
-		// 3 API calls + browser login + await initializeSignalKeys() can exceed 30s
-		test.setTimeout(120_000);
 		const sessionA = await createSessionBootstrap(
 			USER_A_EMAIL,
 			USER_A_PASS,
