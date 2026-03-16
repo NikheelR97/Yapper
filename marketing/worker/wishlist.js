@@ -15,8 +15,13 @@
  *   SITE_ORIGIN       e.g. "https://yapperhq.com"  (used for CORS)
  */
 
-const CORS_HEADERS = (origin, allowedOrigin) => ({
-  'Access-Control-Allow-Origin': origin === allowedOrigin ? origin : allowedOrigin,
+const ALLOWED_ORIGINS = new Set([
+  'https://yapperhq.com',
+  'https://www.yapperhq.com',
+]);
+
+const CORS_HEADERS = (origin) => ({
+  'Access-Control-Allow-Origin': ALLOWED_ORIGINS.has(origin) ? origin : 'https://yapperhq.com',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
   'Access-Control-Max-Age': '86400',
@@ -32,13 +37,12 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const origin = request.headers.get('Origin') ?? '';
-    const allowedOrigin = env.SITE_ORIGIN ?? '*';
 
     // Preflight
     if (request.method === 'OPTIONS') {
       return new Response(null, {
         status: 204,
-        headers: CORS_HEADERS(origin, allowedOrigin),
+        headers: CORS_HEADERS(origin),
       });
     }
 
@@ -53,7 +57,7 @@ export default {
 
     // Attach CORS headers to every response
     const headers = new Headers(response.headers);
-    for (const [k, v] of Object.entries(CORS_HEADERS(origin, allowedOrigin))) {
+    for (const [k, v] of Object.entries(CORS_HEADERS(origin))) {
       headers.set(k, v);
     }
     return new Response(response.body, { status: response.status, headers });

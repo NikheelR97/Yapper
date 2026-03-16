@@ -256,3 +256,10 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 3cb90d502ed2d67a8dadec9dac386425
+
+      - name: Deploy wishlist Worker
+        run: npx wrangler deploy
+        working-directory: marketing
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 3cb90d502ed2d67a8dadec9dac386425
