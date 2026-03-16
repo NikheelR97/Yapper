@@ -178,6 +178,8 @@ test.describe('Seeded DM flow', () => {
 
 	let conversationId = '';
 	let userBLabels: string[] = [];
+	let userBId = '';
+	let sessionAAccessToken = '';
 
 	test.beforeAll(() => {
 		// Only seed devices — B's Signal keys are uploaded within the test itself
@@ -202,6 +204,8 @@ test.describe('Seeded DM flow', () => {
 			'E2E DM Browser B',
 		);
 		conversationId = await createDmConversation(sessionA, sessionB.userId);
+		userBId = sessionB.userId;
+		sessionAAccessToken = sessionA.accessToken;
 		userBLabels = [sessionB.username, sessionB.displayName].filter(
 			(label): label is string => typeof label === 'string' && label.length > 0,
 		);
@@ -250,8 +254,21 @@ test.describe('Seeded DM flow', () => {
 		await expect(input).toBeVisible({ timeout: 20_000 });
 		await expect(input).toBeEnabled({ timeout: 20_000 });
 
-		// Wait for B's key upload to finish before A encrypts
+		// Wait for B's browser to finish loading (loading screen gone).
+		// Then poll the API until B's key bundles are confirmed on the server —
+		// the app's key-upload runs async after the loading screen hides, so we
+		// need the hard API signal rather than the UI signal.
 		await bKeysDone;
+		for (let attempt = 0; attempt < 30; attempt++) {
+			const res = await fetch(`${API_URL}/api/v2/keys/${userBId}/bundles`, {
+				headers: { Authorization: `Bearer ${sessionAAccessToken}` },
+			});
+			if (res.ok) {
+				const bundles = (await res.json()) as unknown[];
+				if (bundles.length > 0) break;
+			}
+			await page.waitForTimeout(1_000);
+		}
 
 		const testMsg = `E2E DM test ${Date.now()}`;
 		await input.fill(testMsg);

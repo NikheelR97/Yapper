@@ -806,7 +806,7 @@
 			wsConnect();
 			if (currentDeviceTrusted()) {
 				await processTrustedSyncEvents();
-				void initializeSignalKeys();
+				await initializeSignalKeys();
 				startAppServices();
 				await loadPendingApprovals();
 				startTrustedDevicePolling();

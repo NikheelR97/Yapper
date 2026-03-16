@@ -120,6 +120,25 @@ async function loginAndWaitReady(
 	});
 }
 
+/**
+ * Poll the key-bundle API until userId has at least one trusted device bundle
+ * available. The app uploads keys asynchronously after the loading screen hides,
+ * so this poll gives the upload time to complete before prepareChannel() runs.
+ */
+async function waitForBundles(authToken: string, userId: string): Promise<void> {
+	for (let i = 0; i < 30; i++) {
+		const res = await fetch(`${API_URL}/api/v2/keys/${userId}/bundles`, {
+			headers: { Authorization: `Bearer ${authToken}` },
+		});
+		if (res.ok) {
+			const bundles = (await res.json()) as unknown[];
+			if (bundles.length > 0) return;
+		}
+		await new Promise<void>((resolve) => setTimeout(resolve, 1_000));
+	}
+	throw new Error(`Key bundles for user ${userId} not available after 30 s`);
+}
+
 test.describe('Channel E2EE — cross-user message decryption', () => {
 	test.use({ storageState: { cookies: [], origins: [] } });
 
@@ -180,6 +199,14 @@ test.describe('Channel E2EE — cross-user message decryption', () => {
 					loginAndWaitReady(pageB, USER_B_EMAIL, USER_B_PASS, USER_B_CHANNEL_INSTALLATION),
 				]);
 
+				// Confirm both users' key bundles are on the server before A navigates.
+				// The app uploads keys async after the loading screen hides; this poll
+				// gives the upload time to land so prepareChannel() can distribute to B.
+				await Promise.all([
+					waitForBundles(sessionA.accessToken, sessionA.userId),
+					waitForBundles(sessionA.accessToken, sessionB.userId),
+				]);
+
 				// ── User A navigates and sends ────────────────────────────────────────
 				await pageA.goto(`/servers/${serverId}/channels/${channelId}`);
 				const inputA = pageA.locator('textarea[aria-label="Message"]').first();
@@ -238,6 +265,12 @@ test.describe('Channel E2EE — cross-user message decryption', () => {
 					loginAndWaitReady(pageB, USER_B_EMAIL, USER_B_PASS, USER_B_CHANNEL_INSTALLATION),
 				]);
 
+				// Confirm both users' key bundles are on the server before A navigates.
+				await Promise.all([
+					waitForBundles(sessionA.accessToken, sessionA.userId),
+					waitForBundles(sessionA.accessToken, sessionB.userId),
+				]);
+
 				// A navigates, sends first message (distributes SenderKey to B)
 				await pageA.goto(`/servers/${serverId}/channels/${channelId}`);
 				const inputA = pageA.locator('textarea[aria-label="Message"]').first();
@@ -258,8 +291,14 @@ test.describe('Channel E2EE — cross-user message decryption', () => {
 				await inputB.press('Enter');
 				await expect(pageB.getByText(msgFromB)).toBeVisible({ timeout: 15_000 });
 
-				// A sees B's reply (A is still on the channel page with A's context)
+				// A re-navigates to the channel — this triggers prepareChannel() which
+				// fetches B's pending SenderKey distribution (stored server-side) and
+				// decrypts B's reply using the newly received distribution.
+				await pageA.goto(`/servers/${serverId}/channels/${channelId}`);
+				const inputA2 = pageA.locator('textarea[aria-label="Message"]').first();
+				await expect(inputA2).toBeEnabled({ timeout: 60_000 });
 				await expect(pageA.getByText(msgFromB)).toBeVisible({ timeout: 20_000 });
+				await expect(pageA.getByText(msgFromA)).toBeVisible({ timeout: 10_000 });
 				await expect(pageA.getByText(/Unable to decrypt/i)).toHaveCount(0);
 			} finally {
 				await ctxA.close();
