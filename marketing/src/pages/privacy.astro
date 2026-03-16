@@ -1,0 +1,1121 @@
+---
+import Base from '../layouts/Base.astro';
+import Nav from '../components/Nav.astro';
+import Footer from '../components/Footer.astro';
+---
+
+<Base
+  title="Privacy Policy — Yapper"
+  description="Yapper Privacy Policy. How we collect, use, and protect your personal data."
+>
+  <Nav />
+  <main class="legal-page">
+    <div class="container">
+      <header class="legal-header">
+        <div class="legal-badge">Legal</div>
+        <h1>Privacy Policy</h1>
+        <div class="legal-meta">
+          <span>Effective: <strong>March 16, 2026</strong></span>
+          <span class="sep">·</span>
+          <span>Version <strong>2.0</strong></span>
+          <span class="sep">·</span>
+          <span>Contact: <a href="mailto:privacy@yapperhq.com">privacy@yapperhq.com</a></span>
+        </div>
+        <p class="legal-intro">
+          This document describes how Yapper Technologies, Inc. collects, uses, stores, and
+          protects your information when you use the Yapper platform.
+        </p>
+        <div class="legal-contacts">
+          <div class="contact-row">
+            <span class="label">Data Controller</span>
+            <span>Yapper Technologies, Inc.</span>
+          </div>
+          <div class="contact-row">
+            <span class="label">DPO</span>
+            <a href="mailto:dpo@yapperhq.com">dpo@yapperhq.com</a>
+          </div>
+          <div class="contact-row">
+            <span class="label">Address</span>
+            <span>KwaZulu-Natal, South Africa</span>
+          </div>
+          <div class="contact-row">
+            <span class="label">Applicable laws</span>
+            <span>GDPR · CCPA/CPRA · COPPA · UK GDPR · LGPD · PIPEDA · POPIA</span>
+          </div>
+        </div>
+      </header>
+
+      <div class="legal-layout">
+        <nav class="toc" aria-label="Table of contents">
+          <p class="toc-label">Contents</p>
+          <ol>
+            <li><a href="#s1">Introduction</a></li>
+            <li><a href="#s2">Scope and Applicability</a></li>
+            <li><a href="#s3">Key Definitions</a></li>
+            <li><a href="#s4">Information We Collect</a></li>
+            <li><a href="#s5">How We Use Your Information</a></li>
+            <li><a href="#s6">E2EE Architecture</a></li>
+            <li><a href="#s7">Children's Privacy &amp; COPPA</a></li>
+            <li><a href="#s8">User-Generated Content</a></li>
+            <li><a href="#s9">Live Canvas Features</a></li>
+            <li><a href="#s10">Data Import &amp; Migration</a></li>
+            <li><a href="#s11">Data Sharing &amp; Disclosure</a></li>
+            <li><a href="#s12">Data Retention</a></li>
+            <li><a href="#s13">Your Rights</a></li>
+            <li><a href="#s14">International Transfers</a></li>
+            <li><a href="#s15">Security Measures</a></li>
+            <li><a href="#s16">Data Breach Response</a></li>
+            <li><a href="#s17">Cookies</a></li>
+            <li><a href="#s18">Do Not Track</a></li>
+            <li><a href="#s19">Third-Party Links</a></li>
+            <li><a href="#s20">Policy Changes</a></li>
+            <li><a href="#s21">Contact Us</a></li>
+          </ol>
+        </nav>
+
+        <article class="legal-body">
+
+          <section id="s1">
+            <h2>1. Introduction</h2>
+            <p>
+              Welcome to Yapper! Yapper Technologies, Inc. ("Yapper," "we," "our," or "us") operates
+              a real-time chat platform that lets communities connect through text channels, Voice Yaps
+              (audio messages), Video Clips (video messages), Live Canvas features, custom server-scoped
+              emojis, and more.
+            </p>
+            <p>
+              This Privacy Policy explains what personal information we collect, why we collect it, how
+              we use and protect it, and what rights you have over your data. It applies to all users of
+              the Yapper platform, including our website, desktop application, and mobile apps
+              (collectively, the "Service").
+            </p>
+            <p>
+              By accessing or using the Service, you acknowledge that you have read, understood, and
+              agree to be bound by this Privacy Policy. If you do not agree, please discontinue use of
+              the Service immediately.
+            </p>
+          </section>
+
+          <section id="s2">
+            <h2>2. Scope and Applicability</h2>
+            <p>
+              This Privacy Policy applies to all individuals who access or use the Yapper Service,
+              regardless of their geographic location. It covers data collected through the Yapper
+              platform, our website, APIs, and any third-party integrations (such as Discord profile
+              import and bot migration tools).
+            </p>
+            <p>
+              This Policy does not apply to third-party services, websites, or applications that may
+              be linked to or integrated with Yapper. We encourage you to review the privacy policies
+              of any third-party services you interact with.
+            </p>
+            <h3>2.1 Territorial Scope</h3>
+            <p>
+              Yapper is designed to comply with applicable data protection regulations worldwide. The
+              following regulatory frameworks are specifically addressed in this Policy:
+            </p>
+            <ul>
+              <li><strong>European Economic Area (EEA) and United Kingdom:</strong> General Data Protection Regulation (GDPR) and UK GDPR</li>
+              <li><strong>California, USA:</strong> California Consumer Privacy Act as amended by the California Privacy Rights Act (CCPA/CPRA)</li>
+              <li><strong>United States (Children):</strong> Children's Online Privacy Protection Act (COPPA)</li>
+              <li><strong>Brazil:</strong> Lei Geral de Proteção de Dados (LGPD)</li>
+              <li><strong>Canada:</strong> Personal Information Protection and Electronic Documents Act (PIPEDA)</li>
+              <li><strong>South Africa:</strong> Protection of Personal Information Act (POPIA)</li>
+            </ul>
+          </section>
+
+          <section id="s3">
+            <h2>3. Key Definitions</h2>
+            <dl>
+              <dt>Personal Data</dt>
+              <dd>Any information relating to an identified or identifiable natural person, including but not limited to names, email addresses, IP addresses, device identifiers, and user-generated content metadata.</dd>
+              <dt>Processing</dt>
+              <dd>Any operation performed on Personal Data, whether automated or manual, including collection, storage, use, disclosure, and deletion.</dd>
+              <dt>End-to-End Encryption (E2EE)</dt>
+              <dd>A communication system based on the Signal Protocol in which only the communicating users can read the messages. Yapper's servers cannot access plaintext message content.</dd>
+              <dt>Voice Yap</dt>
+              <dd>An audio message sent by a user within a Yapper server or direct message, encrypted end-to-end using the Signal Protocol.</dd>
+              <dt>Video Clip</dt>
+              <dd>A short-form video message shared by a user within a Yapper server or direct message, encrypted end-to-end using the Signal Protocol.</dd>
+              <dt>Live Canvas</dt>
+              <dd>A real-time sidebar feature within Yapper servers that may display music state, polls, and community clips carousels.</dd>
+              <dt>Server</dt>
+              <dd>A community space within Yapper that contains text channels, voice channels, and other collaborative features.</dd>
+              <dt>Metadata</dt>
+              <dd>Data about data — such as timestamps, sender/recipient identifiers, message sizes, and channel identifiers — that does not include the plaintext content of communications.</dd>
+            </dl>
+          </section>
+
+          <section id="s4">
+            <h2>4. Information We Collect</h2>
+
+            <h3>4.1 Information You Provide Directly</h3>
+
+            <h4>4.1.1 Account Registration</h4>
+            <p>
+              When you create a Yapper account, we collect your chosen username, email address,
+              password (stored as a salted Argon2id hash — a memory-hard algorithm resistant to
+              GPU-based attacks), date of birth (for age verification and COPPA compliance), and
+              optional profile information such as display name, avatar image, and biography.
+            </p>
+
+            <h4>4.1.2 Payment Information</h4>
+            <p>
+              If you subscribe to Yapper Premium or purchase server boosts, your payment is processed
+              by our third-party payment processor (Stripe). We receive a tokenized payment reference,
+              the last four digits of your card, and billing address, but we never store full credit
+              card numbers on our servers.
+            </p>
+
+            <h4>4.1.3 User-Generated Content</h4>
+            <p>
+              All text messages, Voice Yaps (audio), and Video Clips (video) sent through Yapper are
+              end-to-end encrypted using the Signal Protocol. Plaintext content is only accessible on
+              the sender's and recipient's devices. Yapper's servers store only encrypted ciphertext,
+              which we cannot decrypt.
+            </p>
+            <p>
+              Custom server-scoped emojis uploaded by server administrators are stored on our content
+              delivery network (CDN) and are associated with the uploading server. Emoji images are
+              not end-to-end encrypted, as they must be accessible to all server members.
+            </p>
+
+            <h4>4.1.4 Discord Profile Import Data</h4>
+            <p>
+              If you choose to use our Discord profile import tool, we temporarily process your
+              exported Discord data package to migrate your profile information, friend lists, server
+              memberships, and bot configurations. This data is processed in volatile memory and is not
+              persisted on Yapper servers after the import is complete. See Section 10 for details.
+            </p>
+
+            <h3>4.2 Information Collected Automatically</h3>
+
+            <h4>4.2.1 Device and Connection Information</h4>
+            <p>We collect device type and operating system, browser type and version, IP address (anonymized after 30 days), unique device identifiers, and timezone and language preferences.</p>
+
+            <h4>4.2.2 Usage Metadata</h4>
+            <p>
+              We collect metadata necessary to deliver and improve the Service, including message
+              timestamps, sender and recipient identifiers (for message routing), channel and server
+              identifiers, message sizes (not content), Voice Yap and Video Clip duration and file
+              sizes, and Live Canvas interaction events. This metadata does not include the plaintext
+              content of any end-to-end encrypted communications.
+            </p>
+
+            <h4>4.2.3 Cookies and Similar Technologies</h4>
+            <p>
+              Yapper uses strictly necessary cookies for authentication and session management. We use
+              optional analytics cookies (deployed only with your consent where required by law) to
+              understand usage patterns and improve the Service. See Section 17 for full details.
+            </p>
+
+            <h3>4.3 Information from Third Parties</h3>
+            <p>
+              We may receive limited information from third-party authentication providers (e.g.,
+              Google) if you choose to sign in using single sign-on (SSO). This typically includes
+              your name, email address, and profile picture.
+            </p>
+          </section>
+
+          <section id="s5">
+            <h2>5. How We Use Your Information</h2>
+            <p>We process your Personal Data for the following purposes and on the following legal bases:</p>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Purpose</th>
+                    <th>Data Used</th>
+                    <th>Legal Basis (GDPR)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Provide and operate the Service</td>
+                    <td>Account data, metadata, device info</td>
+                    <td>Contractual necessity (Art. 6(1)(b))</td>
+                  </tr>
+                  <tr>
+                    <td>Deliver and route E2EE messages, Yaps, and Clips</td>
+                    <td>Encrypted ciphertext, routing metadata</td>
+                    <td>Contractual necessity (Art. 6(1)(b))</td>
+                  </tr>
+                  <tr>
+                    <td>Age verification and COPPA compliance</td>
+                    <td>Date of birth, parental consent records</td>
+                    <td>Legal obligation (Art. 6(1)(c))</td>
+                  </tr>
+                  <tr>
+                    <td>Enforce parental safety controls</td>
+                    <td>Metadata only (no plaintext)</td>
+                    <td>Legitimate interest / Legal obligation</td>
+                  </tr>
+                  <tr>
+                    <td>Process payments</td>
+                    <td>Tokenized payment data</td>
+                    <td>Contractual necessity (Art. 6(1)(b))</td>
+                  </tr>
+                  <tr>
+                    <td>Detect fraud and abuse</td>
+                    <td>IP addresses, device fingerprints, behavioral metadata</td>
+                    <td>Legitimate interest (Art. 6(1)(f))</td>
+                  </tr>
+                  <tr>
+                    <td>Improve and personalise the Service</td>
+                    <td>Aggregated analytics, usage metadata</td>
+                    <td>Legitimate interest (Art. 6(1)(f))</td>
+                  </tr>
+                  <tr>
+                    <td>Respond to legal requests</td>
+                    <td>Data as required by applicable law</td>
+                    <td>Legal obligation (Art. 6(1)(c))</td>
+                  </tr>
+                  <tr>
+                    <td>Discord import and bot migration</td>
+                    <td>Imported profile and bot data (transient)</td>
+                    <td>Consent (Art. 6(1)(a))</td>
+                  </tr>
+                  <tr>
+                    <td>Marketing communications</td>
+                    <td>Email address, preferences</td>
+                    <td>Consent (Art. 6(1)(a))</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section id="s6">
+            <h2>6. End-to-End Encryption Architecture</h2>
+
+            <h3>6.1 Signal Protocol Implementation</h3>
+            <p>
+              Yapper employs the Signal Protocol — the industry-leading standard for secure messaging
+              — to provide end-to-end encryption for all user-to-user communications. This includes
+              text messages in channels and direct messages, Voice Yaps, Video Clips, and file
+              attachments shared within encrypted channels.
+            </p>
+            <p>
+              The Signal Protocol provides forward secrecy and future secrecy through its Double
+              Ratchet Algorithm, meaning that compromise of a single session key does not compromise
+              past or future messages.
+            </p>
+
+            <h3>6.2 What We Cannot Access</h3>
+            <p>
+              Due to E2EE, Yapper's servers never have access to the plaintext content of your
+              messages, the audio content of your Voice Yaps, the video or audio content of your Video
+              Clips, or file attachments shared in encrypted channels. We store only encrypted
+              ciphertext. We cannot read, listen to, view, or share the content of your
+              communications, even in response to legal requests. In such cases, we can only provide
+              the encrypted ciphertext and associated metadata.
+            </p>
+
+            <h3>6.3 What We Can Access</h3>
+            <p>
+              To operate the Service, we necessarily have access to routing metadata (who sent a
+              message to which channel/user, and when), message sizes and types, encrypted key material
+              stored on our servers for multi-device synchronization, and server and channel membership
+              information.
+            </p>
+
+            <h3>6.4 Encryption Key Management</h3>
+            <p>
+              Your private encryption keys are generated on your device and are never transmitted to
+              our servers in plaintext. Public keys are distributed through our servers using the
+              Signal Protocol's key distribution mechanism.
+            </p>
+            <p>
+              <strong>Optional Key Backup:</strong> If you choose to enable the key backup feature,
+              an encrypted copy of your keystore is stored on our servers. This backup is protected
+              using a PIN-derived encryption key (derived via PBKDF2). We cannot decrypt this backup —
+              only you can, using your PIN. Without your PIN, the backup is indecipherable to Yapper
+              and to any third party. You may delete your backup at any time from your account
+              settings.
+            </p>
+            <p>
+              You may verify other users' identity keys through a safety number verification process
+              within the app to confirm there is no man-in-the-middle.
+            </p>
+          </section>
+
+          <section id="s7">
+            <h2>7. Children's Privacy and COPPA Compliance</h2>
+
+            <h3>7.1 Age Requirements</h3>
+            <p>
+              Yapper is intended for users aged 13 and older. Users under 13 may only use Yapper with
+              verifiable parental consent, in compliance with COPPA. Users between 13 and 16 in the
+              EEA may require parental consent under GDPR Article 8, depending on their member state's
+              implementation.
+            </p>
+
+            <h3>7.2 Parental Safety Controls</h3>
+            <p>
+              Yapper provides robust parental safety controls designed to protect children while
+              respecting the privacy of all users. These controls operate exclusively on metadata and
+              do not access, store, or process plaintext message content. Parental controls include:
+            </p>
+            <ul>
+              <li><strong>Activity Reports:</strong> Parents receive periodic reports showing metadata such as time spent on the platform, number of messages sent/received, servers joined, and active hours. These reports never include message content.</li>
+              <li><strong>Contact Restrictions:</strong> Before a child can establish an E2EE session with a new contact, the parent must approve the friend request. Before a child can join a server, the parent must approve the join request. These restrictions are enforced server-side.</li>
+              <li><strong>Screen Time Limits:</strong> Parents can set daily usage limits, enforced client-side with server-side session tracking.</li>
+            </ul>
+
+            <h3>7.3 COPPA Compliance Measures</h3>
+            <ul>
+              <li>We collect date of birth at registration to identify users under 13.</li>
+              <li>For users under 13, we obtain parental consent before the account becomes active. A parent or guardian must create the child account on behalf of the minor and provide explicit consent at the time of creation.</li>
+              <li>Parents can review, modify, or request deletion of their child's Personal Data at any time by contacting <a href="mailto:coppa@yapperhq.com">coppa@yapperhq.com</a>.</li>
+              <li>We do not condition a child's participation on the collection of more Personal Data than is reasonably necessary.</li>
+              <li>We do not serve targeted advertising to users identified as minors.</li>
+            </ul>
+
+            <h3>7.4 Data Minimization for Minors</h3>
+            <p>
+              For users identified as minors, we apply enhanced data minimization principles. We
+              collect only the minimum Personal Data necessary to provide the Service, we do not share
+              minors' data with third parties except as required by law, and we automatically delete
+              inactive minor accounts after 12 months of inactivity.
+            </p>
+          </section>
+
+          <section id="s8">
+            <h2>8. User-Generated Content</h2>
+
+            <h3>8.1 Encrypted Content</h3>
+            <p>
+              Text messages, Voice Yaps, and Video Clips are encrypted end-to-end and stored as
+              ciphertext on our servers only for the purpose of asynchronous delivery (e.g., when a
+              recipient is offline) and multi-device synchronization. Users may delete their own
+              messages at any time; deletion removes the ciphertext from our servers.
+            </p>
+
+            <h3>8.2 Non-Encrypted Content</h3>
+            <p>Certain user-generated content is not end-to-end encrypted because it must be accessible to groups of users or the public. This includes:</p>
+            <ul>
+              <li>Custom server-scoped emojis (accessible to all server members)</li>
+              <li>Server names, descriptions, and icons (visible to members and in server discovery)</li>
+              <li>Live Canvas content such as poll questions and options</li>
+              <li>Music state metadata (track title, artist, playback position)</li>
+              <li>Community clips carousel thumbnails and titles</li>
+              <li>User profile information (display name, avatar, bio, status)</li>
+            </ul>
+            <p>
+              This non-encrypted content is stored on our servers and CDN infrastructure, protected
+              by encryption at rest (AES-256) and encryption in transit (TLS 1.3).
+            </p>
+
+            <h3>8.3 Content Moderation</h3>
+            <p>
+              Because Yapper cannot access the plaintext content of E2EE messages, content moderation
+              for encrypted communications relies on user reporting. When a user reports a message, the
+              plaintext is shared with our Trust &amp; Safety team solely for the purpose of
+              investigating the report. Non-encrypted content (such as server names, emojis, and
+              profile information) may be proactively moderated to enforce our Community Guidelines.
+            </p>
+          </section>
+
+          <section id="s9">
+            <h2>9. Live Canvas Features</h2>
+            <p>
+              The Live Canvas sidebar provides dynamic, real-time interactive features within Yapper
+              servers, including music state, polls, and community clips carousels.
+            </p>
+
+            <h3>9.1 Music State</h3>
+            <p>
+              When a user shares their music listening activity in the Live Canvas, Yapper processes
+              the track title, artist name, and playback position. This information is displayed to
+              other server members in real time. We do not store music state data after the session
+              ends, and we do not share this data with music streaming services or other third parties.
+            </p>
+
+            <h3>9.2 Polls</h3>
+            <p>
+              Poll questions, options, and aggregated results are stored on our servers for the
+              duration specified by the poll creator. Individual vote records are pseudonymized using
+              hashed user identifiers.
+            </p>
+
+            <h3>9.3 Community Clips Carousel</h3>
+            <p>
+              Video Clips shared to the community clips carousel are stored as encrypted content with
+              decryption keys distributed to server members. Carousel metadata (titles, thumbnails,
+              view counts) is stored on our servers unencrypted. Clips are automatically archived
+              after 30 days unless pinned by a server administrator.
+            </p>
+          </section>
+
+          <section id="s10">
+            <h2>10. Data Import and Migration</h2>
+
+            <h3>10.1 Discord Profile Import</h3>
+            <p>
+              Yapper offers a Discord profile import tool that allows you to migrate your Discord
+              profile to Yapper. When you use this tool, you provide your Discord data export package
+              (obtained from Discord's settings). Yapper processes this data to import your username,
+              display name, avatar, bio, friend list, server memberships, and account preferences.
+            </p>
+
+            <h3>10.2 Bot Migration</h3>
+            <p>
+              Server administrators may use our bot migration tool to port Discord bots to the Yapper
+              platform. This process involves importing bot configuration files, command definitions,
+              permission structures, and webhook configurations. Bot tokens from Discord are never
+              stored; new Yapper-native tokens are generated.
+            </p>
+
+            <h3>10.3 Data Handling During Import</h3>
+            <p>
+              All imported data is processed in isolated, ephemeral containers destroyed after import
+              completion. Imported data is encrypted in transit using TLS 1.3. Temporary import data
+              is purged from all systems within 24 hours of a successful import, or immediately upon
+              import failure. Import activity logs are retained for 30 days for troubleshooting
+              purposes and then permanently deleted.
+            </p>
+          </section>
+
+          <section id="s11">
+            <h2>11. Data Sharing and Disclosure</h2>
+            <p>Yapper does not sell your Personal Data. We share your data only in the following limited circumstances:</p>
+
+            <h3>11.1 Service Providers</h3>
+            <p>
+              We engage trusted third-party service providers who process data on our behalf under
+              strict Data Processing Agreements. These include:
+            </p>
+            <ul>
+              <li>Cloud infrastructure providers (Fly.io for hosting, Neon for database, Cloudflare for CDN and storage)</li>
+              <li>Payment processors (Stripe)</li>
+              <li>Email delivery providers (Resend)</li>
+              <li>Push notification services (Firebase Cloud Messaging)</li>
+              <li>Error monitoring services (Sentry)</li>
+              <li>Customer support platforms (HubSpot)</li>
+            </ul>
+
+            <h3>11.2 Legal Requirements</h3>
+            <p>
+              We may disclose Personal Data if required by law, subpoena, court order, or governmental
+              request. Due to our E2EE architecture, we can only provide encrypted ciphertext and
+              metadata in response to legal requests for message content. We cannot provide plaintext
+              message content because we do not have access to it.
+            </p>
+
+            <h3>11.3 Business Transfers</h3>
+            <p>
+              In the event of a merger, acquisition, or sale of assets, your Personal Data may be
+              transferred as part of the transaction. We will notify you via in-app notification and
+              email at least 30 days before any such transfer, giving you the opportunity to delete
+              your account and data before the transfer occurs.
+            </p>
+
+            <h3>11.4 With Your Consent</h3>
+            <p>
+              We may share your data with third parties when you have given explicit, informed consent,
+              such as when connecting third-party integrations or participating in joint promotions.
+            </p>
+          </section>
+
+          <section id="s12">
+            <h2>12. Data Retention</h2>
+            <p>We retain your Personal Data only for as long as necessary to fulfill the purposes outlined in this Policy, or as required by law.</p>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Data Category</th>
+                    <th>Retention Period</th>
+                    <th>Deletion Method</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Account data</td>
+                    <td>Duration of account + 30 days</td>
+                    <td>Cryptographic erasure</td>
+                  </tr>
+                  <tr>
+                    <td>Encrypted messages (ciphertext)</td>
+                    <td>Duration of account or until user-deleted</td>
+                    <td>Deleted on request or account deletion</td>
+                  </tr>
+                  <tr>
+                    <td>Routing metadata</td>
+                    <td>12 months</td>
+                    <td>Automated purge</td>
+                  </tr>
+                  <tr>
+                    <td>IP addresses (raw)</td>
+                    <td>30 days, then anonymized</td>
+                    <td>Anonymization</td>
+                  </tr>
+                  <tr>
+                    <td>Payment records</td>
+                    <td>7 years (legal requirement)</td>
+                    <td>Secure deletion after period</td>
+                  </tr>
+                  <tr>
+                    <td>Parental consent records</td>
+                    <td>Duration of minor's account + 3 years</td>
+                    <td>Secure deletion</td>
+                  </tr>
+                  <tr>
+                    <td>Import/migration data</td>
+                    <td>24 hours (transient)</td>
+                    <td>Ephemeral container destruction</td>
+                  </tr>
+                  <tr>
+                    <td>Analytics (aggregated)</td>
+                    <td>24 months</td>
+                    <td>Automated purge</td>
+                  </tr>
+                  <tr>
+                    <td>Custom emojis</td>
+                    <td>Duration of server + 30 days</td>
+                    <td>CDN purge</td>
+                  </tr>
+                  <tr>
+                    <td>Support tickets</td>
+                    <td>24 months after resolution</td>
+                    <td>Automated purge</td>
+                  </tr>
+                  <tr>
+                    <td>Key backup (encrypted)</td>
+                    <td>Until user deletes backup or account</td>
+                    <td>Cryptographic erasure</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section id="s13">
+            <h2>13. Your Rights</h2>
+            <p>Depending on your jurisdiction, you may have some or all of the following rights regarding your Personal Data:</p>
+
+            <h3>13.1 Rights Under GDPR (EEA/UK)</h3>
+            <ul>
+              <li><strong>Right of Access (Art. 15):</strong> Request a copy of the Personal Data we hold about you.</li>
+              <li><strong>Right to Rectification (Art. 16):</strong> Request correction of inaccurate Personal Data.</li>
+              <li><strong>Right to Erasure (Art. 17):</strong> Request deletion of your Personal Data ("right to be forgotten").</li>
+              <li><strong>Right to Restriction (Art. 18):</strong> Request restriction of processing in certain circumstances.</li>
+              <li><strong>Right to Data Portability (Art. 20):</strong> Receive your data in a structured, machine-readable format. Yapper supports this via the in-app data export feature (Settings → Privacy &amp; Safety → Download My Data).</li>
+              <li><strong>Right to Object (Art. 21):</strong> Object to processing based on legitimate interests or for direct marketing.</li>
+              <li><strong>Right Not to Be Subject to Automated Decisions (Art. 22):</strong> Object to solely automated decision-making, including profiling.</li>
+              <li><strong>Right to Withdraw Consent:</strong> Withdraw consent at any time where processing is based on consent (Art. 7(3)).</li>
+            </ul>
+            <p>
+              To exercise these rights, contact our Data Protection Officer at
+              <a href="mailto:dpo@yapperhq.com">dpo@yapperhq.com</a>. We will respond within 30 days
+              (extendable by 60 days for complex requests). If you are not satisfied with our response,
+              you have the right to lodge a complaint with your local supervisory authority.
+            </p>
+
+            <h3>13.2 Rights Under CCPA/CPRA (California)</h3>
+            <ul>
+              <li><strong>Right to Know:</strong> Request disclosure of the categories and specific pieces of Personal Information collected, the sources, the business purposes, and the categories of third parties with whom we share it.</li>
+              <li><strong>Right to Delete:</strong> Request deletion of your Personal Information, subject to certain exceptions.</li>
+              <li><strong>Right to Correct:</strong> Request correction of inaccurate Personal Information.</li>
+              <li><strong>Right to Opt Out of Sale/Sharing:</strong> Yapper does not sell or share (as defined by CCPA) your Personal Information for cross-context behavioral advertising.</li>
+              <li><strong>Right to Non-Discrimination:</strong> We will not discriminate against you for exercising your CCPA rights.</li>
+            </ul>
+            <p>California residents may exercise these rights by emailing <a href="mailto:privacy@yapperhq.com">privacy@yapperhq.com</a> or using the "Privacy Settings" panel in the Yapper app.</p>
+
+            <h3>13.3 Additional Jurisdictional Rights</h3>
+            <p>
+              Users in Brazil (LGPD), Canada (PIPEDA), South Africa (POPIA), and other jurisdictions
+              may have similar rights. Yapper will comply with applicable local laws. Please contact
+              <a href="mailto:privacy@yapperhq.com">privacy@yapperhq.com</a> to exercise your rights.
+            </p>
+          </section>
+
+          <section id="s14">
+            <h2>14. International Data Transfers</h2>
+            <p>
+              Yapper's primary servers are located in Johannesburg, South Africa (hosted on Fly.io).
+              Supporting infrastructure is operated by Cloudflare (global CDN and storage) and Neon
+              (database, hosted in AWS regions). If you access the Service from outside South Africa
+              or the United States, your data may be transferred to and processed in these locations.
+            </p>
+            <p>
+              For transfers of Personal Data from the EEA/UK, we rely on Standard Contractual Clauses
+              (SCCs) approved by the European Commission with our sub-processors, and we apply
+              supplementary technical measures — including end-to-end encryption — that provide an
+              essentially equivalent level of protection for message content.
+            </p>
+            <p>
+              For users in South Africa, Yapper's primary data processing activities are conducted in
+              compliance with the Protection of Personal Information Act (POPIA). Transfers to other
+              jurisdictions are made only under conditions that ensure an adequate level of protection.
+            </p>
+          </section>
+
+          <section id="s15">
+            <h2>15. Security Measures</h2>
+
+            <h3>15.1 Technical Safeguards</h3>
+            <ul>
+              <li>End-to-end encryption (Signal Protocol: X3DH + Double Ratchet) for all user communications</li>
+              <li>Sender Keys for group channel encryption</li>
+              <li>Encryption at rest (AES-256) for all stored data</li>
+              <li>Encryption in transit (TLS 1.3) for all network communications</li>
+              <li>Argon2id (memory-hard, GPU-resistant) for all password storage</li>
+              <li>JWT RS256 with short-lived access tokens (15-minute expiry) and HttpOnly refresh cookies</li>
+              <li>CSRF double-submit cookie protection on all state-mutating API endpoints</li>
+              <li>Per-IP and per-user rate limiting to prevent brute-force attacks</li>
+              <li>Immutable audit logging for all administrative access to user data</li>
+              <li>All production secrets stored in encrypted secret management (Fly.io secret store — never committed to source code)</li>
+            </ul>
+
+            <h3>15.2 Organizational Safeguards</h3>
+            <ul>
+              <li>Principle of least privilege for all team member access</li>
+              <li>Security awareness as part of onboarding for all staff</li>
+              <li>Vendor security assessments and Data Processing Agreements for all sub-processors</li>
+              <li>Responsible disclosure policy and security contact (<a href="mailto:security@yapperhq.com">security@yapperhq.com</a>)</li>
+            </ul>
+          </section>
+
+          <section id="s16">
+            <h2>16. Data Breach Response and Incident Management</h2>
+
+            <h3>16.1 Incident Detection and Classification</h3>
+            <p>
+              Yapper monitors production systems for anomalous activity via application-level error
+              tracking (Sentry) and infrastructure monitoring. Incidents are classified by severity
+              from P1 (Critical, affecting E2EE integrity or mass data exposure) through P4
+              (Informational, no user data impact).
+            </p>
+
+            <h3>16.2 Response Procedures</h3>
+            <p>Upon detection of a confirmed data breach involving Personal Data, Yapper will execute the following response plan:</p>
+            <ul>
+              <li><strong>Containment (0–24 hours):</strong> Isolate affected systems, revoke compromised credentials, and deploy patches to prevent further unauthorized access.</li>
+              <li><strong>Assessment (24–48 hours):</strong> Determine the scope, nature, and severity of the breach, including which categories of data and how many users are affected.</li>
+              <li><strong>Notification — Regulators (within 72 hours):</strong> Notify the relevant supervisory authority within 72 hours of becoming aware of the breach, where feasible and where the breach is likely to result in a risk to rights and freedoms.</li>
+              <li><strong>Notification — Users (without undue delay):</strong> Notify affected users via in-app notification, email, and a public status page announcement.</li>
+              <li><strong>Remediation (ongoing):</strong> Implement long-term corrective measures, update security controls, and conduct a post-incident review.</li>
+            </ul>
+
+            <h3>16.3 E2EE Breach Considerations</h3>
+            <p>
+              In the event of a server compromise, the E2EE architecture provides an additional layer
+              of protection. Because we do not possess plaintext message content, a breach of our
+              servers does not expose the content of user communications. However, metadata may be
+              exposed. We would notify affected users of any metadata exposure and provide guidance on
+              re-verifying identity keys using safety numbers.
+            </p>
+
+            <h3>16.4 Breach Notification Commitments</h3>
+            <ul>
+              <li>Notifying the relevant supervisory authority within 72 hours of breach discovery as required by GDPR Article 33</li>
+              <li>Notifying affected California residents as required by California Civil Code §1798.82</li>
+              <li>Notifying all affected users within 7 days of breach confirmation regardless of jurisdiction</li>
+              <li>Publishing a detailed post-incident report within 30 days</li>
+            </ul>
+          </section>
+
+          <section id="s17">
+            <h2>17. Cookies and Tracking Technologies</h2>
+            <p>Yapper uses the following categories of cookies and similar technologies:</p>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Category</th>
+                    <th>Purpose</th>
+                    <th>Duration</th>
+                    <th>Consent Required</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Strictly Necessary</td>
+                    <td>Authentication, session management, security</td>
+                    <td>Session / 30 days</td>
+                    <td>No</td>
+                  </tr>
+                  <tr>
+                    <td>Functional</td>
+                    <td>User preferences, language settings</td>
+                    <td>12 months</td>
+                    <td>Yes (EEA/UK)</td>
+                  </tr>
+                  <tr>
+                    <td>Analytics</td>
+                    <td>Aggregated usage statistics</td>
+                    <td>12 months</td>
+                    <td>Yes</td>
+                  </tr>
+                  <tr>
+                    <td>Performance</td>
+                    <td>Error tracking, latency monitoring</td>
+                    <td>Session</td>
+                    <td>No (legitimate interest)</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p>Yapper does not use advertising cookies or trackers. We do not engage in cross-site tracking or serve targeted advertisements.</p>
+            <p>See our full <a href="/cookies">Cookie Policy</a> for more detail.</p>
+          </section>
+
+          <section id="s18">
+            <h2>18. Do Not Track Signals</h2>
+            <p>
+              Yapper honours "Do Not Track" (DNT) browser signals. When we detect a DNT signal, we
+              disable all non-essential analytics tracking for that session. Additionally, Yapper
+              supports the Global Privacy Control (GPC) signal as a valid opt-out of sale/sharing
+              under the CCPA.
+            </p>
+          </section>
+
+          <section id="s19">
+            <h2>19. Third-Party Links and Integrations</h2>
+            <p>
+              The Service may contain links to third-party websites or integrate with third-party
+              services (e.g., music streaming platforms via Live Canvas, bots connecting to external
+              APIs). Yapper is not responsible for the privacy practices of these third parties. We
+              encourage you to review their privacy policies before sharing data with them.
+            </p>
+          </section>
+
+          <section id="s20">
+            <h2>20. Changes to This Privacy Policy</h2>
+            <p>
+              We may update this Privacy Policy from time to time to reflect changes in our practices,
+              technology, legal requirements, or other factors. When we make material changes, we will
+              notify you via:
+            </p>
+            <ul>
+              <li>In-app notification at least 30 days before the changes take effect</li>
+              <li>Email notification to the address associated with your account</li>
+              <li>A prominent banner on our website</li>
+            </ul>
+            <p>
+              Your continued use of the Service after the effective date of any changes constitutes
+              acceptance of the updated Privacy Policy. The previous version of this policy (v1.0,
+              effective March 3, 2026) is available upon request at
+              <a href="mailto:privacy@yapperhq.com">privacy@yapperhq.com</a>.
+            </p>
+          </section>
+
+          <section id="s21">
+            <h2>21. Contact Us</h2>
+            <p>If you have any questions, concerns, or requests related to this Privacy Policy or your Personal Data, please contact us:</p>
+            <div class="contact-grid">
+              <div>
+                <span class="label">General Privacy Inquiries</span>
+                <a href="mailto:privacy@yapperhq.com">privacy@yapperhq.com</a>
+              </div>
+              <div>
+                <span class="label">Data Protection Officer</span>
+                <a href="mailto:dpo@yapperhq.com">dpo@yapperhq.com</a>
+              </div>
+              <div>
+                <span class="label">COPPA / Children's Privacy</span>
+                <a href="mailto:coppa@yapperhq.com">coppa@yapperhq.com</a>
+              </div>
+              <div>
+                <span class="label">Security Concerns</span>
+                <a href="mailto:security@yapperhq.com">security@yapperhq.com</a>
+              </div>
+              <div>
+                <span class="label">Mailing Address</span>
+                <span>Yapper Technologies, Inc., KwaZulu-Natal, South Africa</span>
+              </div>
+            </div>
+          </section>
+
+          <footer class="legal-footer-note">
+            <p>© 2026 Yapper Technologies, Inc. All rights reserved.</p>
+            <p>This Privacy Policy was last updated on March 16, 2026.</p>
+          </footer>
+
+        </article>
+      </div>
+    </div>
+  </main>
+  <Footer />
+</Base>
+
+<style>
+  .legal-page {
+    padding: clamp(60px, 8vw, 120px) 0 clamp(60px, 8vw, 100px);
+  }
+
+  /* ---- Header ---- */
+  .legal-header {
+    max-width: 780px;
+    margin-bottom: 56px;
+  }
+
+  .legal-badge {
+    display: inline-block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-brand-light);
+    background: rgba(124, 58, 237, 0.15);
+    border: 1px solid rgba(124, 58, 237, 0.3);
+    border-radius: var(--radius-full);
+    padding: 4px 12px;
+    margin-bottom: 20px;
+  }
+
+  .legal-header h1 {
+    font-size: clamp(2rem, 5vw, 3rem);
+    font-weight: 800;
+    margin-bottom: 16px;
+  }
+
+  .legal-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    font-size: 0.875rem;
+    color: var(--color-text-secondary);
+    margin-bottom: 24px;
+  }
+
+  .legal-meta .sep { color: var(--color-border-light); }
+  .legal-meta a { color: var(--color-brand-light); text-decoration: none; }
+  .legal-meta a:hover { text-decoration: underline; }
+
+  .legal-intro {
+    color: var(--color-text-secondary);
+    font-size: 1.0625rem;
+    margin-bottom: 28px;
+    max-width: 640px;
+  }
+
+  .legal-contacts {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: 20px 24px;
+  }
+
+  .contact-row {
+    display: flex;
+    gap: 16px;
+    font-size: 0.875rem;
+    flex-wrap: wrap;
+  }
+
+  .contact-row .label, .contact-grid .label {
+    min-width: 160px;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    flex-shrink: 0;
+  }
+
+  .contact-row a { color: var(--color-brand-light); text-decoration: none; }
+  .contact-row a:hover { text-decoration: underline; }
+
+  /* ---- Layout ---- */
+  .legal-layout {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 56px;
+    align-items: start;
+  }
+
+  @media (max-width: 900px) {
+    .legal-layout { grid-template-columns: 1fr; }
+    .toc { display: none; }
+  }
+
+  /* ---- TOC ---- */
+  .toc {
+    position: sticky;
+    top: 100px;
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: 20px;
+  }
+
+  .toc-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+    margin-bottom: 12px;
+  }
+
+  .toc ol {
+    list-style: none;
+    counter-reset: toc;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .toc li { counter-increment: toc; }
+
+  .toc a {
+    font-size: 0.8125rem;
+    color: var(--color-text-secondary);
+    text-decoration: none;
+    display: block;
+    padding: 3px 0;
+    transition: color var(--transition-fast);
+  }
+
+  .toc a:hover { color: var(--color-brand-light); }
+
+  /* ---- Body ---- */
+  .legal-body {
+    min-width: 0;
+  }
+
+  .legal-body section {
+    margin-bottom: 48px;
+    padding-bottom: 48px;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .legal-body section:last-of-type {
+    border-bottom: none;
+  }
+
+  .legal-body h2 {
+    font-size: 1.375rem;
+    font-weight: 700;
+    margin-bottom: 16px;
+    color: var(--color-text-primary);
+    scroll-margin-top: 100px;
+  }
+
+  .legal-body h3 {
+    font-size: 1.0625rem;
+    font-weight: 600;
+    margin: 24px 0 10px;
+    color: var(--color-text-primary);
+  }
+
+  .legal-body h4 {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    margin: 20px 0 8px;
+    color: var(--color-text-secondary);
+  }
+
+  .legal-body p {
+    color: var(--color-text-secondary);
+    margin-bottom: 12px;
+    line-height: 1.7;
+    max-width: 72ch;
+  }
+
+  .legal-body p:last-child { margin-bottom: 0; }
+
+  .legal-body ul, .legal-body ol {
+    color: var(--color-text-secondary);
+    padding-left: 20px;
+    margin-bottom: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .legal-body li { line-height: 1.65; }
+
+  .legal-body dl {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .legal-body dt {
+    font-weight: 600;
+    color: var(--color-text-primary);
+    font-size: 0.9375rem;
+  }
+
+  .legal-body dd {
+    color: var(--color-text-secondary);
+    margin-left: 0;
+    line-height: 1.65;
+    max-width: 66ch;
+  }
+
+  .legal-body a { color: var(--color-brand-light); text-decoration: none; }
+  .legal-body a:hover { text-decoration: underline; }
+
+  /* ---- Tables ---- */
+  .table-wrap {
+    overflow-x: auto;
+    margin: 16px 0;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+    min-width: 480px;
+  }
+
+  th {
+    background: var(--color-bg-elevated);
+    font-weight: 600;
+    color: var(--color-text-primary);
+    text-align: left;
+    padding: 10px 16px;
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 10px 16px;
+    color: var(--color-text-secondary);
+    border-top: 1px solid var(--color-border);
+    vertical-align: top;
+    line-height: 1.5;
+  }
+
+  tr:hover td { background: var(--color-bg-surface); }
+
+  /* ---- Contact grid ---- */
+  .contact-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: 20px 24px;
+    margin-top: 16px;
+  }
+
+  .contact-grid > div {
+    display: flex;
+    gap: 16px;
+    font-size: 0.875rem;
+    flex-wrap: wrap;
+  }
+
+  .contact-grid a { color: var(--color-brand-light); text-decoration: none; }
+  .contact-grid a:hover { text-decoration: underline; }
+
+  /* ---- Footer note ---- */
+  .legal-footer-note {
+    margin-top: 48px;
+    padding-top: 24px;
+    border-top: 1px solid var(--color-border);
+    font-size: 0.8125rem;
+    color: var(--color-text-muted);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+</style>

@@ -1,0 +1,644 @@
+---
+import Base from '../layouts/Base.astro';
+import Nav from '../components/Nav.astro';
+import Footer from '../components/Footer.astro';
+---
+
+<Base
+  title="Cookie Policy — Yapper"
+  description="Yapper Cookie Policy. How we use cookies and similar tracking technologies."
+>
+  <Nav />
+  <main class="legal-page">
+    <div class="container">
+      <header class="legal-header">
+        <div class="legal-badge">Legal</div>
+        <h1>Cookie Policy</h1>
+        <div class="legal-meta">
+          <span>Effective: <strong>March 16, 2026</strong></span>
+          <span class="sep">·</span>
+          <span>Questions: <a href="mailto:privacy@yapperhq.com">privacy@yapperhq.com</a></span>
+        </div>
+        <p class="legal-intro">
+          This Cookie Policy explains what cookies are, which cookies Yapper uses, why we use them,
+          and how you can control them.
+        </p>
+      </header>
+
+      <div class="legal-layout">
+        <nav class="toc" aria-label="Table of contents">
+          <p class="toc-label">Contents</p>
+          <ol>
+            <li><a href="#s1">What Are Cookies?</a></li>
+            <li><a href="#s2">Cookies We Use</a></li>
+            <li><a href="#s3">Strictly Necessary</a></li>
+            <li><a href="#s4">Functional Cookies</a></li>
+            <li><a href="#s5">Analytics Cookies</a></li>
+            <li><a href="#s6">Performance Cookies</a></li>
+            <li><a href="#s7">What We Don't Do</a></li>
+            <li><a href="#s8">Managing Cookies</a></li>
+            <li><a href="#s9">Do Not Track</a></li>
+            <li><a href="#s10">Updates</a></li>
+            <li><a href="#s11">Contact</a></li>
+          </ol>
+        </nav>
+
+        <article class="legal-body">
+
+          <section id="s1">
+            <h2>1. What Are Cookies?</h2>
+            <p>
+              Cookies are small text files that websites and applications place on your device when you
+              visit them. They are widely used to make services work, work more efficiently, and to
+              provide information to the owners of the site.
+            </p>
+            <p>
+              Similar technologies — such as local storage, session storage, and IndexedDB — can serve
+              related purposes. This policy covers all of these technologies collectively as "cookies."
+            </p>
+            <p>
+              Cookies can be "session cookies" (deleted when you close your browser) or "persistent
+              cookies" (remaining on your device for a set period or until you delete them). Cookies
+              can be "first-party" (set by Yapper directly) or "third-party" (set by services we use,
+              such as analytics providers).
+            </p>
+          </section>
+
+          <section id="s2">
+            <h2>2. Overview: Cookies We Use</h2>
+            <p>Yapper uses four categories of cookies and similar technologies:</p>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Category</th>
+                    <th>Purpose</th>
+                    <th>Consent Required</th>
+                    <th>Duration</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><span class="badge badge-required">Strictly Necessary</span></td>
+                    <td>Authentication, sessions, CSRF protection</td>
+                    <td>No</td>
+                    <td>Session / 30 days</td>
+                  </tr>
+                  <tr>
+                    <td><span class="badge badge-functional">Functional</span></td>
+                    <td>User preferences (theme, language, notification settings)</td>
+                    <td>Yes (EEA/UK)</td>
+                    <td>12 months</td>
+                  </tr>
+                  <tr>
+                    <td><span class="badge badge-analytics">Analytics</span></td>
+                    <td>Aggregated usage statistics</td>
+                    <td>Yes</td>
+                    <td>12 months</td>
+                  </tr>
+                  <tr>
+                    <td><span class="badge badge-performance">Performance</span></td>
+                    <td>Error tracking, latency monitoring (Sentry)</td>
+                    <td>No (legitimate interest)</td>
+                    <td>Session</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p>Yapper does <strong>not</strong> use advertising, targeting, or cross-site tracking cookies.</p>
+          </section>
+
+          <section id="s3">
+            <h2>3. Strictly Necessary Cookies</h2>
+            <p>
+              These cookies are essential for the Service to function and cannot be switched off in our
+              systems. They are usually set only in response to actions you take, such as logging in,
+              setting your privacy preferences, or filling in forms.
+            </p>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Cookie / Storage Key</th>
+                    <th>Type</th>
+                    <th>Purpose</th>
+                    <th>Duration</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>refresh_token</code></td>
+                    <td>HttpOnly cookie</td>
+                    <td>Keeps you logged in between sessions using a secure, server-issued refresh token</td>
+                    <td>30 days</td>
+                  </tr>
+                  <tr>
+                    <td><code>csrf_token</code></td>
+                    <td>Cookie</td>
+                    <td>Double-submit CSRF protection token required on all state-changing API requests</td>
+                    <td>Session / 30 days</td>
+                  </tr>
+                  <tr>
+                    <td><code>access_token</code></td>
+                    <td>Memory / localStorage</td>
+                    <td>Short-lived JWT (15 min) used to authenticate API requests in the current session</td>
+                    <td>15 minutes</td>
+                  </tr>
+                  <tr>
+                    <td><code>yapper_keystore_*</code></td>
+                    <td>IndexedDB</td>
+                    <td>Local storage of Signal Protocol encryption keys on your device (never sent to servers)</td>
+                    <td>Persistent (device-local)</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p>
+              You can block these cookies via your browser settings, but doing so will prevent you from
+              logging in and using the Service.
+            </p>
+          </section>
+
+          <section id="s4">
+            <h2>4. Functional Cookies</h2>
+            <p>
+              These cookies allow the Service to remember your choices and preferences to provide a
+              more personalised experience. For example, they may remember your chosen theme (light or
+              dark mode), notification settings, and language preference.
+            </p>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Cookie / Storage Key</th>
+                    <th>Type</th>
+                    <th>Purpose</th>
+                    <th>Duration</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><code>yapper_theme</code></td>
+                    <td>localStorage</td>
+                    <td>Remembers your chosen colour theme (dark/light/system)</td>
+                    <td>Persistent</td>
+                  </tr>
+                  <tr>
+                    <td><code>yapper_locale</code></td>
+                    <td>localStorage</td>
+                    <td>Remembers your preferred language setting</td>
+                    <td>Persistent</td>
+                  </tr>
+                  <tr>
+                    <td><code>yapper_notif_prefs</code></td>
+                    <td>localStorage</td>
+                    <td>Stores your notification preferences (push opt-in/out, sound settings)</td>
+                    <td>Persistent</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p>
+              In the EEA and UK, we obtain your consent before setting functional cookies beyond
+              what is strictly necessary. You can manage these preferences at any time in
+              <strong>Settings → Appearance</strong> or via your browser's cookie controls.
+            </p>
+          </section>
+
+          <section id="s5">
+            <h2>5. Analytics Cookies</h2>
+            <p>
+              Analytics cookies help us understand how visitors interact with the Service so we can
+              measure and improve its performance. All analytics data is aggregated and
+              <strong>not linked to individual users</strong>.
+            </p>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Provider</th>
+                    <th>Purpose</th>
+                    <th>Data Collected</th>
+                    <th>Duration</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Internal (Yapper)</td>
+                    <td>Aggregate page view counts and feature usage metrics</td>
+                    <td>Page paths, feature interaction counts (no PII)</td>
+                    <td>12 months, then purged</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p>
+              We require your consent before enabling analytics cookies. You may opt in or out at any
+              time via the cookie preferences manager in the app footer or browser settings.
+            </p>
+          </section>
+
+          <section id="s6">
+            <h2>6. Performance and Error Tracking</h2>
+            <p>
+              Performance cookies help us detect and diagnose errors so that we can maintain a
+              reliable service. We use Sentry for error monitoring and performance tracking.
+            </p>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Provider</th>
+                    <th>Purpose</th>
+                    <th>Data Collected</th>
+                    <th>Duration</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Sentry</td>
+                    <td>JavaScript error tracking and performance monitoring</td>
+                    <td>Error messages, stack traces, browser/OS version, session replay (if enabled). IP address anonymized. No message content.</td>
+                    <td>30 days in Sentry, then purged</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p>
+              We consider error tracking to be in our legitimate interest to provide a stable and
+              secure service. No consent banner is required, but you may opt out by blocking Sentry
+              in your browser or using an ad blocker that blocks <code>sentry.io</code>.
+            </p>
+          </section>
+
+          <section id="s7">
+            <h2>7. What We Don't Do</h2>
+            <p>To be clear about our approach to cookies:</p>
+            <ul>
+              <li>We do <strong>not</strong> use advertising cookies or sell data to ad networks.</li>
+              <li>We do <strong>not</strong> engage in cross-site tracking or build user profiles for advertising purposes.</li>
+              <li>We do <strong>not</strong> use fingerprinting (canvas fingerprinting, font fingerprinting, etc.) to track users.</li>
+              <li>We do <strong>not</strong> share cookie data with social media platforms.</li>
+              <li>We do <strong>not</strong> use third-party analytics services that track individual users across the web (e.g., Google Analytics).</li>
+            </ul>
+          </section>
+
+          <section id="s8">
+            <h2>8. Managing Cookies</h2>
+            <h3>8.1 In the Yapper App</h3>
+            <p>
+              You can manage your cookie preferences (for functional and analytics cookies) within the
+              Yapper application at <strong>Settings → Privacy &amp; Safety → Cookie Preferences</strong>.
+              Changes take effect immediately.
+            </p>
+            <h3>8.2 In Your Browser</h3>
+            <p>
+              Most web browsers allow you to control cookies through their settings. You can configure
+              your browser to block all cookies, accept only certain cookies, or notify you when a
+              website tries to set a cookie. Refer to your browser's help documentation:
+            </p>
+            <ul>
+              <li><strong>Chrome:</strong> Settings → Privacy and Security → Cookies and other site data</li>
+              <li><strong>Firefox:</strong> Settings → Privacy &amp; Security → Cookies and Site Data</li>
+              <li><strong>Safari:</strong> Preferences → Privacy → Manage Website Data</li>
+              <li><strong>Edge:</strong> Settings → Cookies and site permissions → Cookies and site data</li>
+            </ul>
+            <p>
+              Note: blocking strictly necessary cookies will prevent you from logging into your
+              Yapper account.
+            </p>
+            <h3>8.3 Deleting Stored Data</h3>
+            <p>
+              You can clear Yapper's local storage, IndexedDB, and session storage by clearing your
+              browser's site data for <code>app.yapperhq.com</code>. Note that clearing IndexedDB
+              will delete your locally stored encryption keys — ensure you have a key backup enabled
+              before doing this to avoid losing access to your message history.
+            </p>
+          </section>
+
+          <section id="s9">
+            <h2>9. Do Not Track and Global Privacy Control</h2>
+            <p>
+              Yapper honours "Do Not Track" (DNT) browser signals. When we detect a DNT signal, we
+              disable all non-essential analytics cookies for that session.
+            </p>
+            <p>
+              Yapper also supports the <strong>Global Privacy Control (GPC)</strong> signal as a valid
+              opt-out of sale/sharing under the CCPA. When a GPC signal is detected, we treat it as
+              an opt-out of analytics data collection.
+            </p>
+          </section>
+
+          <section id="s10">
+            <h2>10. Updates to This Policy</h2>
+            <p>
+              We may update this Cookie Policy to reflect changes in the cookies we use or for
+              operational, legal, or regulatory reasons. When we make changes, we will update the
+              effective date at the top of this page and, for material changes, notify you via in-app
+              notification.
+            </p>
+            <p>
+              We recommend checking this page periodically to stay informed about our use of cookies.
+            </p>
+          </section>
+
+          <section id="s11">
+            <h2>11. Contact</h2>
+            <p>
+              If you have questions about our use of cookies or this Cookie Policy, please contact:
+            </p>
+            <div class="contact-grid">
+              <div>
+                <span class="label">Privacy Team</span>
+                <a href="mailto:privacy@yapperhq.com">privacy@yapperhq.com</a>
+              </div>
+              <div>
+                <span class="label">Data Protection Officer</span>
+                <a href="mailto:dpo@yapperhq.com">dpo@yapperhq.com</a>
+              </div>
+              <div>
+                <span class="label">Mailing Address</span>
+                <span>Yapper Technologies, Inc., KwaZulu-Natal, South Africa</span>
+              </div>
+            </div>
+            <p style="margin-top: 16px;">
+              For the full picture of how we handle your data, see our
+              <a href="/privacy">Privacy Policy</a> and <a href="/terms">Terms of Service</a>.
+            </p>
+          </section>
+
+          <footer class="legal-footer-note">
+            <p>© 2026 Yapper Technologies, Inc. All rights reserved.</p>
+            <p>This Cookie Policy was last updated on March 16, 2026.</p>
+          </footer>
+
+        </article>
+      </div>
+    </div>
+  </main>
+  <Footer />
+</Base>
+
+<style>
+  .legal-page {
+    padding: clamp(60px, 8vw, 120px) 0 clamp(60px, 8vw, 100px);
+  }
+
+  .legal-header {
+    max-width: 780px;
+    margin-bottom: 56px;
+  }
+
+  .legal-badge {
+    display: inline-block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-brand-light);
+    background: rgba(124, 58, 237, 0.15);
+    border: 1px solid rgba(124, 58, 237, 0.3);
+    border-radius: var(--radius-full);
+    padding: 4px 12px;
+    margin-bottom: 20px;
+  }
+
+  .legal-header h1 {
+    font-size: clamp(2rem, 5vw, 3rem);
+    font-weight: 800;
+    margin-bottom: 16px;
+  }
+
+  .legal-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    font-size: 0.875rem;
+    color: var(--color-text-secondary);
+    margin-bottom: 24px;
+  }
+
+  .legal-meta .sep { color: var(--color-border-light); }
+  .legal-meta a { color: var(--color-brand-light); text-decoration: none; }
+  .legal-meta a:hover { text-decoration: underline; }
+
+  .legal-intro {
+    color: var(--color-text-secondary);
+    font-size: 1.0625rem;
+    max-width: 640px;
+  }
+
+  .legal-layout {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 56px;
+    align-items: start;
+  }
+
+  @media (max-width: 900px) {
+    .legal-layout { grid-template-columns: 1fr; }
+    .toc { display: none; }
+  }
+
+  .toc {
+    position: sticky;
+    top: 100px;
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: 20px;
+  }
+
+  .toc-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+    margin-bottom: 12px;
+  }
+
+  .toc ol {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .toc a {
+    font-size: 0.8125rem;
+    color: var(--color-text-secondary);
+    text-decoration: none;
+    display: block;
+    padding: 3px 0;
+    transition: color var(--transition-fast);
+  }
+
+  .toc a:hover { color: var(--color-brand-light); }
+
+  .legal-body { min-width: 0; }
+
+  .legal-body section {
+    margin-bottom: 48px;
+    padding-bottom: 48px;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .legal-body section:last-of-type { border-bottom: none; }
+
+  .legal-body h2 {
+    font-size: 1.375rem;
+    font-weight: 700;
+    margin-bottom: 16px;
+    scroll-margin-top: 100px;
+  }
+
+  .legal-body h3 {
+    font-size: 1.0625rem;
+    font-weight: 600;
+    margin: 24px 0 10px;
+    color: var(--color-text-primary);
+  }
+
+  .legal-body p {
+    color: var(--color-text-secondary);
+    margin-bottom: 12px;
+    line-height: 1.7;
+    max-width: 72ch;
+  }
+
+  .legal-body p:last-child { margin-bottom: 0; }
+
+  .legal-body ul, .legal-body ol {
+    color: var(--color-text-secondary);
+    padding-left: 20px;
+    margin-bottom: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .legal-body li { line-height: 1.65; }
+
+  .legal-body a { color: var(--color-brand-light); text-decoration: none; }
+  .legal-body a:hover { text-decoration: underline; }
+
+  code {
+    font-family: 'Menlo', 'Consolas', monospace;
+    font-size: 0.8125em;
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border);
+    padding: 1px 5px;
+    border-radius: 4px;
+    color: var(--color-text-primary);
+  }
+
+  /* ---- Tables ---- */
+  .table-wrap {
+    overflow-x: auto;
+    margin: 16px 0;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+    min-width: 480px;
+  }
+
+  th {
+    background: var(--color-bg-elevated);
+    font-weight: 600;
+    color: var(--color-text-primary);
+    text-align: left;
+    padding: 10px 16px;
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 10px 16px;
+    color: var(--color-text-secondary);
+    border-top: 1px solid var(--color-border);
+    vertical-align: top;
+    line-height: 1.5;
+  }
+
+  tr:hover td { background: var(--color-bg-surface); }
+
+  /* ---- Badges ---- */
+  .badge {
+    display: inline-block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: var(--radius-full);
+    white-space: nowrap;
+  }
+
+  .badge-required {
+    background: rgba(16, 185, 129, 0.15);
+    color: #6ee7b7;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+  }
+
+  .badge-functional {
+    background: rgba(124, 58, 237, 0.15);
+    color: var(--color-brand-light);
+    border: 1px solid rgba(124, 58, 237, 0.3);
+  }
+
+  .badge-analytics {
+    background: rgba(59, 130, 246, 0.15);
+    color: #93c5fd;
+    border: 1px solid rgba(59, 130, 246, 0.3);
+  }
+
+  .badge-performance {
+    background: rgba(245, 158, 11, 0.15);
+    color: #fcd34d;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+  }
+
+  /* ---- Contact grid ---- */
+  .contact-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: 20px 24px;
+    margin-top: 16px;
+  }
+
+  .contact-grid > div {
+    display: flex;
+    gap: 16px;
+    font-size: 0.875rem;
+    flex-wrap: wrap;
+  }
+
+  .label {
+    min-width: 160px;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    flex-shrink: 0;
+  }
+
+  .contact-grid a { color: var(--color-brand-light); text-decoration: none; }
+  .contact-grid a:hover { text-decoration: underline; }
+
+  .legal-footer-note {
+    margin-top: 48px;
+    padding-top: 24px;
+    border-top: 1px solid var(--color-border);
+    font-size: 0.8125rem;
+    color: var(--color-text-muted);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+</style>
