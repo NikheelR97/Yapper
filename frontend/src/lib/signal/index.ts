@@ -554,6 +554,14 @@ export async function decryptDm(
   let session = await ks.loadSession(sessionKey);
   const cipherBytes = b64ToBytes(msg.ciphertext);
 
+  // When establishing a new X3DH session we defer the fingerprint check until
+  // AFTER decryptRatchet succeeds.  Checking eagerly (before the ratchet step)
+  // stores the peer's current bundle fingerprint even when the ratchet
+  // subsequently fails (e.g. old messages whose OPK was consumed by a previous
+  // session). That stale fingerprint then causes "Peer identity changed" errors
+  // the next time encryptDm is called after the peer regenerated their keys.
+  let pendingFpBundle: KeyBundle | null = null;
+
   if (!session) {
     if (!msg.ephemeral_key) {
       throw new Error("No session and no ephemeral key - cannot decrypt");
@@ -574,11 +582,6 @@ export async function decryptDm(
         (bundle) => bundle.signalDeviceId === peerSignalDeviceId,
       ) ??
       senderBundles[0];
-    const senderFp = await fingerprintKeys(
-      b64ToBytes(senderBundle.identity_dh_key),
-      b64ToBytes(senderBundle.identity_sig_key),
-    );
-    await requirePeerKeyUnchanged(peerId, senderBundle.deviceId, senderFp);
     const senderDhPub = b64ToBytes(senderBundle.identity_dh_key);
 
     session = await x3dhRespond(
@@ -593,6 +596,7 @@ export async function decryptDm(
       peerDeviceId,
       peerSignalDeviceId,
     );
+    pendingFpBundle = senderBundle;
 
     if (msg.opk_id != null) {
       await ks.deletePreKey(msg.opk_id);
@@ -609,6 +613,18 @@ export async function decryptDm(
       cryptoVersion: msg.crypto_version ?? 1,
     },
   );
+
+  // Verify sender fingerprint only after the ratchet step succeeds, and before
+  // committing the session. A throw here prevents a changed-key session from
+  // being persisted, so the next message triggers a fresh X3DH check.
+  if (pendingFpBundle) {
+    const senderFp = await fingerprintKeys(
+      b64ToBytes(pendingFpBundle.identity_dh_key),
+      b64ToBytes(pendingFpBundle.identity_sig_key),
+    );
+    await requirePeerKeyUnchanged(peerId, pendingFpBundle.deviceId, senderFp);
+  }
+
   await ks.storeSession(updatedSession);
   return new TextDecoder().decode(plaintext);
 }
