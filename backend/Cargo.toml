@@ -26,7 +26,7 @@ ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
 
 # Auth
 argon2 = "0.5"
-jsonwebtoken = "9"
+jsonwebtoken = "10"
 oauth2 = "4"
 url = "2"
 validator = { version = "0.18", features = ["derive"] }
