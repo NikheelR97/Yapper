@@ -128,42 +128,20 @@ test.describe('Channel E2EE — cross-user message decryption', () => {
 		'Set E2E_EMAIL, E2E_PASSWORD, E2E_EMAIL_2, E2E_PASSWORD_2 to run cross-user E2E tests',
 	);
 
-	test.beforeAll(async ({ browser }) => {
-		// Extend hook timeout: two browser logins + Signal key bootstrap can take ~2 min
-		test.setTimeout(180_000);
+	test.beforeAll(() => {
+		// Only device seeding — browser logins happen within each test so that
+		// A and B use the SAME context for both key upload and message read.
+		// (Each fresh context generates new Signal keys; uploading in beforeAll
+		// then re-logging in the test overwrites those keys and breaks decryption.)
 		seedTrustedPrimaryDevice();
 		seedTrustedPrimaryDeviceB();
-
-		// Both users must have their Signal prekeys uploaded before any channel test
-		// runs. Without this, A can't encrypt the SenderKey distribution for B and
-		// B will see "Unable to decrypt".
-		for (const [email, pass, installId] of [
-			[USER_A_EMAIL, USER_A_PASS, USER_A_CHANNEL_INSTALLATION],
-			[USER_B_EMAIL, USER_B_PASS, USER_B_CHANNEL_INSTALLATION],
-		] as [string, string, string][]) {
-			if (!email || !pass) continue;
-			const ctx = await browser.newContext({ storageState: { cookies: [], origins: [] } });
-			try {
-				const pg = await ctx.newPage();
-				await setInstallationId(pg, installId);
-				await pg.goto('/login');
-				await pg.fill('#email', email);
-				await pg.fill('#password', pass);
-				await pg.getByRole('button', { name: /Sign In/i }).click();
-				await pg.waitForURL(/\/explore/, { timeout: 30_000 });
-				await expect(pg.locator('[aria-label="Loading Yapper"]')).toHaveCount(0, {
-					timeout: 45_000,
-				});
-			} finally {
-				await ctx.close();
-			}
-		}
 	});
 
 	test(
 		'User B can read a channel message sent by User A (Sender Key decryption regression)',
 		async ({ browser }) => {
-			test.slow(); // Two browser contexts + Signal key setup
+			// Two concurrent browser logins + Signal key setup + message round-trip
+			test.setTimeout(300_000);
 
 			// ── API setup ─────────────────────────────────────────────────────────────
 			const sessionA = await createApiSession(
@@ -183,43 +161,41 @@ test.describe('Channel E2EE — cross-user message decryption', () => {
 			const inviteCode = await createInvite(sessionA, serverId);
 			await joinByInvite(sessionB, inviteCode);
 
-			// ── User A sends a message ────────────────────────────────────────────────
 			const testMsg = `E2E E2EE channel message ${Date.now()}`;
+
+			// Open both contexts before any message is sent so that when A calls
+			// prepareChannel() the SenderKey distribution is encrypted with B's
+			// freshly-uploaded public key. B then navigates using the SAME context
+			// (same IndexedDB) so the private key matches the distribution.
 			const ctxA = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+			const ctxB = await browser.newContext({ storageState: { cookies: [], origins: [] } });
 			const pageA = await ctxA.newPage();
+			const pageB = await ctxB.newPage();
 
 			try {
-				await loginAndWaitReady(pageA, USER_A_EMAIL, USER_A_PASS, USER_A_CHANNEL_INSTALLATION);
-				await pageA.goto(`/servers/${serverId}/channels/${channelId}`);
+				// Log in both concurrently — ensures both have uploaded prekeys before
+				// A triggers SenderKey distribution by navigating to the channel.
+				await Promise.all([
+					loginAndWaitReady(pageA, USER_A_EMAIL, USER_A_PASS, USER_A_CHANNEL_INSTALLATION),
+					loginAndWaitReady(pageB, USER_B_EMAIL, USER_B_PASS, USER_B_CHANNEL_INSTALLATION),
+				]);
 
+				// ── User A navigates and sends ────────────────────────────────────────
+				await pageA.goto(`/servers/${serverId}/channels/${channelId}`);
 				const inputA = pageA.locator('textarea[aria-label="Message"]').first();
 				await expect(inputA).toBeEnabled({ timeout: 60_000 });
 				await inputA.fill(testMsg);
 				await inputA.press('Enter');
-
-				// Confirm the message appears for User A (sender-side render)
 				await expect(pageA.getByText(testMsg)).toBeVisible({ timeout: 15_000 });
-			} finally {
-				await ctxA.close();
-			}
 
-			// ── User B opens the channel and must see the plaintext ───────────────────
-			const ctxB = await browser.newContext({ storageState: { cookies: [], origins: [] } });
-			const pageB = await ctxB.newPage();
-
-			try {
-				await loginAndWaitReady(pageB, USER_B_EMAIL, USER_B_PASS, USER_B_CHANNEL_INSTALLATION);
+				// ── User B opens the channel using the same context (same keys) ────────
 				await pageB.goto(`/servers/${serverId}/channels/${channelId}`);
-
 				const inputB = pageB.locator('textarea[aria-label="Message"]').first();
 				await expect(inputB).toBeEnabled({ timeout: 60_000 });
-
-				// The regression: before the fix, this would show "Unable to decrypt"
-				// when User A's sender key distribution had a fetch failure during
-				// User B joining (senderDhPub was undefined → wrong ECIES IKM).
 				await expect(pageB.getByText(testMsg)).toBeVisible({ timeout: 20_000 });
 				await expect(pageB.getByText(/Unable to decrypt/i)).toHaveCount(0);
 			} finally {
+				await ctxA.close();
 				await ctxB.close();
 			}
 		},
@@ -228,7 +204,7 @@ test.describe('Channel E2EE — cross-user message decryption', () => {
 	test(
 		'Both users can send and receive messages in the same channel (bidirectional)',
 		async ({ browser }) => {
-			test.slow();
+			test.setTimeout(300_000);
 
 			const sessionA = await createApiSession(
 				USER_A_EMAIL,
@@ -250,35 +226,45 @@ test.describe('Channel E2EE — cross-user message decryption', () => {
 			const msgFromA = `From A ${Date.now()}`;
 			const msgFromB = `From B ${Date.now()}`;
 
-			// User A sends first
 			const ctxA = await browser.newContext({ storageState: { cookies: [], origins: [] } });
-			const pageA = await ctxA.newPage();
-			await loginAndWaitReady(pageA, USER_A_EMAIL, USER_A_PASS, USER_A_CHANNEL_INSTALLATION);
-			await pageA.goto(`/servers/${serverId}/channels/${channelId}`);
-			const inputA = pageA.locator('textarea[aria-label="Message"]').first();
-			await expect(inputA).toBeEnabled({ timeout: 60_000 });
-			await inputA.fill(msgFromA);
-			await inputA.press('Enter');
-			await expect(pageA.getByText(msgFromA)).toBeVisible({ timeout: 15_000 });
-			await ctxA.close();
-
-			// User B opens, sends a reply
 			const ctxB = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+			const pageA = await ctxA.newPage();
 			const pageB = await ctxB.newPage();
-			await loginAndWaitReady(pageB, USER_B_EMAIL, USER_B_PASS, USER_B_CHANNEL_INSTALLATION);
-			await pageB.goto(`/servers/${serverId}/channels/${channelId}`);
-			const inputB = pageB.locator('textarea[aria-label="Message"]').first();
-			await expect(inputB).toBeEnabled({ timeout: 60_000 });
 
-			// Sees User A's message
-			await expect(pageB.getByText(msgFromA)).toBeVisible({ timeout: 20_000 });
-			await expect(pageB.getByText(/Unable to decrypt/i)).toHaveCount(0);
+			try {
+				// Log in both concurrently before either navigates to the channel
+				await Promise.all([
+					loginAndWaitReady(pageA, USER_A_EMAIL, USER_A_PASS, USER_A_CHANNEL_INSTALLATION),
+					loginAndWaitReady(pageB, USER_B_EMAIL, USER_B_PASS, USER_B_CHANNEL_INSTALLATION),
+				]);
 
-			// Sends their own
-			await inputB.fill(msgFromB);
-			await inputB.press('Enter');
-			await expect(pageB.getByText(msgFromB)).toBeVisible({ timeout: 15_000 });
-			await ctxB.close();
+				// A navigates, sends first message (distributes SenderKey to B)
+				await pageA.goto(`/servers/${serverId}/channels/${channelId}`);
+				const inputA = pageA.locator('textarea[aria-label="Message"]').first();
+				await expect(inputA).toBeEnabled({ timeout: 60_000 });
+				await inputA.fill(msgFromA);
+				await inputA.press('Enter');
+				await expect(pageA.getByText(msgFromA)).toBeVisible({ timeout: 15_000 });
+
+				// B navigates (same context → same private key → decrypts A's distribution)
+				await pageB.goto(`/servers/${serverId}/channels/${channelId}`);
+				const inputB = pageB.locator('textarea[aria-label="Message"]').first();
+				await expect(inputB).toBeEnabled({ timeout: 60_000 });
+				await expect(pageB.getByText(msgFromA)).toBeVisible({ timeout: 20_000 });
+				await expect(pageB.getByText(/Unable to decrypt/i)).toHaveCount(0);
+
+				// B sends a reply (distributes B's SenderKey to A)
+				await inputB.fill(msgFromB);
+				await inputB.press('Enter');
+				await expect(pageB.getByText(msgFromB)).toBeVisible({ timeout: 15_000 });
+
+				// A sees B's reply (A is still on the channel page with A's context)
+				await expect(pageA.getByText(msgFromB)).toBeVisible({ timeout: 20_000 });
+				await expect(pageA.getByText(/Unable to decrypt/i)).toHaveCount(0);
+			} finally {
+				await ctxA.close();
+				await ctxB.close();
+			}
 		},
 	);
 });

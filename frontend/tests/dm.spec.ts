@@ -179,29 +179,12 @@ test.describe('Seeded DM flow', () => {
 	let conversationId = '';
 	let userBLabels: string[] = [];
 
-	test.beforeAll(async ({ browser }) => {
-		// Extend hook timeout: browser login + Signal key bootstrap can take ~75 s
-		test.setTimeout(120_000);
+	test.beforeAll(() => {
+		// Only seed devices — B's Signal keys are uploaded within the test itself
+		// so that the key upload context matches the read context.
 		seedTrustedPrimaryDevice();
-		// Seed user B's device and upload their Signal keys via a browser login
-		// so encryptDm can find their key bundle when user A sends a DM.
 		if (USER_B_EMAIL && USER_B_PASS) {
 			seedTrustedPrimaryDeviceB();
-			const ctx = await browser.newContext({ storageState: { cookies: [], origins: [] } });
-			try {
-				const pg = await ctx.newPage();
-				await setInstallationId(pg, USER_B_INSTALLATION_ID);
-				await pg.goto('/login');
-				await pg.fill('#email', USER_B_EMAIL);
-				await pg.fill('#password', USER_B_PASS);
-				await pg.getByRole('button', { name: /Sign In/i }).click();
-				await pg.waitForURL(/\/explore/, { timeout: 30_000 });
-				await expect(pg.locator('[aria-label="Loading Yapper"]')).toHaveCount(0, {
-					timeout: 45_000,
-				});
-			} finally {
-				await ctx.close();
-			}
 		}
 	});
 
@@ -227,8 +210,32 @@ test.describe('Seeded DM flow', () => {
 		await waitForAppReady(page);
 	});
 
-	test('User A can open the seeded DM with User B and send a message', async ({ page }) => {
-		test.slow();
+	test('User A can open the seeded DM with User B and send a message', async ({ page, browser }) => {
+		// B login + Signal key bootstrap (~75 s) + A's navigation and send (~30 s)
+		test.setTimeout(180_000);
+
+		// Open the conversation while B logs in concurrently to upload their prekeys.
+		// encryptDm(peerId) fetches B's key bundle from the server — B must have
+		// uploaded keys before A calls input.press('Enter').
+		const bKeysDone = (async () => {
+			if (!USER_B_EMAIL || !USER_B_PASS) return;
+			const ctxB = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+			const pageB = await ctxB.newPage();
+			try {
+				await setInstallationId(pageB, USER_B_INSTALLATION_ID);
+				await pageB.goto('/login');
+				await pageB.fill('#email', USER_B_EMAIL);
+				await pageB.fill('#password', USER_B_PASS);
+				await pageB.getByRole('button', { name: /Sign In/i }).click();
+				await pageB.waitForURL(/\/explore/, { timeout: 30_000 });
+				await expect(pageB.locator('[aria-label="Loading Yapper"]')).toHaveCount(0, {
+					timeout: 45_000,
+				});
+			} finally {
+				await ctxB.close();
+			}
+		})();
+
 		await openConversation(page, conversationId, userBLabels);
 
 		// The seed script creates a secondary pending device for multi-device tests.
@@ -242,6 +249,9 @@ test.describe('Seeded DM flow', () => {
 		const input = page.locator('textarea[aria-label="Message"]').first();
 		await expect(input).toBeVisible({ timeout: 20_000 });
 		await expect(input).toBeEnabled({ timeout: 20_000 });
+
+		// Wait for B's key upload to finish before A encrypts
+		await bKeysDone;
 
 		const testMsg = `E2E DM test ${Date.now()}`;
 		await input.fill(testMsg);
