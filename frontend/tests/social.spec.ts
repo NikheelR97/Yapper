@@ -111,7 +111,9 @@ async function listIncomingFriendRequests(session: Session): Promise<unknown[]> 
 		headers: { Authorization: `Bearer ${session.accessToken}` },
 	});
 	if (!res.ok) throw new Error(`listFriendRequests failed: ${res.status}`);
-	return res.json() as Promise<unknown[]>;
+	const body = await res.json();
+	// Backend returns { requests: [...] }
+	return Array.isArray(body) ? body : ((body as { requests?: unknown[] }).requests ?? []);
 }
 
 // Normalise the profile field names — backend may return camelCase or snake_case

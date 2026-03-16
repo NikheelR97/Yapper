@@ -788,7 +788,12 @@
 				}
 			}
 
-			await configureActiveSignalStore();
+			try {
+				await configureActiveSignalStore();
+			} catch (e) {
+				console.error('[Signal] Failed to configure keystore — continuing without E2EE:', e);
+				toast.error('Encryption setup failed — try refreshing the page.');
+			}
 			unregisterDeviceSyncHandler = onWsMessage("device_sync_event", (payload) => {
 				void handleRealtimeDeviceSyncEvent(payload as DeviceSyncEvent);
 			});

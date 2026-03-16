@@ -24,6 +24,9 @@ use crate::{
     AppState,
 };
 
+/// Discord import states older than this are considered expired.
+const IMPORT_STATE_TTL_SECS: u64 = 600; // 10 minutes
+
 // ─── Router ───────────────────────────────────────────────────────────────────
 
 pub fn router() -> Router<AppState> {
@@ -46,9 +49,9 @@ const REDIRECT_SUFFIX: &str = "/api/v1/discord/import-profile/callback";
 /// GET /api/v1/discord/import-profile
 ///
 /// Redirects the logged-in user to Discord's OAuth consent screen.
-/// The `state` param encodes `{csrf_token}:{user_id}` so the callback
-/// can retrieve the user without a cookie. The csrf_token half is stored
-/// in oauth_states to prevent replay attacks.
+/// An opaque CSRF token is used as the `state` param; the corresponding
+/// user_id is stored server-side in `discord_import_states` so it never
+/// appears in the URL.
 async fn import_profile_start(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -70,18 +73,16 @@ async fn import_profile_start(
             s
         });
 
-    // Store csrf_token → Instant in oauth_states (same store used by existing OAuth)
+    // Store csrf_token → (user_id, timestamp) server-side.
+    // The URL state param is the opaque token only — user_id never appears in the URL.
     state
-        .oauth_states
-        .insert(csrf_token.clone(), Instant::now());
-
-    // Encode user_id in the state param so the callback can retrieve it
-    let oauth_state = format!("{csrf_token}:{}", auth.user_id);
+        .discord_import_states
+        .insert(csrf_token.clone(), (auth.user_id, Instant::now()));
 
     let redirect_uri = format!("{base_url}{REDIRECT_SUFFIX}");
     let auth_url = format!(
         "{DISCORD_AUTH_URL}?client_id={client_id}&redirect_uri={redirect_uri}\
-         &response_type=code&scope=identify&state={oauth_state}"
+         &response_type=code&scope=identify&state={csrf_token}"
     );
 
     Ok(Redirect::to(&auth_url))
@@ -115,13 +116,12 @@ async fn import_profile_callback(
     let code = query
         .code
         .ok_or_else(|| AppError::BadRequest("Missing code".into()))?;
-    let oauth_state = query
+    let csrf_token = query
         .state
         .ok_or_else(|| AppError::BadRequest("Missing state".into()))?;
 
-    // Validate CSRF state and extract user_id
-    // State format: "{csrf_token}:{user_id}"
-    let user_id = validate_import_state(&oauth_state, &state)?;
+    // Validate CSRF state and retrieve user_id from server-side store
+    let user_id = validate_import_state(&csrf_token, &state)?;
 
     // Exchange authorization code for access token
     let client_id = std::env::var("DISCORD_CLIENT_ID")
@@ -227,23 +227,19 @@ async fn import_profile_callback(
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-fn validate_import_state(oauth_state: &str, state: &AppState) -> AppResult<Uuid> {
-    // State format: "{csrf_token}:{user_id}"
-    let mut parts = oauth_state.splitn(2, ':');
-    let csrf_token = parts.next().unwrap_or("");
-    let user_id_str = parts.next().unwrap_or("");
+fn validate_import_state(csrf_token: &str, state: &AppState) -> AppResult<Uuid> {
+    // Consume the stored entry (one-time use).
+    let (_, (user_id, created_at)) = state
+        .discord_import_states
+        .remove(csrf_token)
+        .ok_or_else(|| AppError::BadRequest("Invalid or expired OAuth state".into()))?;
 
-    // Consume & validate the stored state (one-time use) — OAuthStateStore is DashMap<String, Instant>
-    let stored = state.oauth_states.remove(csrf_token);
-    if stored.is_none() {
-        return Err(AppError::BadRequest(
-            "Invalid or expired OAuth state".into(),
-        ));
+    // Reject tokens that are too old.
+    if created_at.elapsed().as_secs() > IMPORT_STATE_TTL_SECS {
+        return Err(AppError::BadRequest("OAuth state has expired".into()));
     }
 
-    user_id_str
-        .parse::<Uuid>()
-        .map_err(|_| AppError::BadRequest("Malformed OAuth state: invalid user_id".into()))
+    Ok(user_id)
 }
 
 /// Downloads an image from a URL, converts it to a 256×256 WebP, and uploads it to R2.

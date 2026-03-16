@@ -58,8 +58,8 @@ test.describe('Login page', () => {
 	test('OAuth buttons are present', async ({ page }) => {
 		await page.goto('/login');
 
-		await expect(page.getByRole('link', { name: /Discord/i })).toBeVisible();
-		await expect(page.getByRole('link', { name: /Google/i })).toBeVisible();
+		await expect(page.getByRole('button', { name: /Discord/i })).toBeVisible();
+		await expect(page.getByRole('button', { name: /Google/i })).toBeVisible();
 	});
 });
 

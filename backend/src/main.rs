@@ -61,6 +61,11 @@ use auth::{JwtKeys, LoginRateLimiter, OAuthStateStore};
 use db::Database;
 use hub::Hub;
 
+/// Server-side state store for Discord profile-import OAuth.
+/// Maps opaque CSRF token → (user_id, created_at).
+/// Keeping this separate from oauth_states prevents user_id leakage in the URL.
+pub type DiscordImportStateStore = dashmap::DashMap<String, (uuid::Uuid, std::time::Instant)>;
+
 #[derive(Clone)]
 pub struct AppState {
     pub db: Database,
@@ -71,6 +76,8 @@ pub struct AppState {
     pub login_limiter: Arc<LoginRateLimiter>,
     /// Short-lived CSRF state tokens for OAuth flows
     pub oauth_states: Arc<OAuthStateStore>,
+    /// State tokens for the Discord profile-import flow: csrf_token → (user_id, created_at)
+    pub discord_import_states: Arc<DiscordImportStateStore>,
 }
 
 #[tokio::main]
@@ -125,6 +132,7 @@ async fn main() -> anyhow::Result<()> {
     let jwt_keys = Arc::new(JwtKeys::from_env()?);
     let login_limiter = Arc::new(LoginRateLimiter::new());
     let oauth_states = Arc::new(OAuthStateStore::new());
+    let discord_import_states = Arc::new(DiscordImportStateStore::new());
 
     let state = AppState {
         db,
@@ -134,6 +142,7 @@ async fn main() -> anyhow::Result<()> {
         jwt_keys,
         login_limiter,
         oauth_states,
+        discord_import_states,
     };
 
     let api_v1 = api_router().layer(axum::middleware::from_fn_with_state(
