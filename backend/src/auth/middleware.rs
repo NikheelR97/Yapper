@@ -29,6 +29,60 @@ pub struct AuthUser {
     pub account_type: String,
 }
 
+#[derive(Clone, Copy)]
+enum AuthUserPolicy {
+    TrustedDeviceIfPresent,
+    AnyValidToken,
+}
+
+fn enforce_auth_user_device_state(
+    trust_state: DeviceTrustState,
+    revoked_at: Option<chrono::DateTime<chrono::Utc>>,
+) -> Result<(), AppError> {
+    if revoked_at.is_some() || trust_state == DeviceTrustState::Revoked {
+        return Err(AppError::Unauthorized);
+    }
+    if trust_state != DeviceTrustState::Trusted {
+        return Err(AppError::Forbidden);
+    }
+    Ok(())
+}
+
+async fn extract_auth_user(
+    parts: &mut Parts,
+    state: &AppState,
+    policy: AuthUserPolicy,
+) -> Result<AuthUser, Response> {
+    let auth_header = parts
+        .headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| AppError::Unauthorized.into_response())?;
+
+    let token = auth_header
+        .strip_prefix("Bearer ")
+        .ok_or_else(|| AppError::Unauthorized.into_response())?;
+
+    let claims = validate_access_token(token, &state.jwt_keys).map_err(|e| e.into_response())?;
+    let auth = AuthUser {
+        user_id: claims.claims.sub,
+        device_id: claims.claims.device_id,
+        account_type: claims.claims.account_type,
+    };
+
+    if matches!(policy, AuthUserPolicy::TrustedDeviceIfPresent) {
+        if let Some(device_id) = auth.device_id {
+            let device = devices::get_device_for_user(auth.user_id, device_id, state)
+                .await
+                .map_err(|e| e.into_response())?;
+            enforce_auth_user_device_state(device.trust_state, device.revoked_at)
+                .map_err(|e| e.into_response())?;
+        }
+    }
+
+    Ok(auth)
+}
+
 #[axum::async_trait]
 impl FromRequestParts<AppState> for AuthUser {
     type Rejection = Response;
@@ -37,24 +91,7 @@ impl FromRequestParts<AppState> for AuthUser {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        let auth_header = parts
-            .headers
-            .get(axum::http::header::AUTHORIZATION)
-            .and_then(|v| v.to_str().ok())
-            .ok_or_else(|| AppError::Unauthorized.into_response())?;
-
-        let token = auth_header
-            .strip_prefix("Bearer ")
-            .ok_or_else(|| AppError::Unauthorized.into_response())?;
-
-        let claims =
-            validate_access_token(token, &state.jwt_keys).map_err(|e| e.into_response())?;
-
-        Ok(AuthUser {
-            user_id: claims.claims.sub,
-            device_id: claims.claims.device_id,
-            account_type: claims.claims.account_type,
-        })
+        extract_auth_user(parts, state, AuthUserPolicy::TrustedDeviceIfPresent).await
     }
 }
 
@@ -86,7 +123,7 @@ impl FromRequestParts<AppState> for AuthDevice {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        let auth = AuthUser::from_request_parts(parts, state).await?;
+        let auth = extract_auth_user(parts, state, AuthUserPolicy::AnyValidToken).await?;
         let device_id = auth
             .device_id
             .ok_or_else(|| AppError::Unauthorized.into_response())?;
@@ -307,7 +344,26 @@ impl Default for LoginRateLimiter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Utc;
     use std::net::Ipv4Addr;
+
+    #[test]
+    fn trusted_auth_user_device_is_allowed() {
+        assert!(enforce_auth_user_device_state(DeviceTrustState::Trusted, None).is_ok());
+    }
+
+    #[test]
+    fn pending_auth_user_device_is_forbidden() {
+        let err = enforce_auth_user_device_state(DeviceTrustState::PendingTrust, None).unwrap_err();
+        assert!(matches!(err, AppError::Forbidden));
+    }
+
+    #[test]
+    fn revoked_auth_user_device_is_unauthorized() {
+        let err = enforce_auth_user_device_state(DeviceTrustState::Trusted, Some(Utc::now()))
+            .unwrap_err();
+        assert!(matches!(err, AppError::Unauthorized));
+    }
 
     #[test]
     fn test_login_rate_limiter_locks_after_5_failures() {

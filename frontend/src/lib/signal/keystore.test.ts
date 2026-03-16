@@ -13,11 +13,12 @@ vi.mock("$lib/desktop/vault.js", () => ({
 vi.mock("./idbCrypto.js", () => ({
   initIdbEncryption: vi.fn(async () => {}),
   clearIdbEncryptionKey: vi.fn(),
-  isIdbEncryptionReady: vi.fn(() => false),
+  isIdbEncryptionReady: vi.fn(() => true),
   idbEncryptValue: vi.fn(async (value: unknown) => value),
   idbDecryptValue: vi.fn(async <T>(value: unknown) => value as T),
 }));
 
+import * as idbCrypto from "./idbCrypto.js";
 import {
   configureSignalStore,
   currentSignalDbName,
@@ -226,5 +227,15 @@ describe("keystore legacy migration", () => {
       verified: true,
       keyChanged: false,
     });
+  });
+
+  it("fails closed when IndexedDB encryption cannot initialize", async () => {
+    vi.mocked(idbCrypto.initIdbEncryption).mockRejectedValueOnce(
+      new Error("crypto unavailable"),
+    );
+
+    await expect(configureSignalStore("user-1", "device-1")).rejects.toThrow(
+      /crypto unavailable/i,
+    );
   });
 });

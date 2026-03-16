@@ -81,7 +81,7 @@ describe("signal backup restore", () => {
     vi.clearAllMocks();
   });
 
-  it("restores a replacement-device backup and finalizes the handoff", async () => {
+  it("restores a backup without replacing the source device by default", async () => {
     const snapshot = JSON.stringify({ bootstrapComplete: true });
     vi.mocked(api.get).mockResolvedValue({
       encrypted_blob: await encryptBackupBlob("alpha2468", snapshot),
@@ -99,6 +99,25 @@ describe("signal backup restore", () => {
     });
     expect(api.post).toHaveBeenCalledWith("/api/v2/keys/backup/restore", {
       source_device_id: "source-device-1",
+      replace_source_device: false,
+    });
+  });
+
+  it("can explicitly request source-device replacement", async () => {
+    const snapshot = JSON.stringify({ bootstrapComplete: true });
+    vi.mocked(api.get).mockResolvedValue({
+      encrypted_blob: await encryptBackupBlob("alpha2468", snapshot),
+    });
+    vi.mocked(api.post).mockResolvedValue({});
+
+    const restored = await restoreKeys("alpha2468", "source-device-1", {
+      replaceSourceDevice: true,
+    });
+
+    expect(restored).toBe(true);
+    expect(api.post).toHaveBeenCalledWith("/api/v2/keys/backup/restore", {
+      source_device_id: "source-device-1",
+      replace_source_device: true,
     });
   });
 

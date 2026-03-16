@@ -20,11 +20,13 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use once_cell::sync::Lazy;
+use regex::Regex;
 use sqlx::Row;
 use uuid::Uuid;
 
 use crate::{
-    auth::AuthUser,
+    auth::AuthDevice,
     error::{AppError, AppResult},
     AppState,
 };
@@ -35,6 +37,16 @@ const HUBSPOT_TICKETS_API: &str = "https://api.hubapi.com/crm/v3/objects/tickets
 const MAX_TICKETS_PER_USER: i64 = 50;
 const MAX_SUBJECT_LEN: usize = 200;
 const MAX_DESCRIPTION_LEN: usize = 2000;
+static EMAIL_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b").expect("email regex")
+});
+static SECRET_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)\b(bearer\s+[A-Z0-9._-]+|api[_ -]?key\s*[:=]\s*\S+|password\s*[:=]\s*\S+)\b")
+        .expect("secret regex")
+});
+static SSN_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\b\d{3}-\d{2}-\d{4}\b").expect("ssn regex"));
+static PAN_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"\b(?:\d[ -]*?){13,19}\b").expect("pan regex"));
 
 // ─── Router ───────────────────────────────────────────────────────────────────
 
@@ -91,6 +103,49 @@ fn ticket_type_prefix(t: &str) -> &'static str {
     }
 }
 
+fn include_hubspot_pii() -> bool {
+    matches!(
+        std::env::var("HUBSPOT_INCLUDE_PII")
+            .ok()
+            .as_deref()
+            .map(str::trim)
+            .map(str::to_ascii_lowercase)
+            .as_deref(),
+        Some("1" | "true" | "yes")
+    )
+}
+
+fn redact_support_text(input: &str) -> String {
+    let redacted = EMAIL_RE.replace_all(input, "[redacted-email]");
+    let redacted = SECRET_RE.replace_all(&redacted, "[redacted-secret]");
+    let redacted = SSN_RE.replace_all(&redacted, "[redacted-ssn]");
+    PAN_RE
+        .replace_all(&redacted, "[redacted-card]")
+        .into_owned()
+}
+
+fn build_hubspot_content(
+    local_id: Uuid,
+    user_id: Uuid,
+    ticket_type: &str,
+    description: &str,
+    priority: &str,
+    username: Option<&str>,
+    user_email: Option<&str>,
+) -> String {
+    let mut content = redact_support_text(description);
+    content.push_str("\n\n---\n");
+    content.push_str(&format!(
+        "Yapper ticket ID: {local_id}\nYapper user ID: {user_id}\nType: {ticket_type} | Priority: {priority}"
+    ));
+
+    if let (Some(username), Some(user_email)) = (username, user_email) {
+        content.push_str(&format!("\nSubmitted by: @{username} ({user_email})"));
+    }
+
+    content
+}
+
 /// Validates CreateTicketInput fields; returns BadRequest on the first violation.
 fn validate_input(body: &CreateTicketInput) -> AppResult<()> {
     if !validate_ticket_type(&body.ticket_type) {
@@ -120,10 +175,11 @@ fn validate_input(body: &CreateTicketInput) -> AppResult<()> {
 
 /// Creates a support ticket, stores it locally, and forwards it to HubSpot.
 async fn create_ticket(
-    auth: AuthUser,
+    auth: AuthDevice,
     State(state): State<AppState>,
     Json(body): Json<CreateTicketInput>,
 ) -> AppResult<impl IntoResponse> {
+    auth.require_trusted()?;
     validate_input(&body)?;
 
     // Enforce per-user ticket cap
@@ -140,13 +196,19 @@ async fn create_ticket(
         )));
     }
 
-    // Fetch user email + username for HubSpot context
-    let user_row = sqlx::query("SELECT email, username FROM users WHERE id = $1")
-        .bind(auth.user_id)
-        .fetch_one(state.db.pool())
-        .await?;
-    let user_email: String = user_row.try_get("email").unwrap_or_default();
-    let username: String = user_row.try_get("username").unwrap_or_default();
+    let include_pii = include_hubspot_pii();
+    let (user_email, username) = if include_pii {
+        let user_row = sqlx::query("SELECT email, username FROM users WHERE id = $1")
+            .bind(auth.user_id)
+            .fetch_one(state.db.pool())
+            .await?;
+        (
+            user_row.try_get::<String, _>("email").ok(),
+            user_row.try_get::<String, _>("username").ok(),
+        )
+    } else {
+        (None, None)
+    };
 
     // Insert ticket locally first (HubSpot is best-effort)
     let ticket_id = Uuid::new_v4();
@@ -170,8 +232,9 @@ async fn create_ticket(
         &body.subject,
         &body.description,
         &body.priority,
-        &user_email,
-        &username,
+        auth.user_id,
+        user_email.as_deref(),
+        username.as_deref(),
     )
     .await;
 
@@ -223,9 +286,10 @@ async fn create_ticket(
 
 /// Returns the authenticated user's own submitted tickets (newest first, max 50).
 async fn list_tickets(
-    auth: AuthUser,
+    auth: AuthDevice,
     State(state): State<AppState>,
 ) -> AppResult<impl IntoResponse> {
+    auth.require_trusted()?;
     let rows = sqlx::query(
         "SELECT id, ticket_type, subject, priority, status, hubspot_ticket_id, created_at
          FROM support_tickets
@@ -266,8 +330,9 @@ async fn forward_to_hubspot(
     subject: &str,
     description: &str,
     priority: &str,
-    user_email: &str,
-    username: &str,
+    user_id: Uuid,
+    user_email: Option<&str>,
+    username: Option<&str>,
 ) -> Result<String, String> {
     let access_token = std::env::var("HUBSPOT_ACCESS_TOKEN")
         .map_err(|_| "HUBSPOT_ACCESS_TOKEN not configured".to_string())?;
@@ -275,9 +340,14 @@ async fn forward_to_hubspot(
     let hs_subject = format!("{} {}", ticket_type_prefix(ticket_type), subject);
     let hs_priority = hubspot_priority(priority);
 
-    // Build the ticket content with user context for the support team
-    let content = format!(
-        "{description}\n\n---\nSubmitted by: @{username} ({user_email})\nYapper ticket ID: {local_id}\nType: {ticket_type} | Priority: {priority}"
+    let content = build_hubspot_content(
+        local_id,
+        user_id,
+        ticket_type,
+        description,
+        priority,
+        username,
+        user_email,
     );
 
     let body = serde_json::json!({
@@ -315,4 +385,42 @@ async fn forward_to_hubspot(
         .as_str()
         .map(|s| s.to_string())
         .ok_or_else(|| "HubSpot response missing id field".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn redact_support_text_scrubs_common_pii_and_secrets() {
+        let input = "Email alice@example.com SSN 123-45-6789 api_key=sekret 4111 1111 1111 1111";
+        let redacted = redact_support_text(input);
+
+        assert!(!redacted.contains("alice@example.com"));
+        assert!(!redacted.contains("123-45-6789"));
+        assert!(!redacted.contains("sekret"));
+        assert!(!redacted.contains("4111 1111 1111 1111"));
+        assert!(redacted.contains("[redacted-email]"));
+        assert!(redacted.contains("[redacted-ssn]"));
+        assert!(redacted.contains("[redacted-secret]"));
+        assert!(redacted.contains("[redacted-card]"));
+    }
+
+    #[test]
+    fn build_hubspot_content_excludes_direct_identifiers_by_default() {
+        let content = build_hubspot_content(
+            Uuid::nil(),
+            Uuid::nil(),
+            "bug",
+            "Email alice@example.com password=sekret",
+            "high",
+            None,
+            None,
+        );
+
+        assert!(!content.contains("alice@example.com"));
+        assert!(!content.contains("sekret"));
+        assert!(!content.contains("Submitted by:"));
+        assert!(content.contains("Yapper user ID"));
+    }
 }

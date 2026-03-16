@@ -141,6 +141,7 @@ export async function backupKeys(passphrase: string): Promise<void> {
 export async function restoreKeys(
   passphrase: string,
   sourceDeviceId?: string,
+  options?: { replaceSourceDevice?: boolean },
 ): Promise<boolean> {
   validateRecoveryPassphrase(passphrase);
   let resp: { encrypted_blob: string };
@@ -190,6 +191,7 @@ export async function restoreKeys(
   if (sourceDeviceId) {
     await api.post("/api/v2/keys/backup/restore", {
       source_device_id: sourceDeviceId,
+      replace_source_device: options?.replaceSourceDevice === true,
     });
   }
   return true;

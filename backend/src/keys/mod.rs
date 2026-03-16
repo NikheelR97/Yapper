@@ -441,6 +441,8 @@ struct BackupQueryV2 {
 #[serde(deny_unknown_fields)]
 struct RestoreBackupReqV2 {
     source_device_id: Uuid,
+    #[serde(default)]
+    replace_source_device: bool,
 }
 
 #[derive(Serialize)]
@@ -962,66 +964,90 @@ async fn restore_backup_v2(
     .execute(&mut *tx)
     .await?;
 
-    sqlx::query(
-        r#"
-        UPDATE devices
-        SET trust_state = 'revoked',
-            revoked_at = NOW()
-        WHERE id = $1 AND user_id = $2
-        "#,
-    )
-    .bind(req.source_device_id)
-    .bind(auth.user_id)
-    .execute(&mut *tx)
-    .await?;
+    if req.replace_source_device {
+        sqlx::query(
+            r#"
+            UPDATE devices
+            SET trust_state = 'revoked',
+                revoked_at = NOW()
+            WHERE id = $1 AND user_id = $2
+            "#,
+        )
+        .bind(req.source_device_id)
+        .bind(auth.user_id)
+        .execute(&mut *tx)
+        .await?;
 
-    sqlx::query(
-        "UPDATE sessions SET revoked_at = NOW() WHERE device_id = $1 AND revoked_at IS NULL",
-    )
-    .bind(req.source_device_id)
-    .execute(&mut *tx)
-    .await?;
+        sqlx::query(
+            "UPDATE sessions SET revoked_at = NOW() WHERE device_id = $1 AND revoked_at IS NULL",
+        )
+        .bind(req.source_device_id)
+        .execute(&mut *tx)
+        .await?;
 
-    sqlx::query(
-        r#"
-        UPDATE device_key_backups
-        SET revoked_at = NOW()
-        WHERE device_id = $1 AND revoked_at IS NULL
-        "#,
-    )
-    .bind(req.source_device_id)
-    .execute(&mut *tx)
-    .await?;
+        sqlx::query(
+            r#"
+            UPDATE device_key_backups
+            SET revoked_at = NOW()
+            WHERE device_id = $1 AND revoked_at IS NULL
+            "#,
+        )
+        .bind(req.source_device_id)
+        .execute(&mut *tx)
+        .await?;
+    }
 
     tx.commit().await?;
 
-    send_live_sync_event(
-        req.source_device_id,
-        Some(auth.device_id),
-        "device_revoked",
-        serde_json::json!({ "device_id": req.source_device_id }),
-        &state,
-    );
-
-    for device in trusted_devices_for_user(auth.user_id, &state).await? {
-        if device.id == auth.device_id || device.id == req.source_device_id {
-            continue;
-        }
-        enqueue_sync_event(
-            auth.user_id,
-            device.id,
+    if req.replace_source_device {
+        send_live_sync_event(
+            req.source_device_id,
             Some(auth.device_id),
             "device_revoked",
             serde_json::json!({ "device_id": req.source_device_id }),
             &state,
-        )
-        .await?;
+        );
+
+        for device in trusted_devices_for_user(auth.user_id, &state).await? {
+            if device.id == auth.device_id || device.id == req.source_device_id {
+                continue;
+            }
+            enqueue_sync_event(
+                auth.user_id,
+                device.id,
+                Some(auth.device_id),
+                "device_revoked",
+                serde_json::json!({ "device_id": req.source_device_id }),
+                &state,
+            )
+            .await?;
+        }
+    } else {
+        for device in trusted_devices_for_user(auth.user_id, &state).await? {
+            if device.id == auth.device_id {
+                continue;
+            }
+            enqueue_sync_event(
+                auth.user_id,
+                device.id,
+                Some(req.source_device_id),
+                "device_trust_approved",
+                serde_json::json!({
+                    "target_device_id": auth.device_id,
+                    "approved_by": req.source_device_id,
+                    "via_backup_restore": true,
+                }),
+                &state,
+            )
+            .await?;
+        }
     }
 
     Ok(Json(serde_json::json!({
         "status": "restored",
         "device_id": auth.device_id,
-        "replaced_device_id": req.source_device_id,
+        "source_device_id": req.source_device_id,
+        "source_device_replaced": req.replace_source_device,
     })))
 }
 
@@ -1056,5 +1082,28 @@ mod tests {
             }
             other => panic!("expected bad request, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn restore_backup_request_defaults_to_non_destructive_mode() {
+        let source_device_id = Uuid::new_v4();
+        let req: RestoreBackupReqV2 = serde_json::from_value(serde_json::json!({
+            "source_device_id": source_device_id,
+        }))
+        .expect("request should deserialize");
+
+        assert_eq!(req.source_device_id, source_device_id);
+        assert!(!req.replace_source_device);
+    }
+
+    #[test]
+    fn restore_backup_request_allows_explicit_source_replacement() {
+        let req: RestoreBackupReqV2 = serde_json::from_value(serde_json::json!({
+            "source_device_id": Uuid::new_v4(),
+            "replace_source_device": true,
+        }))
+        .expect("request should deserialize");
+
+        assert!(req.replace_source_device);
     }
 }

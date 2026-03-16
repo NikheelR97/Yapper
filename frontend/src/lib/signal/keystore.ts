@@ -162,6 +162,9 @@ export async function configureSignalStore(
   _dbPromise = null;
   if (!useDesktopVault()) {
     await initIdbEncryption(nextScope);
+    if (!isIdbEncryptionReady()) {
+      throw new Error("IndexedDB encryption did not initialize");
+    }
   }
   await getDB();
   await migrateLegacyStoreIfNeeded();
@@ -238,10 +241,7 @@ async function secGet<T>(
   return raw as T;
 }
 
-async function secGetAll<T>(
-  db: IDBPDatabase,
-  storeName: string,
-): Promise<T[]> {
+async function secGetAll<T>(db: IDBPDatabase, storeName: string): Promise<T[]> {
   const rawItems = await db.getAll(storeName);
   if (!SENSITIVE_STORES.has(storeName) || !rawItems.length) {
     return rawItems as T[];
@@ -357,8 +357,7 @@ async function readSecretSnapshotFromDb(
   db: IDBPDatabase,
 ): Promise<SignalSecretSnapshot> {
   return {
-    identityKey:
-      (await secGet<IdentityKeyPair>(db, "identity", "own")) ?? null,
+    identityKey: (await secGet<IdentityKeyPair>(db, "identity", "own")) ?? null,
     prekeys: await secGetAll<PreKeyPair>(db, "prekeys"),
     signedPrekeys: await secGetAll<SignedPreKey>(db, "signed_prekeys"),
     sessions: await secGetAll<Session>(db, "dm_sessions"),
@@ -445,8 +444,7 @@ async function migrateLegacyStoreIfNeeded(): Promise<void> {
     sessions.map((r) =>
       encryptForTx("dm_sessions", {
         ...r,
-        sessionId:
-          r.sessionId ?? `legacy:${r.conversationId}:${r.peerId}`,
+        sessionId: r.sessionId ?? `legacy:${r.conversationId}:${r.peerId}`,
         peerDeviceId: r.peerDeviceId ?? "legacy",
         peerSignalDeviceId: r.peerSignalDeviceId ?? 1,
       }),
@@ -478,8 +476,7 @@ async function migrateLegacyStoreIfNeeded(): Promise<void> {
   );
 
   await tx.objectStore("identity").put(encIdentity, "own");
-  for (const record of encPrekeys)
-    await tx.objectStore("prekeys").put(record);
+  for (const record of encPrekeys) await tx.objectStore("prekeys").put(record);
   for (const record of encSignedPrekeys)
     await tx.objectStore("signed_prekeys").put(record);
   for (const record of sessions) await tx.objectStore("sessions").put(record);
@@ -695,7 +692,10 @@ export async function loadLatestSignedPreKey(): Promise<SignedPreKey | null> {
   }
 
   const db = await getDB();
-  const all: SignedPreKey[] = await secGetAll<SignedPreKey>(db, "signed_prekeys");
+  const all: SignedPreKey[] = await secGetAll<SignedPreKey>(
+    db,
+    "signed_prekeys",
+  );
   if (!all.length) return null;
   return all.reduce((a, b) => (a.createdAt > b.createdAt ? a : b));
 }
