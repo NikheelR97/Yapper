@@ -226,16 +226,16 @@ async fn create_ticket(
     .await?;
 
     // Forward to HubSpot (best-effort — log and continue if it fails)
-    let hubspot_id = forward_to_hubspot(
-        ticket_id,
-        &body.ticket_type,
-        &body.subject,
-        &body.description,
-        &body.priority,
-        auth.user_id,
-        user_email.as_deref(),
-        username.as_deref(),
-    )
+    let hubspot_id = forward_to_hubspot(HubspotTicketForward {
+        local_id: ticket_id,
+        ticket_type: &body.ticket_type,
+        subject: &body.subject,
+        description: &body.description,
+        priority: &body.priority,
+        user_id: auth.user_id,
+        user_email: user_email.as_deref(),
+        username: username.as_deref(),
+    })
     .await;
 
     match hubspot_id {
@@ -324,30 +324,36 @@ async fn list_tickets(
 
 /// Sends the ticket to HubSpot CRM and returns the created HubSpot ticket ID.
 /// Returns an error string if HUBSPOT_ACCESS_TOKEN is not set or the API call fails.
-async fn forward_to_hubspot(
+struct HubspotTicketForward<'a> {
     local_id: Uuid,
-    ticket_type: &str,
-    subject: &str,
-    description: &str,
-    priority: &str,
+    ticket_type: &'a str,
+    subject: &'a str,
+    description: &'a str,
+    priority: &'a str,
     user_id: Uuid,
-    user_email: Option<&str>,
-    username: Option<&str>,
-) -> Result<String, String> {
+    user_email: Option<&'a str>,
+    username: Option<&'a str>,
+}
+
+async fn forward_to_hubspot(ticket: HubspotTicketForward<'_>) -> Result<String, String> {
     let access_token = std::env::var("HUBSPOT_ACCESS_TOKEN")
         .map_err(|_| "HUBSPOT_ACCESS_TOKEN not configured".to_string())?;
 
-    let hs_subject = format!("{} {}", ticket_type_prefix(ticket_type), subject);
-    let hs_priority = hubspot_priority(priority);
+    let hs_subject = format!(
+        "{} {}",
+        ticket_type_prefix(ticket.ticket_type),
+        ticket.subject
+    );
+    let hs_priority = hubspot_priority(ticket.priority);
 
     let content = build_hubspot_content(
-        local_id,
-        user_id,
-        ticket_type,
-        description,
-        priority,
-        username,
-        user_email,
+        ticket.local_id,
+        ticket.user_id,
+        ticket.ticket_type,
+        ticket.description,
+        ticket.priority,
+        ticket.username,
+        ticket.user_email,
     );
 
     let body = serde_json::json!({
