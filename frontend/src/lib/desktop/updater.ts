@@ -7,6 +7,7 @@
  */
 
 import { writable } from 'svelte/store';
+import { isTauri } from '$lib/plugins/tauri-compat.js';
 
 // ─── Stores ───────────────────────────────────────────────────────────────────
 
@@ -19,11 +20,13 @@ export const checkingForUpdate = writable<boolean>(false);
 /** Set when a manual check fails. */
 export const updateError = writable<string | null>(null);
 
-// ─── Tauri guard ──────────────────────────────────────────────────────────────
+// ─── Cached update object ─────────────────────────────────────────────────────
 
-function isTauri(): boolean {
-    return typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
+// Stored after checkForUpdate() so installUpdate() can skip the redundant check().
+interface TauriUpdate {
+    downloadAndInstall(onProgress?: (progress: unknown) => void): Promise<void>;
 }
+let _pendingUpdate: TauriUpdate | null = null;
 
 // ─── Check ────────────────────────────────────────────────────────────────────
 
@@ -55,6 +58,7 @@ export async function checkForUpdate(): Promise<void> {
     try {
         const { check } = await import('@tauri-apps/plugin-updater');
         const update = await check();
+        _pendingUpdate = update ?? null;
         updateAvailable.set(update?.version ?? null);
     } catch (e) {
         updateError.set('Failed to check for updates. Try again later.');
@@ -68,16 +72,22 @@ export async function checkForUpdate(): Promise<void> {
 export async function installUpdate(): Promise<void> {
     if (!isTauri()) return;
     try {
-        const { check } = await import('@tauri-apps/plugin-updater');
-        const { relaunch } = await import('@tauri-apps/plugin-process');
-        const update = await check();
+        // Reuse the cached update object from checkForUpdate() when available.
+        // Falls back to a fresh check() for updates detected by the background Rust check.
+        let update = _pendingUpdate;
+        if (!update) {
+            const { check } = await import('@tauri-apps/plugin-updater');
+            update = await check();
+        }
         if (!update) return;
 
         await update.downloadAndInstall((progress) => {
             console.info('[updater] Download progress:', progress);
         });
+        const { relaunch } = await import('@tauri-apps/plugin-process');
         await relaunch();
     } catch (e) {
         console.error('[updater] Install failed:', e);
+        throw e; // re-throw so the caller can reset its loading state
     }
 }

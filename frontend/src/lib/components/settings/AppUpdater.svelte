@@ -29,8 +29,13 @@
 
 	async function handleInstall() {
 		installing = true;
-		await installUpdate();
-		installing = false;
+		try {
+			await installUpdate();
+		} catch {
+			// installUpdate() logs the error; reset the flag so the button is usable again.
+		} finally {
+			installing = false;
+		}
 	}
 </script>
 
@@ -58,7 +63,7 @@
 
 	<div class="update-card">
 		<button
-			class="check-btn"
+			class="settings-btn primary"
 			on:click={handleCheck}
 			disabled={$checkingForUpdate || installing}
 		>
@@ -72,32 +77,13 @@
 
 		{#if $updateError}
 			<p class="status error">{$updateError}</p>
-		{:else if checked && $updateAvailable}
-			<div class="update-ready">
-				<p class="status success">
-					🚀 Version <strong>{$updateAvailable}</strong> is available
-				</p>
-				<button
-					class="install-btn"
-					on:click={handleInstall}
-					disabled={installing}
-				>
-					{#if installing}
-						<span class="spinner" aria-hidden="true"></span>
-						Installing…
-					{:else}
-						Install & Restart
-					{/if}
-				</button>
-			</div>
 		{:else if $updateAvailable}
-			<!-- Update was detected by background check on launch -->
 			<div class="update-ready">
 				<p class="status success">
 					🚀 Version <strong>{$updateAvailable}</strong> is available
 				</p>
 				<button
-					class="install-btn"
+					class="settings-btn success"
 					on:click={handleInstall}
 					disabled={installing}
 				>
@@ -162,11 +148,11 @@
 		gap: 1rem;
 	}
 
-	.check-btn {
+	/* ── Shared button base ────────────────────────────────── */
+	.settings-btn {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.5rem;
-		background: var(--color-brand);
 		color: white;
 		border: none;
 		border-radius: var(--radius-md);
@@ -178,31 +164,26 @@
 		transition: background var(--transition-fast), opacity var(--transition-fast);
 	}
 
-	.check-btn:hover:not(:disabled) {
-		background: var(--color-brand-dark);
-	}
-
-	.check-btn:disabled {
+	.settings-btn:disabled {
 		opacity: 0.6;
 		cursor: not-allowed;
 	}
 
+	.settings-btn.primary { background: var(--color-brand); }
+	.settings-btn.primary:hover:not(:disabled) { background: var(--color-brand-dark); }
+
+	.settings-btn.success { background: #22c55e; }
+	.settings-btn.success:hover:not(:disabled) { background: #16a34a; }
+
+	/* ── Status messages ───────────────────────────────────── */
 	.status {
 		font-size: 0.875rem;
 		margin: 0;
 	}
 
-	.status.up-to-date {
-		color: #22c55e;
-	}
-
-	.status.success {
-		color: var(--color-text-primary);
-	}
-
-	.status.error {
-		color: #fca5a5;
-	}
+	.status.up-to-date { color: #22c55e; }
+	.status.success    { color: var(--color-text-primary); }
+	.status.error      { color: #fca5a5; }
 
 	.update-ready {
 		display: flex;
@@ -210,31 +191,7 @@
 		gap: 0.75rem;
 	}
 
-	.install-btn {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.5rem;
-		background: #22c55e;
-		color: white;
-		border: none;
-		border-radius: var(--radius-md);
-		font-size: 0.9375rem;
-		font-weight: 600;
-		padding: 0.625rem 1.25rem;
-		cursor: pointer;
-		align-self: flex-start;
-		transition: background var(--transition-fast), opacity var(--transition-fast);
-	}
-
-	.install-btn:hover:not(:disabled) {
-		background: #16a34a;
-	}
-
-	.install-btn:disabled {
-		opacity: 0.6;
-		cursor: not-allowed;
-	}
-
+	/* ── Spinner ───────────────────────────────────────────── */
 	.spinner {
 		display: inline-block;
 		width: 14px;
