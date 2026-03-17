@@ -8,10 +8,16 @@
 
 import { writable } from 'svelte/store';
 
-// ─── Store ────────────────────────────────────────────────────────────────────
+// ─── Stores ───────────────────────────────────────────────────────────────────
 
 /** Non-null when a new version is available. */
 export const updateAvailable = writable<string | null>(null);
+
+/** True while a manual check is in flight. */
+export const checkingForUpdate = writable<boolean>(false);
+
+/** Set when a manual check fails. */
+export const updateError = writable<string | null>(null);
 
 // ─── Tauri guard ──────────────────────────────────────────────────────────────
 
@@ -35,6 +41,26 @@ export async function initUpdater(): Promise<void> {
         });
     } catch (e) {
         console.warn('[updater] Failed to set up update listener:', e);
+    }
+}
+
+/**
+ * Manually check for an update and update the `updateAvailable` store.
+ * Safe to call from the settings UI; no-op outside Tauri.
+ */
+export async function checkForUpdate(): Promise<void> {
+    if (!isTauri()) return;
+    checkingForUpdate.set(true);
+    updateError.set(null);
+    try {
+        const { check } = await import('@tauri-apps/plugin-updater');
+        const update = await check();
+        updateAvailable.set(update?.version ?? null);
+    } catch (e) {
+        updateError.set('Failed to check for updates. Try again later.');
+        console.error('[updater] Manual check failed:', e);
+    } finally {
+        checkingForUpdate.set(false);
     }
 }
 

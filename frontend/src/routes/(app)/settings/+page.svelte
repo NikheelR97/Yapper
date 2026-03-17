@@ -16,6 +16,8 @@
 	import DeveloperTools from "$components/settings/DeveloperTools.svelte";
 	import ChangePassword from "$components/settings/ChangePassword.svelte";
 	import Support from "$components/settings/Support.svelte";
+	import AppUpdater from "$components/settings/AppUpdater.svelte";
+	import { isTauri } from "$lib/plugins/tauri-compat.js";
 
 	type Section =
 		| "profile"
@@ -28,7 +30,8 @@
 		| "connections"
 		| "family"
 		| "developer"
-		| "support";
+		| "support"
+		| "about";
 
 	let activeSection: Section = "profile";
 	let showDeleteConfirm = false;
@@ -64,6 +67,7 @@
 		{ id: "family", label: "Family Controls" },
 		{ id: "developer", label: "For Developers" },
 		{ id: "support", label: "Support" },
+		...(isTauri() ? [{ id: "about" as Section, label: "About" }] : []),
 	];
 
 	async function logout() {
@@ -277,6 +281,8 @@
 			<DeveloperTools />
 		{:else if activeSection === "support"}
 			<Support />
+		{:else if activeSection === "about"}
+			<AppUpdater />
 		{/if}
 	</main>
 
