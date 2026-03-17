@@ -48,7 +48,7 @@
 				};
 			}>(
 				'/api/v2/auth/login',
-				{ email, password, device: getDeviceBootstrap() }
+				{ email, password, device: await getDeviceBootstrap() }
 			);
 			setAuth(res.user, res.access_token, res.csrf_token, normalizeServerDevice(res.device));
 			await goto('/explore');

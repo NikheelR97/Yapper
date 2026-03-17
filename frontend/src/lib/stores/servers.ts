@@ -82,6 +82,31 @@ export const serversStore = writable<ServersState>({ servers: [], loading: false
 const channelMessageStores = new Map<string, ReturnType<typeof writable<Message[]>>>();
 const pendingChannelDecryptTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
+function appendLocalChannelMessage(
+	channelId: string,
+	text: string,
+	options: {
+		messageId?: string;
+		createdAt?: string;
+		messageType?: string;
+	} = {}
+): void {
+	const userId = get(authStore).user?.id ?? '';
+	const store = getChannelMessageStore(channelId);
+	store.update((msgs) => [
+		...msgs,
+		{
+			id: options.messageId ?? crypto.randomUUID(),
+			conversationId: channelId,
+			senderId: userId,
+			text,
+			decryptError: false,
+			createdAt: options.createdAt ?? new Date().toISOString(),
+			messageType: options.messageType ?? 'text',
+		},
+	]);
+}
+
 export function getChannelMessageStore(channelId: string) {
 	if (!channelMessageStores.has(channelId)) {
 		channelMessageStores.set(channelId, writable<Message[]>([]));
@@ -327,25 +352,26 @@ export async function sendMessage(channelId: string, text: string): Promise<void
 	const { wireCiphertext, iteration } = await encryptChannel(channelId, text);
 	const sent = wsSendChannel(channelId, wireCiphertext, iteration);
 
-	if (!sent) {
-		throw new Error('WebSocket not connected — message not sent');
+	if (sent) {
+		appendLocalChannelMessage(channelId, text);
+		return;
 	}
 
-	// Optimistically append own message
-	const userId = get(authStore).user?.id ?? '';
-	const store = getChannelMessageStore(channelId);
-	store.update((msgs) => [
-		...msgs,
-		{
-			id: crypto.randomUUID(),
-			conversationId: channelId,
-			senderId: userId,
-			text,
-			decryptError: false,
-			createdAt: new Date().toISOString(),
-			messageType: 'text',
-		},
-	]);
+	const response = await api.post<{
+		id?: string;
+		created_at?: string;
+		message_type?: string;
+	}>(`/api/v1/channels/${channelId}/messages`, {
+		ciphertext: wireCiphertext,
+		message_type: 'text',
+		msg_num: iteration,
+	});
+
+	appendLocalChannelMessage(channelId, text, {
+		messageId: response.id,
+		createdAt: response.created_at,
+		messageType: response.message_type ?? 'text',
+	});
 }
 
 // ─── WS Incoming Channel Message Handler ─────────────────────────────────────

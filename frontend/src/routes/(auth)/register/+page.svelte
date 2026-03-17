@@ -57,7 +57,7 @@
 					email,
 					password,
 					display_name: displayName || undefined,
-					device: getDeviceBootstrap(),
+					device: await getDeviceBootstrap(),
 				}
 			);
 			setAuth(res.user, res.access_token, res.csrf_token, normalizeServerDevice(res.device));

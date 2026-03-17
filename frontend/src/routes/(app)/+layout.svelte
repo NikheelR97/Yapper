@@ -699,7 +699,7 @@
           "Content-Type": "application/json",
           ...(state.csrfToken ? { "X-CSRF-Token": state.csrfToken } : {}),
         },
-        body: JSON.stringify(getDeviceBootstrap()),
+        body: JSON.stringify(await getDeviceBootstrap()),
         credentials: "include",
       });
       if (!res.ok) {

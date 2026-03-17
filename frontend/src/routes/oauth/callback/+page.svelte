@@ -37,7 +37,7 @@
 				},
 				body: JSON.stringify({
 					code,
-					device: getDeviceBootstrap(),
+					device: await getDeviceBootstrap(),
 				}),
 				credentials: 'include',
 			});

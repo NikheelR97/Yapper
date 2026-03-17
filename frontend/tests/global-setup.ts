@@ -26,9 +26,10 @@ interface LoginResult {
 }
 
 const DEFAULT_DEVICE_BOOTSTRAP = {
-	installation_id: '33333333-3333-4333-8333-333333333333',
+	installation_id:
+		process.env.E2E_PRIMARY_INSTALLATION_ID ?? '11111111-1111-4111-8111-111111111111',
 	platform: 'web',
-	label: 'E2E Browser',
+	label: 'E2E Primary Browser',
 };
 
 function parseSameSite(value: string | undefined): 'Lax' | 'None' | 'Strict' {

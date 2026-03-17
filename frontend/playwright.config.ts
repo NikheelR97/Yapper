@@ -39,7 +39,20 @@ export default defineConfig({
 	projects: [
 		{
 			name: 'chromium',
-			use: { ...devices['Desktop Chrome'] },
+			use: {
+				...devices['Desktop Chrome'],
+				headless: !!process.env.CI,
+			},
+		},
+		// Mobile Chrome — iPhone SE viewport (375×667).
+		// Runs mobile-responsive.spec.ts + auth.spec.ts to validate layouts.
+		{
+			name: 'mobile-chrome',
+			use: {
+				...devices['iPhone SE'],
+				headless: !!process.env.CI,
+			},
+			testMatch: ['**/mobile-responsive.spec.ts', '**/auth.spec.ts'],
 		},
 	],
 

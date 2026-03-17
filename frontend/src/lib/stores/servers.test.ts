@@ -48,15 +48,18 @@ vi.mock('$signal/keystore.js', () => ({
 }));
 
 import { authStore } from '$stores/auth.js';
+import { api } from '$api/client.js';
 import {
 	decryptChannel,
+	encryptChannel,
 	fetchPendingKeyDists,
 } from '$signal/index.js';
 import {
 	listChannelHistoryMessages,
 	storeChannelHistoryMessages,
 } from '$signal/keystore.js';
-import { getChannelMessageStore, registerChannelHandler } from './servers.js';
+import { sendChannelMessage } from '$stores/ws.js';
+import { getChannelMessageStore, registerChannelHandler, sendMessage } from './servers.js';
 
 async function emitWs(type: string, payload: unknown): Promise<void> {
 	const handlers = [...(wsHandlers.get(type) ?? [])];
@@ -105,6 +108,12 @@ describe('registerChannelHandler', () => {
 			loading: false,
 		});
 		getChannelMessageStore('channel-1').set([]);
+		vi.mocked(api.post).mockResolvedValue({});
+		vi.mocked(encryptChannel).mockResolvedValue({
+			wireCiphertext: 'ciphertext',
+			iteration: 7,
+		});
+		vi.mocked(sendChannelMessage).mockReturnValue(true);
 	});
 
 	afterEach(() => {
@@ -195,5 +204,35 @@ describe('registerChannelHandler', () => {
 		} finally {
 			unregister();
 		}
+	});
+
+	it('falls back to the HTTP channel send endpoint when websocket delivery is unavailable', async () => {
+		vi.mocked(sendChannelMessage).mockReturnValue(false);
+		vi.mocked(api.post).mockResolvedValue({
+			id: 'stored-message-1',
+			created_at: '2026-03-18T01:00:00.000Z',
+			message_type: 'text',
+		});
+
+		await sendMessage('channel-1', 'hello over http');
+
+		expect(api.post).toHaveBeenCalledWith('/api/v1/channels/channel-1/messages', {
+			ciphertext: 'ciphertext',
+			message_type: 'text',
+			msg_num: 7,
+		});
+
+		const messages = get(getChannelMessageStore('channel-1'));
+		expect(messages).toEqual([
+			{
+				id: 'stored-message-1',
+				conversationId: 'channel-1',
+				senderId: 'viewer-user',
+				text: 'hello over http',
+				decryptError: false,
+				createdAt: '2026-03-18T01:00:00.000Z',
+				messageType: 'text',
+			},
+		]);
 	});
 });

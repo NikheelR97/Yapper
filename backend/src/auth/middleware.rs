@@ -35,6 +35,10 @@ enum AuthUserPolicy {
     AnyValidToken,
 }
 
+fn requires_device_binding(account_type: &str) -> bool {
+    !matches!(account_type, "bot")
+}
+
 fn enforce_auth_user_device_state(
     trust_state: DeviceTrustState,
     revoked_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -69,6 +73,10 @@ async fn extract_auth_user(
         device_id: claims.claims.device_id,
         account_type: claims.claims.account_type,
     };
+
+    if requires_device_binding(&auth.account_type) && auth.device_id.is_none() {
+        return Err(AppError::Unauthorized.into_response());
+    }
 
     if matches!(policy, AuthUserPolicy::TrustedDeviceIfPresent) {
         if let Some(device_id) = auth.device_id {
@@ -175,6 +183,11 @@ impl FromRequestParts<AppState> for OptionalAuthUser {
         let Ok(claims) = validate_access_token(token, &state.jwt_keys) else {
             return Ok(OptionalAuthUser(None));
         };
+
+        if requires_device_binding(&claims.claims.account_type) && claims.claims.device_id.is_none()
+        {
+            return Ok(OptionalAuthUser(None));
+        }
 
         Ok(OptionalAuthUser(Some(AuthUser {
             user_id: claims.claims.sub,
@@ -363,6 +376,18 @@ mod tests {
         let err = enforce_auth_user_device_state(DeviceTrustState::Trusted, Some(Utc::now()))
             .unwrap_err();
         assert!(matches!(err, AppError::Unauthorized));
+    }
+
+    #[test]
+    fn standard_accounts_require_device_binding() {
+        assert!(requires_device_binding("standard"));
+        assert!(requires_device_binding("parent"));
+        assert!(requires_device_binding("child"));
+    }
+
+    #[test]
+    fn bot_accounts_can_remain_deviceless() {
+        assert!(!requires_device_binding("bot"));
     }
 
     #[test]

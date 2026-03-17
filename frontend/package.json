@@ -10,6 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "test:e2e:gui": "playwright test --headed",
+    "test:e2e:mobile": "playwright test --project=mobile-chrome",
     "test:e2e:seed:devices": "dotenv -e .env.test -- node tests/seed-devices.mjs",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "lint": "eslint . && svelte-check --tsconfig ./tsconfig.json",
