@@ -3,7 +3,9 @@ import {
 	loginViaApi,
 	setInstallationId,
 	seedTrustedPrimaryDevice,
+	seedTrustedPrimaryDeviceB,
 	PRIMARY_INSTALLATION_ID,
+	B_PRIMARY_INSTALLATION_ID,
 } from './auth-helper.js';
 
 /**
@@ -20,7 +22,7 @@ const USER_B_EMAIL = process.env.E2E_EMAIL_2 ?? '';
 const USER_B_PASS = process.env.E2E_PASSWORD_2 ?? '';
 
 const USER_A_INSTALLATION = PRIMARY_INSTALLATION_ID;
-const USER_B_INSTALLATION = '55000000-0000-4000-8000-000000000099';
+const USER_B_INSTALLATION = B_PRIMARY_INSTALLATION_ID;
 
 interface Session {
 	accessToken: string;
@@ -139,6 +141,7 @@ test.describe('Social — follow graph', () => {
 
 	test.beforeAll(() => {
 		seedTrustedPrimaryDevice();
+		seedTrustedPrimaryDeviceB();
 	});
 
 	test('following User B increments their follower count and sets isFollowing=true', async () => {
@@ -230,6 +233,7 @@ test.describe('Social — friend requests', () => {
 
 	test.beforeAll(() => {
 		seedTrustedPrimaryDevice();
+		seedTrustedPrimaryDeviceB();
 	});
 
 	test('User A sends a friend request and it appears in User B incoming list', async () => {

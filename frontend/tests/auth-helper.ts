@@ -35,6 +35,9 @@ export const SECONDARY_INSTALLATION_ID =
 	process.env.E2E_SECONDARY_INSTALLATION_ID ?? '22222222-2222-4222-8222-222222222222';
 /** Stable installation ID for the primary device of the second test account (E2E_EMAIL_2). */
 export const B_PRIMARY_INSTALLATION_ID = 'bb000000-0000-4000-8000-000000000002';
+const B_SECONDARY_INSTALLATION_ID = 'bb000000-0000-4000-8000-000000000003';
+const seededProfiles = new Set<string>();
+const apiLoginCache = new Map<string, AuthData>();
 
 const DEFAULT_USER = {
 	id: 'e2e-user',
@@ -118,6 +121,11 @@ export async function loginViaApi(
 ): Promise<AuthData> {
 	const installationId = options?.installationId ?? 'e2e-installation';
 	const label = options?.label ?? 'E2E Browser';
+	const cacheKey = `${email}:${installationId}`;
+	const cached = apiLoginCache.get(cacheKey);
+	if (cached) {
+		return cached;
+	}
 	let response = await fetch(`${API_URL}/api/v2/auth/login`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
@@ -155,12 +163,14 @@ export async function loginViaApi(
 		throw new Error('loginViaApi response was missing auth fields');
 	}
 
-	return {
+	const authData = {
 		accessToken: body.access_token,
 		csrfToken: body.csrf_token,
 		user: body.user,
 		device: body.device ?? buildMockDevice({ installation_id: installationId, label }),
 	};
+	apiLoginCache.set(cacheKey, authData);
+	return authData;
 }
 
 /**
@@ -277,26 +287,47 @@ export async function setInstallationId(page: Page, installationId: string): Pro
 	);
 }
 
-export function seedTrustedPrimaryDevice(): void {
+function seedDevicesOnce(
+	cacheKey: string,
+	env: Record<string, string | undefined>,
+	errorLabel: string,
+): void {
+	if (seededProfiles.has(cacheKey)) {
+		return;
+	}
+
 	try {
 		execFileSync(process.execPath, ['tests/seed-devices.mjs'], {
 			cwd: process.cwd(),
 			env: {
 				...process.env,
-				E2E_APPROVE_PENDING_DEVICE: '0',
-				E2E_RESET_SECONDARY_DEVICE: '1',
-				E2E_PRIMARY_INSTALLATION_ID: PRIMARY_INSTALLATION_ID,
-				E2E_SECONDARY_INSTALLATION_ID: SECONDARY_INSTALLATION_ID,
+				...env,
 			},
 			stdio: 'pipe',
 		});
+		seededProfiles.add(cacheKey);
 	} catch (error) {
 		const details =
 			error && typeof error === 'object' && 'stderr' in error
 				? String((error as { stderr?: Buffer | string }).stderr ?? '')
 				: String(error);
-		throw new Error(`seedTrustedPrimaryDevice failed: ${details}`.trim());
+		throw new Error(`${errorLabel} failed: ${details}`.trim());
 	}
+}
+
+export function seedTrustedPrimaryDevice(): void {
+	const email = process.env.E2E_EMAIL ?? '';
+	seedDevicesOnce(
+		`primary:${email}:${PRIMARY_INSTALLATION_ID}`,
+		{
+			E2E_APPROVE_PENDING_DEVICE: '0',
+			E2E_RESET_SECONDARY_DEVICE: '1',
+			E2E_SKIP_SECONDARY_DEVICE: '1',
+			E2E_PRIMARY_INSTALLATION_ID: PRIMARY_INSTALLATION_ID,
+			E2E_SECONDARY_INSTALLATION_ID: SECONDARY_INSTALLATION_ID,
+		},
+		'seedTrustedPrimaryDevice',
+	);
 }
 
 /**
@@ -307,25 +338,17 @@ export function seedTrustedPrimaryDeviceB(): void {
 	const email2 = process.env.E2E_EMAIL_2;
 	const pass2 = process.env.E2E_PASSWORD_2;
 	if (!email2 || !pass2) return;
-	try {
-		execFileSync(process.execPath, ['tests/seed-devices.mjs'], {
-			cwd: process.cwd(),
-			env: {
-				...process.env,
-				E2E_EMAIL: email2,
-				E2E_PASSWORD: pass2,
-				E2E_APPROVE_PENDING_DEVICE: '0',
-				E2E_RESET_SECONDARY_DEVICE: '0',
-				E2E_PRIMARY_INSTALLATION_ID: B_PRIMARY_INSTALLATION_ID,
-				E2E_SECONDARY_INSTALLATION_ID: B_PRIMARY_INSTALLATION_ID,
-			},
-			stdio: 'pipe',
-		});
-	} catch (error) {
-		const details =
-			error && typeof error === 'object' && 'stderr' in error
-				? String((error as { stderr?: Buffer | string }).stderr ?? '')
-				: String(error);
-		throw new Error(`seedTrustedPrimaryDeviceB failed: ${details}`.trim());
-	}
+	seedDevicesOnce(
+		`primary:${email2}:${B_PRIMARY_INSTALLATION_ID}`,
+		{
+			E2E_EMAIL: email2,
+			E2E_PASSWORD: pass2,
+			E2E_APPROVE_PENDING_DEVICE: '0',
+			E2E_RESET_SECONDARY_DEVICE: '1',
+			E2E_SKIP_SECONDARY_DEVICE: '1',
+			E2E_PRIMARY_INSTALLATION_ID: B_PRIMARY_INSTALLATION_ID,
+			E2E_SECONDARY_INSTALLATION_ID: B_SECONDARY_INSTALLATION_ID,
+		},
+		'seedTrustedPrimaryDeviceB',
+	);
 }

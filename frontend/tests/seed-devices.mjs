@@ -18,6 +18,7 @@
  * Optional env:
  *   E2E_APPROVE_PENDING_DEVICE=1
  *   E2E_RESET_SECONDARY_DEVICE=1
+ *   E2E_SKIP_SECONDARY_DEVICE=1
  *   E2E_PRIMARY_INSTALLATION_ID
  *   E2E_SECONDARY_INSTALLATION_ID
  */
@@ -207,6 +208,7 @@ async function main() {
 	const password = process.env.E2E_PASSWORD;
 	const approvePending = process.env.E2E_APPROVE_PENDING_DEVICE === '1';
 	const resetSecondary = process.env.E2E_RESET_SECONDARY_DEVICE !== '0';
+	const skipSecondary = process.env.E2E_SKIP_SECONDARY_DEVICE === '1';
 
 	if (!email || !password) {
 		console.error('Missing E2E_EMAIL / E2E_PASSWORD');
@@ -237,6 +239,22 @@ async function main() {
 			device.installation_id === SECONDARY_INSTALLATION_ID &&
 			device.revoked_at == null,
 	);
+	if (
+		skipSecondary &&
+		existingSecondary &&
+		SECONDARY_INSTALLATION_ID !== PRIMARY_INSTALLATION_ID
+	) {
+		console.log(`Removing existing secondary device ${existingSecondary.id}...`);
+		await revokeDevice(primarySession, existingSecondary.id);
+		devices = await listDevices(primarySession);
+	}
+	if (skipSecondary) {
+		console.log('\nCurrent devices:');
+		printDevices(devices);
+		console.log('\nSkipping secondary device registration.');
+		console.log('\nDevice seeding complete.');
+		return;
+	}
 	if (resetSecondary && existingSecondary) {
 		console.log(`Recycling existing secondary device ${existingSecondary.id}...`);
 		await revokeDevice(primarySession, existingSecondary.id);

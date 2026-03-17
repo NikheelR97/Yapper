@@ -15,6 +15,9 @@ env:
   VITE_FIREBASE_VAPID_KEY: BOrz15S2L_kg0_R5Tam_gbtO_Zf3LzTVFwzQGbCsDFLZgi6fG5DUk3KjIMLs4N3oGeaGkJcbxfeBlHGzDF5k8Cc
   VITE_SENTRY_DSN: https://2fe4d6f44e9985a1ac07cec40fb24e33@o4510987106123776.ingest.de.sentry.io/4510987113398352
 
+permissions:
+  contents: read
+
 jobs:
   # ─── Windows ─────────────────────────────────────────────────────────────────
   build-windows:

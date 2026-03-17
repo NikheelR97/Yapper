@@ -10,6 +10,9 @@ env:
   CARGO_TERM_COLOR: always
   DATABASE_URL: postgres://yapper:yapper_dev@localhost:5432/yapper
 
+permissions:
+  contents: read
+
 jobs:
   # ─── Backend ─────────────────────────────────────────────────────────────────
   backend:

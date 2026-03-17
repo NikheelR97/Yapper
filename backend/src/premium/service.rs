@@ -392,6 +392,7 @@ mod tests {
     use super::*;
     use hmac::{Hmac, Mac};
     use sha2::Sha256;
+    use uuid::Uuid;
 
     fn stripe_sig(secret: &str, ts: i64, payload: &[u8]) -> String {
         let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).expect("hmac key");
@@ -404,28 +405,28 @@ mod tests {
 
     #[test]
     fn stripe_signature_valid_for_recent_timestamp() {
-        let secret = "whsec_test";
+        let secret = Uuid::new_v4().to_string();
         let payload = br#"{"id":"evt_1","type":"checkout.session.completed"}"#;
         let now = 1_700_000_000;
-        let header = stripe_sig(secret, now, payload);
+        let header = stripe_sig(&secret, now, payload);
         assert!(verify_stripe_signature_at(
             &header,
             payload,
-            secret,
+            &secret,
             now + 30
         ));
     }
 
     #[test]
     fn stripe_signature_rejects_replayed_timestamp() {
-        let secret = "whsec_test";
+        let secret = Uuid::new_v4().to_string();
         let payload = br#"{"id":"evt_1","type":"checkout.session.completed"}"#;
         let ts = 1_700_000_000;
-        let header = stripe_sig(secret, ts, payload);
+        let header = stripe_sig(&secret, ts, payload);
         assert!(!verify_stripe_signature_at(
             &header,
             payload,
-            secret,
+            &secret,
             ts + STRIPE_TOLERANCE_SECS + 1
         ));
     }

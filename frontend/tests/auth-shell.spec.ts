@@ -1,5 +1,10 @@
 ﻿import { test, expect } from '@playwright/test';
-import { buildMockAuthData, buildMockDevice, mockAuthEndpoints } from './auth-helper.js';
+import {
+	buildMockAuthData,
+	buildMockDevice,
+	mockAuthEndpoints,
+	setInstallationId,
+} from './auth-helper.js';
 
 test.setTimeout(120_000);
 
@@ -7,19 +12,12 @@ const API_URL = process.env.VITE_API_URL ?? 'https://api.yapperhq.com';
 
 test.describe('Authenticated shell', () => {
 	test('boots explore, covers settings sections, survives reload, and logs out', async ({ page }) => {
-		const authData = buildMockAuthData({
-			device: {
-				label: 'Primary Browser',
-			},
-		});
 		const currentDevice = buildMockDevice({
-			...(authData.device ?? {}),
+			id: 'auth-shell-primary-device',
+			installation_id: 'auth-shell-primary-installation',
 			label: 'Primary Browser',
 		});
-		const deviceAwareAuthData = {
-			...authData,
-			device: currentDevice,
-		};
+		const deviceAwareAuthData = buildMockAuthData({ device: currentDevice });
 		const otherDevice = buildMockDevice({
 			id: 'remote-auth-shell-device',
 			signal_device_id: 2,
@@ -27,6 +25,7 @@ test.describe('Authenticated shell', () => {
 			label: 'Desk Laptop',
 		});
 
+		await setInstallationId(page, currentDevice.installation_id ?? 'auth-shell-primary-installation');
 		await mockAuthEndpoints(page, deviceAwareAuthData, {
 			devices: [currentDevice, otherDevice],
 		});

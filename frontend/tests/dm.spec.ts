@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { ed25519 } from '@noble/curves/ed25519.js';
 import {
 	loginViaApi,
 	mockAuthEndpoints,
@@ -34,6 +35,12 @@ interface SessionBootstrap {
 	csrfToken: string;
 }
 
+interface KeyBundleV2Response {
+	identity_sig_key: string;
+	signed_prekey: string;
+	signed_prekey_sig: string;
+}
+
 async function loginAs(page: Page) {
 	await mockAuthEndpoints(page);
 	await page.goto('/explore');
@@ -53,6 +60,33 @@ async function waitForAppReady(page: Page): Promise<void> {
 	await expect(page.locator('[aria-label="Loading Yapper"]')).toHaveCount(0, {
 		timeout: 45_000,
 	});
+}
+
+function b64ToBytes(b64: string): Uint8Array {
+	return Uint8Array.from(Buffer.from(b64, 'base64'));
+}
+
+function hasValidSignedPreKey(bundle: KeyBundleV2Response): boolean {
+	return ed25519.verify(
+		b64ToBytes(bundle.signed_prekey_sig),
+		b64ToBytes(bundle.signed_prekey),
+		b64ToBytes(bundle.identity_sig_key),
+	);
+}
+
+async function waitForBundles(authToken: string, userId: string): Promise<void> {
+	for (let attempt = 0; attempt < 45; attempt++) {
+		const res = await fetch(`${API_URL}/api/v2/keys/${userId}/bundles`, {
+			headers: { Authorization: `Bearer ${authToken}` },
+		});
+		if (res.ok) {
+			const bundles = (await res.json()) as KeyBundleV2Response[];
+			if (bundles.length > 0 && bundles.every(hasValidSignedPreKey)) return;
+		}
+		await new Promise<void>((resolve) => setTimeout(resolve, 1_000));
+	}
+
+	throw new Error(`Valid key bundles for user ${userId} not available after 45 s`);
 }
 
 async function createSessionBootstrap(
@@ -225,11 +259,11 @@ test.describe('Seeded DM flow', () => {
 		// Open the conversation while B logs in concurrently to upload their prekeys.
 		// encryptDm(peerId) fetches B's key bundle from the server — B must have
 		// uploaded keys before A calls input.press('Enter').
-		const bKeysDone = (async () => {
-			if (!USER_B_EMAIL || !USER_B_PASS) return;
-			const ctxB = await browser.newContext({ storageState: { cookies: [], origins: [] } });
-			const pageB = await ctxB.newPage();
-			try {
+		const ctxB = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+		const pageB = await ctxB.newPage();
+		try {
+			const bKeysDone = (async () => {
+				if (!USER_B_EMAIL || !USER_B_PASS) return;
 				await setInstallationId(pageB, USER_B_INSTALLATION_ID);
 				await pageB.goto('/login');
 				await pageB.fill('#email', USER_B_EMAIL);
@@ -239,10 +273,7 @@ test.describe('Seeded DM flow', () => {
 				await expect(pageB.locator('[aria-label="Loading Yapper"]')).toHaveCount(0, {
 					timeout: 45_000,
 				});
-			} finally {
-				await ctxB.close();
-			}
-		})();
+			})();
 
 		await openConversation(page, conversationId, userBLabels);
 
@@ -263,21 +294,15 @@ test.describe('Seeded DM flow', () => {
 		// the app's key-upload runs async after the loading screen hides, so we
 		// need the hard API signal rather than the UI signal.
 		await bKeysDone;
-		for (let attempt = 0; attempt < 30; attempt++) {
-			const res = await fetch(`${API_URL}/api/v2/keys/${userBId}/bundles`, {
-				headers: { Authorization: `Bearer ${sessionAAccessToken}` },
-			});
-			if (res.ok) {
-				const bundles = (await res.json()) as unknown[];
-				if (bundles.length > 0) break;
-			}
-			await page.waitForTimeout(1_000);
-		}
+		await waitForBundles(sessionAAccessToken, userBId);
 
 		const testMsg = `E2E DM test ${Date.now()}`;
 		await input.fill(testMsg);
 		await input.press('Enter');
 
-		await expect(page.getByText(testMsg)).toBeVisible({ timeout: 20_000 });
+			await expect(page.getByText(testMsg)).toBeVisible({ timeout: 20_000 });
+		} finally {
+			await ctxB.close();
+		}
 	});
 });

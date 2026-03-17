@@ -237,15 +237,15 @@ async fn search(
                 EXISTS (
                     SELECT 1 FROM friendships f
                     WHERE f.status = 'accepted'
-                      AND ((f.user_id = $2 AND f.friend_id = u.id)
-                        OR (f.user_id = u.id AND f.friend_id = $2))
+                      AND ((f.user_id_1 = $2 AND f.user_id_2 = u.id)
+                        OR (f.user_id_1 = u.id AND f.user_id_2 = $2))
                 ) AS is_friend,
                 EXISTS (
                     SELECT 1 FROM friendships f
                     WHERE f.status = 'pending'
                       AND f.requested_by = $2
-                      AND ((f.user_id = $2 AND f.friend_id = u.id)
-                        OR (f.user_id = u.id AND f.friend_id = $2))
+                      AND ((f.user_id_1 = $2 AND f.user_id_2 = u.id)
+                        OR (f.user_id_1 = u.id AND f.user_id_2 = $2))
                 ) AS request_sent
          FROM users u
          LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id

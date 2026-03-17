@@ -207,13 +207,15 @@ pub fn generate_email_token() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use uuid::Uuid;
 
     #[test]
     fn test_password_hash_and_verify() {
-        let password = "correct-horse-battery-staple";
-        let hash = hash_password(password).unwrap();
-        assert!(verify_password(password, &hash).unwrap());
-        assert!(!verify_password("wrong-password", &hash).unwrap());
+        let password = Uuid::new_v4().to_string();
+        let wrong_password = Uuid::new_v4().to_string();
+        let hash = hash_password(&password).unwrap();
+        assert!(verify_password(&password, &hash).unwrap());
+        assert!(!verify_password(&wrong_password, &hash).unwrap());
     }
 
     #[test]

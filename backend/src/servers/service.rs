@@ -1,5 +1,5 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD as BASE64_URL_SAFE_NO_PAD, Engine};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::Row;
 use uuid::Uuid;
@@ -12,6 +12,8 @@ use crate::{
 
 /// Max parents that can be notified for a single parental intercept event.
 const MAX_PARENTS_PER_CHILD: usize = 10;
+/// Guard invite expiry so user input cannot trigger extreme duration math.
+const MAX_INVITE_EXPIRY_HOURS: i64 = 24 * 365;
 
 // ─── Response types ───────────────────────────────────────────────────────────
 
@@ -296,9 +298,7 @@ pub async fn create_invite(
     require_member(state, user_id, server_id).await?;
 
     let code = generate_invite_code();
-    let expires_at = input
-        .expires_in_hours
-        .map(|h| Utc::now() + chrono::Duration::hours(h));
+    let expires_at = resolve_invite_expiry(input.expires_in_hours, Utc::now())?;
 
     sqlx::query(
         "INSERT INTO server_invite_links (server_id, code, creator_id, max_uses, expires_at) \
@@ -517,4 +517,65 @@ pub fn generate_invite_code() -> String {
     let mut bytes = [0u8; 16];
     getrandom::getrandom(&mut bytes).expect("invite code randomness unavailable");
     BASE64_URL_SAFE_NO_PAD.encode(bytes)
+}
+
+fn resolve_invite_expiry(
+    expires_in_hours: Option<i64>,
+    now: DateTime<Utc>,
+) -> AppResult<Option<DateTime<Utc>>> {
+    let Some(hours) = expires_in_hours else {
+        return Ok(None);
+    };
+
+    if !(1..=MAX_INVITE_EXPIRY_HOURS).contains(&hours) {
+        return Err(AppError::BadRequest(format!(
+            "expires_in_hours must be between 1 and {MAX_INVITE_EXPIRY_HOURS}"
+        )));
+    }
+
+    let safe_hours = u16::try_from(hours).map_err(|_| {
+        AppError::BadRequest(format!(
+            "expires_in_hours must be between 1 and {MAX_INVITE_EXPIRY_HOURS}"
+        ))
+    })?;
+
+    now.checked_add_signed(chrono::Duration::hours(i64::from(safe_hours)))
+        .map(Some)
+        .ok_or_else(|| AppError::BadRequest("expires_in_hours is out of range".into()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    #[test]
+    fn invite_expiry_none_means_never_expires() {
+        let now = Utc.with_ymd_and_hms(2026, 3, 17, 12, 0, 0).unwrap();
+        assert_eq!(resolve_invite_expiry(None, now).unwrap(), None);
+    }
+
+    #[test]
+    fn invite_expiry_accepts_bounded_positive_hours() {
+        let now = Utc.with_ymd_and_hms(2026, 3, 17, 12, 0, 0).unwrap();
+        let expires_at = resolve_invite_expiry(Some(24), now).unwrap().unwrap();
+        assert_eq!(expires_at, now + chrono::Duration::hours(24));
+    }
+
+    #[test]
+    fn invite_expiry_rejects_zero_and_negative_hours() {
+        let now = Utc.with_ymd_and_hms(2026, 3, 17, 12, 0, 0).unwrap();
+
+        for invalid_hours in [0, -1] {
+            let err = resolve_invite_expiry(Some(invalid_hours), now).unwrap_err();
+            assert!(matches!(err, AppError::BadRequest(_)));
+        }
+    }
+
+    #[test]
+    fn invite_expiry_rejects_excessive_hours() {
+        let now = Utc.with_ymd_and_hms(2026, 3, 17, 12, 0, 0).unwrap();
+        let err = resolve_invite_expiry(Some(MAX_INVITE_EXPIRY_HOURS + 1), now).unwrap_err();
+        assert!(matches!(err, AppError::BadRequest(_)));
+    }
 }

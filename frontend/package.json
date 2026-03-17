@@ -58,6 +58,7 @@
     "vitest": "^4.1.0"
   },
   "overrides": {
+    "cookie": "^0.7.0",
     "serialize-javascript": "^7.0.3"
   }
 }

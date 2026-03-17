@@ -124,9 +124,10 @@ async fn main() -> anyhow::Result<()> {
 
     let hub = Arc::new(Hub::new());
 
-    // Per-IP rate limiter: 100 requests/min, burst of 20
-    let quota = governor::Quota::per_minute(NonZeroU32::new(100).unwrap())
-        .allow_burst(NonZeroU32::new(20).unwrap());
+    // Per-IP rate limiter defaults stay production-safe, but local E2E can
+    // raise them via env vars so browser bootstraps do not self-throttle.
+    let quota = governor::Quota::per_minute(env_non_zero_u32("API_RATE_LIMIT_PER_MINUTE", 100))
+        .allow_burst(env_non_zero_u32("API_RATE_LIMIT_BURST", 20));
     let rate_limiter: IpRateLimiter = Arc::new(RateLimiter::keyed(quota));
     let trusted_proxy_ips = Arc::new(load_trusted_proxy_ips());
     let jwt_keys = Arc::new(JwtKeys::from_env()?);
@@ -217,6 +218,14 @@ fn load_trusted_proxy_ips() -> HashSet<IpAddr> {
         }
     }
     ips
+}
+
+fn env_non_zero_u32(name: &str, default: u32) -> NonZeroU32 {
+    std::env::var(name)
+        .ok()
+        .and_then(|raw| raw.parse::<u32>().ok())
+        .and_then(NonZeroU32::new)
+        .unwrap_or_else(|| NonZeroU32::new(default).expect("default quota must be non-zero"))
 }
 
 async fn api_rate_limit_check(
