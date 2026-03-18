@@ -14,7 +14,8 @@
 		}
 	}
 
-	function formatCount(n: number): string {
+	function formatCount(n: number | undefined | null): string {
+		if (!n) return '0';
 		if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
 		return n.toString();
 	}

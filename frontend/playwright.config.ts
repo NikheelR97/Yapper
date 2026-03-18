@@ -43,6 +43,7 @@ export default defineConfig({
 				...devices['Desktop Chrome'],
 				headless: !!process.env.CI,
 			},
+			testIgnore: ['**/mobile-responsive.spec.ts'],
 		},
 		// Mobile Chrome — iPhone SE viewport (375×667).
 		// Runs mobile-responsive.spec.ts + auth.spec.ts to validate layouts.

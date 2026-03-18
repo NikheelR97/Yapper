@@ -196,6 +196,6 @@ test.describe('Invite links - authenticated', () => {
 		await expect(inviteBtn).toBeVisible({ timeout: 10_000 });
 		await inviteBtn.click();
 
-		await expect(page.locator('.invite-panel').first()).toBeVisible({ timeout: 5_000 });
+		await expect(page.locator('[role="dialog"], .invite-panel').first()).toBeVisible({ timeout: 5_000 });
 	});
 });

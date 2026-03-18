@@ -192,7 +192,7 @@ export async function mockAuthEndpoints(
 	const devices = options.devices ?? [deviceSummary];
 	const syncEvents = options.syncEvents ?? [];
 
-	await page.route(`${API_URL}/api/v2/auth/refresh`, async (route) => {
+	await page.route(`**/api/v2/auth/refresh`, async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
@@ -205,7 +205,7 @@ export async function mockAuthEndpoints(
 		});
 	});
 
-	await page.route(`${API_URL}/api/v1/users/me`, async (route) => {
+	await page.route(`**/api/v1/users/me`, async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
@@ -213,7 +213,7 @@ export async function mockAuthEndpoints(
 		});
 	});
 
-	await page.route(`${API_URL}/api/v2/devices`, async (route) => {
+	await page.route(`**/api/v2/devices`, async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
@@ -221,7 +221,7 @@ export async function mockAuthEndpoints(
 		});
 	});
 
-	await page.route(`${API_URL}/api/v2/devices/sync-events`, async (route) => {
+	await page.route(`**/api/v2/devices/sync-events`, async (route) => {
 		if (route.request().method() !== 'GET') {
 			await route.fulfill({
 				status: 200,
@@ -238,7 +238,7 @@ export async function mockAuthEndpoints(
 		});
 	});
 
-	await page.route(`${API_URL}/api/v2/devices/trust-requests`, async (route) => {
+	await page.route(`**/api/v2/devices/trust-requests`, async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
@@ -255,10 +255,10 @@ export async function mockAuthEndpoints(
  */
 export async function mockSignalBootstrapEndpoints(page: Page): Promise<void> {
 	for (const path of [
-		`${API_URL}/api/v2/keys/identity`,
-		`${API_URL}/api/v2/keys/signed-prekey`,
-		`${API_URL}/api/v2/keys/one-time-prekeys`,
-		`${API_URL}/api/v2/keys/one-time-prekey-count`,
+		`**/api/v2/keys/identity`,
+		`**/api/v2/keys/signed-prekey`,
+		`**/api/v2/keys/one-time-prekeys`,
+		`**/api/v2/keys/one-time-prekey-count`,
 	]) {
 		await page.route(path, async (route) => {
 			if (route.request().method() === 'GET') {

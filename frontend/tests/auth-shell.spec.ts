@@ -29,14 +29,14 @@ test.describe('Authenticated shell', () => {
 		await mockAuthEndpoints(page, deviceAwareAuthData, {
 			devices: [currentDevice, otherDevice],
 		});
-		await page.route(`${API_URL}/api/v1/account/data-export`, async (route) => {
+		await page.route(`**/api/v1/account/data-export`, async (route) => {
 			await route.fulfill({
 				status: 200,
 				contentType: 'application/zip',
 				body: 'e2e-export',
 			});
 		});
-		await page.route(`${API_URL}/api/v2/auth/logout`, async (route) => {
+		await page.route(`**/api/v2/auth/logout`, async (route) => {
 			await route.fulfill({ status: 204, body: '' });
 		});
 

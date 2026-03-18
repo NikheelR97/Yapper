@@ -1,15 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { get } from 'svelte/store';
-	import { authStore } from '$stores/auth.js';
-	import { onMount } from 'svelte';
 
 	let step = 0;
 	const totalSteps = 2;
-
-	onMount(() => {
-		if (!get(authStore).user) goto('/login');
-	});
 
 	function next() {
 		if (step < totalSteps - 1) {

@@ -2,7 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { get } from 'svelte/store';
-	import { authStore } from '$stores/auth.js';
+	import { authStore, setAuth } from '$stores/auth.js';
 	import {
 		parentalStore,
 		loadChildren,
@@ -10,16 +10,49 @@
 		selectChild,
 	} from '$stores/parental.js';
 	import { page } from '$app/stores';
+	import { api } from '$api/client.js';
+	import { normalizeServerDevice } from '$lib/device/bootstrap.js';
+	import type { User } from '$stores/auth.js';
 
 	let ready = false;
 
 	$: isSetupPage = $page.url.pathname === '/parent/children/setup';
 
+	async function refreshSession(): Promise<boolean> {
+		try {
+			const res = await api.post<{
+				access_token: string;
+				csrf_token: string;
+				user: User;
+				device: {
+					id: string;
+					signal_device_id: number;
+					installation_id: string | null;
+					platform: 'web' | 'tauri' | 'capacitor';
+					label: string;
+					trust_state: 'trusted' | 'pending_trust' | 'revoked';
+					created_at: string;
+					last_seen_at: string | null;
+					approved_at: string | null;
+					revoked_at: string | null;
+				};
+			}>('/api/v2/auth/refresh');
+			setAuth(res.user, res.access_token, res.csrf_token, normalizeServerDevice(res.device));
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
 	onMount(async () => {
-		const state = get(authStore);
+		let state = get(authStore);
 		if (!state.user) {
-			await goto('/login');
-			return;
+			const restored = await refreshSession();
+			if (!restored) {
+				await goto('/login');
+				return;
+			}
+			state = get(authStore);
 		}
 		// Allow any logged-in user to access the setup wizard (creates their parent account)
 		if (state.user.accountType !== 'parent') {
