@@ -21,6 +21,9 @@ async function setupMobileAuth(page: Parameters<typeof mockAuthEndpoints>[0]): P
 // ─── Login page ───────────────────────────────────────────────────────────────
 
 test.describe('Mobile — Login page', () => {
+	// (auth) layout redirects authenticated users to /explore — clear saved auth.
+	test.use({ storageState: { cookies: [], origins: [] } });
+
 	test('login form is fully visible without horizontal scroll @smoke', async ({ page }) => {
 		await page.goto('/login');
 
@@ -49,6 +52,9 @@ test.describe('Mobile — Login page', () => {
 // ─── Register page ────────────────────────────────────────────────────────────
 
 test.describe('Mobile — Register page', () => {
+	// (auth) layout redirects authenticated users to /explore — clear saved auth.
+	test.use({ storageState: { cookies: [], origins: [] } });
+
 	test('register form is fully visible without horizontal scroll @smoke', async ({ page }) => {
 		await page.goto('/register');
 
