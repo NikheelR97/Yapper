@@ -10,6 +10,10 @@ import { test, expect } from '@playwright/test';
 const API_URL = process.env.VITE_API_URL ?? 'https://api.yapperhq.com';
 
 test.describe('Forgot password page', () => {
+	// (auth) layout redirects authenticated users to /explore.
+	// Clear saved auth so we land on the forgot-password form.
+	test.use({ storageState: { cookies: [], origins: [] } });
+
 	test.beforeEach(async ({ page }) => {
 		// Mock the reset endpoint so we don't need a live backend
 		await page.route(`**/api/v1/auth/forgot-password`, async (route) => {
