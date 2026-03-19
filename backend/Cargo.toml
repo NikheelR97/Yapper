@@ -2,7 +2,7 @@
 name = "yapper-server"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.75"
+rust-version = "1.78"
 
 [[bin]]
 name = "yapper-server"
@@ -16,7 +16,7 @@ tower = { version = "0.4", features = ["full"] }
 tower-http = { version = "0.5", features = ["cors", "trace", "compression-gzip", "set-header", "request-id"] }
 
 # Database
-sqlx = { version = "0.7", features = ["postgres", "uuid", "chrono", "runtime-tokio", "migrate", "tls-native-tls"] }
+sqlx = { version = "0.8", features = ["postgres", "uuid", "chrono", "runtime-tokio", "migrate", "tls-native-tls"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
