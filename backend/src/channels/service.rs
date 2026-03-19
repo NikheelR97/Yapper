@@ -397,17 +397,16 @@ pub async fn store_key_distributions(
     }
 
     // After storing all distributions, broadcast a key_dist_request to all
-    // OTHER online channel members so they redistribute their sender key to
-    // the joining device.
+    // online channel members (including the same user's other devices) so they
+    // redistribute their sender key to the joining device.
     let member_rows = sqlx::query(
         "SELECT DISTINCT u.id as user_id \
          FROM server_members sm \
          JOIN channels c ON c.server_id = sm.server_id \
          JOIN users u ON u.id = sm.user_id \
-         WHERE c.id = $1 AND u.id != $2 AND u.deleted_at IS NULL",
+         WHERE c.id = $1 AND u.deleted_at IS NULL",
     )
     .bind(channel_id)
-    .bind(from_user)
     .fetch_all(state.db.pool())
     .await
     .unwrap_or_default();
@@ -480,17 +479,16 @@ pub async fn fetch_key_distributions(
         .collect::<Result<Vec<_>, sqlx::Error>>()
         .map_err(AppError::from)?;
 
-    // Broadcast key_dist_request so other online members send this device
-    // their sender key (self-healing for devices that missed the initial join).
+    // Broadcast key_dist_request so online members (including the same user's
+    // other devices) send this device their sender key.
     let member_rows = sqlx::query(
         "SELECT DISTINCT u.id as user_id \
          FROM server_members sm \
          JOIN channels c ON c.server_id = sm.server_id \
          JOIN users u ON u.id = sm.user_id \
-         WHERE c.id = $1 AND u.id != $2 AND u.deleted_at IS NULL",
+         WHERE c.id = $1 AND u.deleted_at IS NULL",
     )
     .bind(channel_id)
-    .bind(user_id)
     .fetch_all(state.db.pool())
     .await
     .unwrap_or_default();
