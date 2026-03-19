@@ -26,6 +26,7 @@
 	$: peerPresence = getPresence(conversation?.peerId ?? "");
 
 	let sending = false;
+	let loading = true;
 	let loadError = false;
 	let listEl: HTMLDivElement;
 	let showSafetyNumbers = false;
@@ -38,11 +39,13 @@
 	}
 
 	onMount(async () => {
-		if (!conversation) return;
+		if (!conversation) { loading = false; return; }
 		try {
 			await loadMessages(conversationId, conversation.peerId);
 		} catch {
 			loadError = true;
+		} finally {
+			loading = false;
 		}
 	});
 
@@ -58,6 +61,9 @@
 		sending = true;
 		try {
 			await sendMessage(conversationId, conversation.peerId, e.detail);
+		} catch (err) {
+			console.error('[handleSend] sendMessage failed:', err);
+			throw err;
 		} finally {
 			sending = false;
 		}
@@ -159,7 +165,7 @@
 
 	<!-- Input -->
 	<MessageInput
-		disabled={sending || !conversation}
+		disabled={sending || loading || !conversation}
 		conversationId={conversation?.id}
 		recipientId={conversation?.peerId}
 		placeholder="Message {conversation?.peerDisplayName ||

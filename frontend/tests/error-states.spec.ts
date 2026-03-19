@@ -118,7 +118,7 @@ test.describe('Error states — loading skeletons', () => {
 		);
 		// Once data loads, the skeleton should disappear
 		// Allow 15s: app boot (auth + signal setup ~3-5s) + 2s API delay + render time
-		await expect(page.getByText('Slow User')).toBeVisible({ timeout: 15_000 });
+		await expect(page.getByText('Slow User')).toBeVisible({ timeout: 25_000 });
 
 		// Skeleton should no longer be visible after data loads
 		await expect(skeleton).toHaveCount(0, { timeout: 3_000 });

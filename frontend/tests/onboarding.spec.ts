@@ -27,6 +27,7 @@ test.describe('Onboarding carousel', () => {
 
 	test('clicking Next advances to the next step @smoke', async ({ page }) => {
 		await page.goto('/onboarding');
+		await page.waitForLoadState('networkidle');
 
 		const titleBefore = await page.locator('h1, h2, .slide-title').first().textContent({ timeout: 10_000 });
 
@@ -34,24 +35,26 @@ test.describe('Onboarding carousel', () => {
 		// slide's fadeUp animation keeping the element unstable during getByRole resolution.
 		const nextBtn = page.locator('.btn-primary').first();
 		await expect(nextBtn).toBeVisible({ timeout: 10_000 });
-		await nextBtn.click({ force: true });
+		// Wait for Svelte hydration to complete before clicking
+		await nextBtn.click();
 
 		// Title should change after advancing
 		await expect(async () => {
 			const titleAfter = await page.locator('h1, h2, .slide-title').first().textContent();
 			expect(titleAfter).not.toBe(titleBefore);
-		}).toPass({ timeout: 5_000 });
+		}).toPass({ timeout: 8_000 });
 	});
 
 	test('clicking the first dot returns to step 1', async ({ page }) => {
 		await page.goto('/onboarding');
+		await page.waitForLoadState('networkidle');
 
 		const titleStep1 = await page.locator('h1, h2, .slide-title').first().textContent({ timeout: 10_000 });
 
 		// Advance to step 2 using the primary button
 		const nextBtn = page.locator('.btn-primary').first();
 		await expect(nextBtn).toBeVisible({ timeout: 10_000 });
-		await nextBtn.click({ force: true });
+		await nextBtn.click();
 
 		// Click first dot to go back
 		const dots = page.locator('.dot, [data-onboarding-dot], [aria-label*="step"]');

@@ -261,7 +261,8 @@ async fn upload_one_time_prekeys(
             r#"
             INSERT INTO one_time_prekeys (user_id, device_id, key_id, public_key)
             VALUES ($1, $2, $3, $4)
-            ON CONFLICT (user_id, device_id, key_id) DO NOTHING
+            ON CONFLICT (user_id, device_id, key_id) DO UPDATE
+                SET public_key = EXCLUDED.public_key, consumed = FALSE
             "#,
         )
         .bind(auth.user_id)

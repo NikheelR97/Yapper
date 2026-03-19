@@ -6,7 +6,7 @@ import {
 } from './auth-helper.js';
 import { E2EApiClient } from './helpers/api-client.js';
 import { mockCanvasEndpoints } from './helpers/mock-routes.js';
-import { waitForAppReady } from './helpers/wait-for.js';
+import { waitForAppReady, navigateClientSide } from './helpers/wait-for.js';
 
 /**
  * Feature: Live Canvas
@@ -48,7 +48,8 @@ test.describe('Live Canvas — panel', () => {
 		await page.getByRole('button', { name: /Sign In/i }).click();
 		await page.waitForURL(/\/explore/, { timeout: 20_000 });
 		await waitForAppReady(page);
-		await page.goto(`/servers/${serverId}/channels/${channelId}`);
+		// Use client-side navigation to avoid a hard reload that resets authStore
+		await navigateClientSide(page, `/servers/${serverId}/channels/${channelId}`);
 		await expect(page.locator('textarea[aria-label="Message"]').first()).toBeEnabled({ timeout: 60_000 });
 
 		// Canvas toggle button should be in the channel header
@@ -63,15 +64,16 @@ test.describe('Live Canvas — panel', () => {
 
 	test('opening the canvas panel reveals music widget and poll', async ({ page }) => {
 		await mockCanvasEndpoints(page, {
-			music: { title: 'Test Track', artist: 'Test Artist', albumArt: null },
+			music: { title: 'Test Track', artist: 'Test Artist', album_art_url: null },
 			polls: [
 				{
 					id: 'p1',
 					question: 'Best framework?',
 					options: [
-						{ id: 'o1', text: 'Svelte', votes: 5 },
-						{ id: 'o2', text: 'React', votes: 3 },
+						{ index: 0, text: 'Svelte' },
+						{ index: 1, text: 'React' },
 					],
+					vote_counts: { '0': 5, '1': 3 },
 				},
 			],
 		});
@@ -83,23 +85,30 @@ test.describe('Live Canvas — panel', () => {
 		await page.getByRole('button', { name: /Sign In/i }).click();
 		await page.waitForURL(/\/explore/, { timeout: 20_000 });
 		await waitForAppReady(page);
-		await page.goto(`/servers/${serverId}/channels/${channelId}`);
+		// Use client-side navigation to avoid a hard reload that resets authStore
+		await navigateClientSide(page, `/servers/${serverId}/channels/${channelId}`);
 		await expect(page.locator('textarea[aria-label="Message"]').first()).toBeEnabled({ timeout: 60_000 });
 
-		// Try to open canvas
-		const canvasToggle = page.locator(
-			'[aria-label*="canvas" i], [data-testid="canvas-toggle"]',
+		// Canvas is open by default (showCanvas = true). Check for widgets directly first;
+		// if hidden, use the toggle to open it.
+		const musicOrPoll = page.locator(
+			'.music-widget, [data-testid="music-widget"], .poll-widget, [data-testid="poll-widget"]',
 		).first();
 
-		if (await canvasToggle.isVisible({ timeout: 5_000 }).catch(() => false)) {
-			await canvasToggle.click({ force: true });
-
-			// Canvas panel should render music widget or poll
-			await expect(
-				page.locator('.music-widget, [data-testid="music-widget"], .poll-widget, [data-testid="poll-widget"]').first(),
-			).toBeVisible({ timeout: 10_000 });
+		const alreadyVisible = await musicOrPoll.isVisible({ timeout: 8_000 }).catch(() => false);
+		if (!alreadyVisible) {
+			// Canvas panel may be hidden — try toggling it open
+			const canvasToggle = page.locator(
+				'[aria-label*="canvas" i], [data-testid="canvas-toggle"]',
+			).first();
+			if (await canvasToggle.isVisible({ timeout: 3_000 }).catch(() => false)) {
+				await canvasToggle.click({ force: true });
+				await expect(musicOrPoll).toBeVisible({ timeout: 10_000 });
+			} else {
+				test.skip(true, 'Canvas toggle not found — canvas may not be enabled for this channel type');
+			}
 		} else {
-			test.skip(true, 'Canvas toggle not found — canvas may not be enabled for this channel type');
+			await expect(musicOrPoll).toBeVisible();
 		}
 	});
 
@@ -112,16 +121,18 @@ test.describe('Live Canvas — panel', () => {
 					id: 'poll-vote-test',
 					question: 'Vote test?',
 					options: [
-						{ id: 'opt-1', text: 'Option A', votes: 0 },
-						{ id: 'opt-2', text: 'Option B', votes: 0 },
+						{ index: 0, text: 'Option A' },
+						{ index: 1, text: 'Option B' },
 					],
+					vote_counts: {},
 				},
 			],
 		});
 
-		await page.route(`**/api/v1/servers/*/polls/*/vote`, async (route) => {
+		// Override the vote route to capture the request (backend path is /canvas/polls/*)
+		await page.route(`**/api/v1/canvas/polls/*/vote`, async (route) => {
 			voteRequested = true;
-			await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+			await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ vote_counts: {} }) });
 		});
 
 		await setInstallationId(page, PRIMARY_INSTALLATION_ID);
@@ -131,20 +142,23 @@ test.describe('Live Canvas — panel', () => {
 		await page.getByRole('button', { name: /Sign In/i }).click();
 		await page.waitForURL(/\/explore/, { timeout: 20_000 });
 		await waitForAppReady(page);
-		await page.goto(`/servers/${serverId}/channels/${channelId}`);
+		// Use client-side navigation to avoid a hard reload that resets authStore
+		await navigateClientSide(page, `/servers/${serverId}/channels/${channelId}`);
 		await expect(page.locator('textarea[aria-label="Message"]').first()).toBeEnabled({ timeout: 60_000 });
 
-		const canvasToggle = page.locator('[aria-label*="canvas" i], [data-testid="canvas-toggle"]').first();
-		if (await canvasToggle.isVisible({ timeout: 3_000 }).catch(() => false)) {
-			await canvasToggle.click();
-
-			const voteBtn = page.getByRole('button', { name: /Option A|Vote/i }).first();
-			if (await voteBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
-				await voteBtn.click();
-				// Give a moment for the request to fire
-				await page.waitForTimeout(500);
-				expect(voteRequested).toBe(true);
+		// Canvas defaults to open — look for vote button directly; toggle only if needed
+		const voteBtn = page.getByRole('button', { name: /Option A|Vote/i }).first();
+		if (!await voteBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
+			const canvasToggle = page.locator('[aria-label*="canvas" i], [data-testid="canvas-toggle"]').first();
+			if (await canvasToggle.isVisible({ timeout: 3_000 }).catch(() => false)) {
+				await canvasToggle.click();
 			}
+		}
+		if (await voteBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
+			await voteBtn.click();
+			// Give a moment for the request to fire
+			await page.waitForTimeout(500);
+			expect(voteRequested).toBe(true);
 		}
 	});
 });

@@ -5,6 +5,7 @@ import {
 	seedTrustedPrimaryDevice,
 	setInstallationId,
 } from './auth-helper.js';
+import { navigateClientSide } from './helpers/wait-for.js';
 
 /**
  * Servers and channels E2E tests.
@@ -86,7 +87,7 @@ async function loginAs(page: Page) {
 	await page.fill('#email', TEST_EMAIL);
 	await page.fill('#password', TEST_PASSWORD);
 	await page.getByRole('button', { name: /Sign In/i }).click();
-	await page.waitForURL(/\/explore/, { timeout: 20_000 });
+	await page.waitForURL(/\/explore/, { timeout: 30_000 });
 	await waitForAppReady(page);
 }
 
@@ -139,7 +140,7 @@ test.describe('Channel - authenticated', () => {
 	test.beforeEach(async ({ page }) => {
 		activeServer = await createServerViaApi('E2E Channel Server');
 		await loginAs(page);
-		await page.goto(`/servers/${activeServer.serverId}/channels/${activeServer.channelId}`);
+		await navigateClientSide(page, `/servers/${activeServer.serverId}/channels/${activeServer.channelId}`);
 		const input = page.locator('textarea[aria-label="Message"]').first();
 		await expect(input).toBeEnabled({ timeout: 60_000 });
 	});
@@ -185,7 +186,9 @@ test.describe('Invite links - authenticated', () => {
 	test.beforeEach(async ({ page }) => {
 		activeServer = await createServerViaApi('E2E Invite Server');
 		await loginAs(page);
-		await page.goto(`/servers/${activeServer.serverId}/channels/${activeServer.channelId}`);
+		await navigateClientSide(page, `/servers/${activeServer.serverId}/channels/${activeServer.channelId}`);
+		// Wait for channel to fully load before tests assert on channel UI
+		await expect(page.locator('textarea[aria-label="Message"]').first()).toBeEnabled({ timeout: 60_000 });
 	});
 
 	test('invite link can be generated for a server', async ({ page }) => {

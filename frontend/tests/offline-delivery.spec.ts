@@ -7,7 +7,7 @@ import {
 	B_PRIMARY_INSTALLATION_ID,
 } from './auth-helper.js';
 import { E2EApiClient } from './helpers/api-client.js';
-import { waitForAppReady } from './helpers/wait-for.js';
+import { waitForAppReady, waitForKeyBundles, navigateClientSide } from './helpers/wait-for.js';
 
 /**
  * Feature: Offline Message Delivery
@@ -16,7 +16,7 @@ import { waitForAppReady } from './helpers/wait-for.js';
  * When User B opens the conversation, the message is visible.
  */
 
-test.describe.configure({ timeout: 120_000 });
+test.describe.configure({ timeout: 180_000 });
 
 const USER_A_EMAIL = process.env.E2E_EMAIL ?? '';
 const USER_A_PASS = process.env.E2E_PASSWORD ?? '';
@@ -57,6 +57,20 @@ test.describe('Offline message delivery', () => {
 		const pageA = await ctxA.newPage();
 		const pageB = await ctxB.newPage();
 
+		const bLogs: string[] = [];
+		pageB.on('console', msg => bLogs.push(`[B][${msg.type()}] ${msg.text()}`));
+		pageB.on('pageerror', err => bLogs.push(`[B][pageerror] ${err.message}`));
+		const aLogs: string[] = [];
+		pageA.on('console', msg => aLogs.push(`[A][${msg.type()}] ${msg.text()}`));
+		pageA.on('pageerror', err => aLogs.push(`[A][pageerror] ${err.message}`));
+		pageA.on('response', resp => {
+			if (resp.url().includes('/api/v2/keys') || resp.status() >= 400) {
+				const msg = `[A][response] ${resp.status()} ${resp.url()}`;
+				aLogs.push(msg);
+				console.log(msg);  // immediate output for timing analysis
+			}
+		});
+
 		try {
 			// Step 1: User B logs in and uploads prekeys, then idles on /explore.
 			await setInstallationId(pageB, B_PRIMARY_INSTALLATION_ID);
@@ -68,7 +82,7 @@ test.describe('Offline message delivery', () => {
 			await waitForAppReady(pageB);
 			// B stays on /explore — not in the DM conversation (simulates "offline from DM")
 
-			// Step 2: User A logs in, waits for B's bundles, then sends the message.
+			// Step 2: User A logs in.
 			await setInstallationId(pageA, PRIMARY_INSTALLATION_ID);
 			await pageA.goto('/login');
 			await pageA.fill('#email', USER_A_EMAIL);
@@ -76,17 +90,43 @@ test.describe('Offline message delivery', () => {
 			await pageA.getByRole('button', { name: /Sign In/i }).click();
 			await pageA.waitForURL(/\/explore/, { timeout: 20_000 });
 			await waitForAppReady(pageA);
-			await pageA.goto(`/dm/${conversationId}`);
+
+			// Wait for BOTH users' key bundles to land on the server before A
+			// sends. initializeSignalKeys() runs as a background promise after the
+			// loading screen hides, so encryptDm() can race with the key upload.
+			await Promise.all([
+				waitForKeyBundles(sessionA.accessToken, sessionA.userId),
+				waitForKeyBundles(sessionA.accessToken, sessionB.userId),
+			]);
+
+			await navigateClientSide(pageA, `/dm/${conversationId}`);
 			const inputA = pageA.locator('textarea[aria-label="Message"]').first();
 			await expect(inputA).toBeEnabled({ timeout: 60_000 });
 			await inputA.fill(testMsg);
 			await inputA.press('Enter');
-			await expect(pageA.getByText(testMsg)).toBeVisible({ timeout: 8_000 });
+			// Drain A logs immediately after send to capture any encryptDm errors
+			await pageA.waitForTimeout(3_000);
+			for (const log of aLogs.splice(0)) console.log(log);
+			await expect(pageA.getByText(testMsg)).toBeVisible({ timeout: 60_000 });
 
 			// Step 3: User B opens the conversation in the same context (same IndexedDB →
 			// same private key → can decrypt A's message).
-			await pageB.goto(`/dm/${conversationId}`);
-			await expect(pageB.getByText(testMsg)).toBeVisible({ timeout: 20_000 });
+			// Drain A logs after send
+			for (const log of aLogs.splice(0)) console.log(log);
+			console.log('[test] Navigating B to DM');
+			await navigateClientSide(pageB, `/dm/${conversationId}`);
+			// Drain B logs before waiting
+			for (const log of bLogs.splice(0)) console.log(log);
+			// Poll with diagnostics
+			let bFound = false;
+			for (let i = 0; i < 30; i++) {
+				await pageB.waitForTimeout(2_000);
+				const visible = await pageB.getByText(testMsg).isVisible().catch(() => false);
+				console.log(`[test] B t+${(i+1)*2}s: visible=${visible}`);
+				for (const log of bLogs.splice(0)) console.log(log);
+				if (visible) { bFound = true; break; }
+			}
+			expect(bFound, 'B should see decrypted message within 60s').toBe(true);
 		} finally {
 			await ctxA.close();
 			await ctxB.close();

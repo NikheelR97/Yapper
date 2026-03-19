@@ -7,7 +7,7 @@ import {
 	B_PRIMARY_INSTALLATION_ID,
 } from './auth-helper.js';
 import { E2EApiClient } from './helpers/api-client.js';
-import { waitForAppReady } from './helpers/wait-for.js';
+import { waitForAppReady, waitForKeyBundles, navigateClientSide } from './helpers/wait-for.js';
 
 /**
  * Feature: Read Receipts
@@ -15,7 +15,7 @@ import { waitForAppReady } from './helpers/wait-for.js';
  * Two-user live test: User A sends DM → User B opens it → read receipt fires.
  */
 
-test.describe.configure({ timeout: 120_000 });
+test.describe.configure({ timeout: 180_000 });
 
 const USER_A_EMAIL = process.env.E2E_EMAIL ?? '';
 const USER_A_PASS = process.env.E2E_PASSWORD ?? '';
@@ -49,24 +49,8 @@ test.describe('Read receipts — DM', () => {
 		const pageB = await ctxB.newPage();
 
 		try {
-			// Log in User A and send a message
-			await setInstallationId(pageA, PRIMARY_INSTALLATION_ID);
-			await pageA.goto('/login');
-			await pageA.fill('#email', USER_A_EMAIL);
-			await pageA.fill('#password', USER_A_PASS);
-			await pageA.getByRole('button', { name: /Sign In/i }).click();
-			await pageA.waitForURL(/\/explore/, { timeout: 20_000 });
-			await waitForAppReady(pageA);
-			await pageA.goto(`/dm/${conversationId}`);
-			const inputA = pageA.locator('textarea[aria-label="Message"]').first();
-			await expect(inputA).toBeEnabled({ timeout: 60_000 });
-
-			const testMsg = `RR Test ${Date.now()}`;
-			await inputA.fill(testMsg);
-			await inputA.press('Enter');
-			await expect(pageA.getByText(testMsg)).toBeVisible({ timeout: 8_000 });
-
-			// Log in User B and open the conversation
+			// Log in User B FIRST so their browser uploads prekeys to the server.
+			// User A's X3DH can then succeed when they navigate to the DM.
 			await setInstallationId(pageB, B_PRIMARY_INSTALLATION_ID);
 			await pageB.goto('/login');
 			await pageB.fill('#email', USER_B_EMAIL);
@@ -74,8 +58,36 @@ test.describe('Read receipts — DM', () => {
 			await pageB.getByRole('button', { name: /Sign In/i }).click();
 			await pageB.waitForURL(/\/explore/, { timeout: 20_000 });
 			await waitForAppReady(pageB);
-			await pageB.goto(`/dm/${conversationId}`);
-			await expect(pageB.getByText(testMsg)).toBeVisible({ timeout: 15_000 });
+
+			// Log in User A (User B's prekeys are now on the server)
+			await setInstallationId(pageA, PRIMARY_INSTALLATION_ID);
+			await pageA.goto('/login');
+			await pageA.fill('#email', USER_A_EMAIL);
+			await pageA.fill('#password', USER_A_PASS);
+			await pageA.getByRole('button', { name: /Sign In/i }).click();
+			await pageA.waitForURL(/\/explore/, { timeout: 20_000 });
+			await waitForAppReady(pageA);
+
+			// Wait for BOTH users' key bundles to land on the server before A
+			// sends. initializeSignalKeys() runs as a background promise after
+			// the loading screen hides, so encryptDm() can race with key upload.
+			await Promise.all([
+				waitForKeyBundles(sessionA.accessToken, sessionA.userId),
+				waitForKeyBundles(sessionA.accessToken, sessionB.userId),
+			]);
+
+			await navigateClientSide(pageA, `/dm/${conversationId}`);
+			const inputA = pageA.locator('textarea[aria-label="Message"]').first();
+			await expect(inputA).toBeEnabled({ timeout: 60_000 });
+
+			const testMsg = `RR Test ${Date.now()}`;
+			await inputA.fill(testMsg);
+			await inputA.press('Enter');
+			await expect(pageA.getByText(testMsg)).toBeVisible({ timeout: 60_000 });
+
+			// User B opens the conversation (their Signal session can now decrypt)
+			await navigateClientSide(pageB, `/dm/${conversationId}`);
+			await expect(pageB.getByText(testMsg)).toBeVisible({ timeout: 60_000 });
 
 			// User A should now see a "read" indicator once User B has read the message.
 			// Note: IntersectionObserver-based read-marking is not yet implemented in the

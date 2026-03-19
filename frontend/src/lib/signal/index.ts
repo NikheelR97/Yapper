@@ -326,10 +326,10 @@ export async function setupKeys(): Promise<void> {
   const prekeys = await ensureLocalPreKeys();
 
   await uploadIdentityKey(identity);
-  await uploadSignedPreKey(spk);
   if (prekeys.length > 0) {
     await uploadOneTimePreKeys(prekeys);
   }
+  await uploadSignedPreKey(spk);
   await ks.storeSignalBootstrapComplete(true);
 }
 
@@ -622,10 +622,6 @@ export async function decryptDm(
       peerSignalDeviceId,
     );
     pendingFpBundle = senderBundle;
-
-    if (msg.opk_id != null) {
-      await ks.deletePreKey(msg.opk_id);
-    }
   }
 
   const { plaintext, updatedSession } = await decryptRatchet(
@@ -648,6 +644,13 @@ export async function decryptDm(
       b64ToBytes(pendingFpBundle.identity_sig_key),
     );
     await requirePeerKeyUnchanged(peerId, pendingFpBundle.deviceId, senderFp);
+  }
+
+  // Delete consumed OPK only after successful decryption — if we deleted
+  // eagerly and decryptRatchet failed (e.g. old undecryptable message), a
+  // subsequent message referencing the same opk_id would lose the key.
+  if (pendingFpBundle && msg.opk_id != null) {
+    await ks.deletePreKey(msg.opk_id);
   }
 
   await ks.storeSession(updatedSession);

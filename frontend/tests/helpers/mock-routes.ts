@@ -258,38 +258,77 @@ export async function mockParentalEndpoints(
 
 // ─── Canvas ───────────────────────────────────────────────────────────────────
 
+export interface MockPoll {
+	id: string;
+	question: string;
+	options: Array<{ index: number; text: string }>;
+	vote_counts?: Record<string, number>;
+}
+
 export async function mockCanvasEndpoints(
 	page: Page,
 	data: {
-		music?: { title: string; artist: string; albumArt?: string | null } | null;
-		polls?: Array<{ id: string; question: string; options: Array<{ id: string; text: string; votes: number }> }>;
+		music?: { title: string; artist: string; album_art_url?: string | null; source_url?: string | null } | null;
+		polls?: MockPoll[];
 		clips?: unknown[];
 	} = {},
 ): Promise<void> {
-	const music = data.music ?? { title: 'Test Track', artist: 'E2E Artist', albumArt: null };
-	const polls = data.polls ?? [
+	const music = data.music ?? {
+		title: 'Test Track',
+		artist: 'E2E Artist',
+		album_art_url: null,
+		source_url: null,
+		set_by: null,
+		updated_at: null,
+	};
+	const polls: MockPoll[] = data.polls ?? [
 		{
 			id: 'poll-1',
 			question: 'Best programming language?',
 			options: [
-				{ id: 'o1', text: 'Rust', votes: 10 },
-				{ id: 'o2', text: 'TypeScript', votes: 8 },
+				{ index: 0, text: 'Rust' },
+				{ index: 1, text: 'TypeScript' },
 			],
+			vote_counts: { '0': 10, '1': 8 },
 		},
 	];
 	const clips = data.clips ?? [];
 
-	await page.route(`**/api/v1/servers/*/canvas`, async (route) => {
+	// Canvas state — backend path is /api/v1/canvas/servers/:server_id
+	await page.route(`**/api/v1/canvas/servers/*`, async (route) => {
+		if (route.request().url().includes('/clips')) {
+			// clips sub-path — handled separately below
+			await route.continue();
+			return;
+		}
+		const normalizedPolls = polls.map((p) => ({
+			id: p.id,
+			channel_id: 'mock-channel',
+			question: p.question,
+			options: p.options,
+			vote_counts: p.vote_counts ?? {},
+			ends_at: null,
+			created_at: new Date().toISOString(),
+		}));
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
-			body: JSON.stringify({ music, polls, clips }),
+			body: JSON.stringify({ music, polls: normalizedPolls, clips }),
 		});
 	});
 
-	// Poll vote
-	await page.route(`**/api/v1/servers/*/polls/*/vote`, async (route) => {
-		await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+	// Clips sub-route
+	await page.route(`**/api/v1/canvas/servers/*/clips`, async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ clips }),
+		});
+	});
+
+	// Poll vote — backend path is /api/v1/canvas/polls/:poll_id/vote
+	await page.route(`**/api/v1/canvas/polls/*/vote`, async (route) => {
+		await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ vote_counts: {} }) });
 	});
 }
 

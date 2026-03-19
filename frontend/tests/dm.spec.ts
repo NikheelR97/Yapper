@@ -216,6 +216,7 @@ test.describe('Seeded DM flow', () => {
 
 	let conversationId = '';
 	let userBLabels: string[] = [];
+	let userAId = '';
 	let userBId = '';
 	let sessionAAccessToken = '';
 
@@ -242,6 +243,7 @@ test.describe('Seeded DM flow', () => {
 			'E2E DM Browser B',
 		);
 		conversationId = await createDmConversation(sessionA, sessionB.userId);
+		userAId = sessionA.userId;
 		userBId = sessionB.userId;
 		sessionAAccessToken = sessionA.accessToken;
 		userBLabels = [sessionB.username, sessionB.displayName].filter(
@@ -255,6 +257,10 @@ test.describe('Seeded DM flow', () => {
 	test('User A can open the seeded DM with User B and send a message', async ({ page, browser }) => {
 		// B login + Signal key bootstrap (~75 s) + A's navigation and send (~30 s)
 		test.setTimeout(180_000);
+
+		// Capture browser console for diagnostics
+		const consoleLogs: string[] = [];
+		page.on('console', msg => consoleLogs.push(`[browser][${msg.type()}] ${msg.text()}`));
 
 		// Open the conversation while B logs in concurrently to upload their prekeys.
 		// encryptDm(peerId) fetches B's key bundle from the server — B must have
@@ -287,20 +293,44 @@ test.describe('Seeded DM flow', () => {
 
 		const input = page.locator('textarea[aria-label="Message"]').first();
 		await expect(input).toBeVisible({ timeout: 20_000 });
-		await expect(input).toBeEnabled({ timeout: 20_000 });
+		// loadMessages sequentially decrypts all old messages (many will fail with
+		// OperationError in fresh IDB contexts) — this can take >20s with 30+ msgs.
+		await expect(input).toBeEnabled({ timeout: 60_000 });
+		console.log('[test] Input enabled');
 
 		// Wait for B's browser to finish loading (loading screen gone).
-		// Then poll the API until B's key bundles are confirmed on the server —
-		// the app's key-upload runs async after the loading screen hides, so we
-		// need the hard API signal rather than the UI signal.
+		// Then poll the API until BOTH users' key bundles are confirmed on the
+		// server. initializeSignalKeys() runs as a background promise after the
+		// loading screen hides (boot-perf fix), so encryptDm() calling
+		// fetchKeyBundles(myUserId) can fail if A's own keys aren't uploaded yet.
 		await bKeysDone;
-		await waitForBundles(sessionAAccessToken, userBId);
+		console.log('[test] bKeysDone resolved');
+		await Promise.all([
+			waitForBundles(sessionAAccessToken, userAId),
+			waitForBundles(sessionAAccessToken, userBId),
+		]);
+		console.log('[test] waitForBundles resolved');
 
 		const testMsg = `E2E DM test ${Date.now()}`;
 		await input.fill(testMsg);
+		console.log('[test] Pressing Enter at', new Date().toISOString());
 		await input.press('Enter');
 
-			await expect(page.getByText(testMsg)).toBeVisible({ timeout: 20_000 });
+		// Poll every 2s to see if message appeared
+		let found = false;
+		for (let i = 0; i < 30; i++) {
+			await page.waitForTimeout(2_000);
+			const isVisible = await page.getByText(testMsg).isVisible().catch(() => false);
+			const isDisabled = await input.isDisabled().catch(() => false);
+			console.log(`[test] t+${(i+1)*2}s: msg visible=${isVisible}, input disabled=${isDisabled}`);
+			if (consoleLogs.length > 0) {
+				const recent = consoleLogs.splice(0);
+				for (const log of recent) console.log(log);
+			}
+			if (isVisible) { found = true; break; }
+		}
+
+		expect(found, 'Message should be visible within 60s').toBe(true);
 		} finally {
 			await ctxB.close();
 		}

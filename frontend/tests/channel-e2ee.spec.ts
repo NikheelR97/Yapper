@@ -7,6 +7,7 @@ import {
 	PRIMARY_INSTALLATION_ID,
 	B_PRIMARY_INSTALLATION_ID,
 } from './auth-helper.js';
+import { navigateClientSide } from './helpers/wait-for.js';
 
 /**
  * Cross-user channel E2E encryption tests.
@@ -208,7 +209,8 @@ test.describe('Channel E2EE — cross-user message decryption', () => {
 				]);
 
 				// ── User A navigates and sends ────────────────────────────────────────
-				await pageA.goto(`/servers/${serverId}/channels/${channelId}`);
+				// Use client-side navigation to avoid a hard reload that resets authStore
+				await navigateClientSide(pageA, `/servers/${serverId}/channels/${channelId}`);
 				const inputA = pageA.locator('textarea[aria-label="Message"]').first();
 				await expect(inputA).toBeEnabled({ timeout: 60_000 });
 				await inputA.fill(testMsg);
@@ -216,7 +218,7 @@ test.describe('Channel E2EE — cross-user message decryption', () => {
 				await expect(pageA.getByText(testMsg)).toBeVisible({ timeout: 15_000 });
 
 				// ── User B opens the channel using the same context (same keys) ────────
-				await pageB.goto(`/servers/${serverId}/channels/${channelId}`);
+				await navigateClientSide(pageB, `/servers/${serverId}/channels/${channelId}`);
 				const inputB = pageB.locator('textarea[aria-label="Message"]').first();
 				await expect(inputB).toBeEnabled({ timeout: 60_000 });
 				await expect(pageB.getByText(testMsg)).toBeVisible({ timeout: 20_000 });
@@ -272,7 +274,7 @@ test.describe('Channel E2EE — cross-user message decryption', () => {
 				]);
 
 				// A navigates, sends first message (distributes SenderKey to B)
-				await pageA.goto(`/servers/${serverId}/channels/${channelId}`);
+				await navigateClientSide(pageA, `/servers/${serverId}/channels/${channelId}`);
 				const inputA = pageA.locator('textarea[aria-label="Message"]').first();
 				await expect(inputA).toBeEnabled({ timeout: 60_000 });
 				await inputA.fill(msgFromA);
@@ -280,7 +282,7 @@ test.describe('Channel E2EE — cross-user message decryption', () => {
 				await expect(pageA.getByText(msgFromA)).toBeVisible({ timeout: 15_000 });
 
 				// B navigates (same context → same private key → decrypts A's distribution)
-				await pageB.goto(`/servers/${serverId}/channels/${channelId}`);
+				await navigateClientSide(pageB, `/servers/${serverId}/channels/${channelId}`);
 				const inputB = pageB.locator('textarea[aria-label="Message"]').first();
 				await expect(inputB).toBeEnabled({ timeout: 60_000 });
 				await expect(pageB.getByText(msgFromA)).toBeVisible({ timeout: 20_000 });
@@ -294,7 +296,9 @@ test.describe('Channel E2EE — cross-user message decryption', () => {
 				// A re-navigates to the channel — this triggers prepareChannel() which
 				// fetches B's pending SenderKey distribution (stored server-side) and
 				// decrypts B's reply using the newly received distribution.
-				await pageA.goto(`/servers/${serverId}/channels/${channelId}`);
+				// Navigate away then back to trigger prepareChannel() without a hard reload
+				await navigateClientSide(pageA, '/explore');
+				await navigateClientSide(pageA, `/servers/${serverId}/channels/${channelId}`);
 				const inputA2 = pageA.locator('textarea[aria-label="Message"]').first();
 				await expect(inputA2).toBeEnabled({ timeout: 60_000 });
 				await expect(pageA.getByText(msgFromB)).toBeVisible({ timeout: 20_000 });

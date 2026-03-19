@@ -6,7 +6,7 @@ import {
 } from './auth-helper.js';
 import { E2EApiClient } from './helpers/api-client.js';
 import { mockMediaStream } from './helpers/mock-routes.js';
-import { waitForAppReady } from './helpers/wait-for.js';
+import { waitForAppReady, navigateClientSide } from './helpers/wait-for.js';
 
 /**
  * Feature: Audio Yaps and Video Clips
@@ -51,17 +51,23 @@ test.describe('Media messaging — Yap recorder', () => {
 		await page.getByRole('button', { name: /Sign In/i }).click();
 		await page.waitForURL(/\/explore/, { timeout: 20_000 });
 		await waitForAppReady(page);
-		await page.goto(`/servers/${serverId}/channels/${channelId}`);
+		await navigateClientSide(page, `/servers/${serverId}/channels/${channelId}`);
 		await expect(page.locator('textarea[aria-label="Message"]').first()).toBeEnabled({ timeout: 60_000 });
 
-		// Find the Yap recorder button
+		// Find the Yap recorder button — restrict to <button> to avoid matching
+		// the Yapper logo link (aria-label="Yapper home") in the top nav.
 		const yapBtn = page.locator(
-			'[aria-label*="Yap" i], [aria-label*="Record a Yap" i], [data-testid="yap-btn"]',
+			'button[aria-label*="Yap" i], button[aria-label*="Record a Yap" i], [data-testid="yap-btn"]',
 		).first();
 
 		if (await yapBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
-			// force:true bypasses disabled state that may linger briefly after channel key setup
-			await yapBtn.click({ force: true });
+			// Wait for button to be enabled (disabled prop may briefly linger during key setup)
+			await expect(yapBtn).toBeEnabled({ timeout: 10_000 });
+			// Use native JS click to bypass any Playwright interception issues
+			await page.evaluate(() => {
+				const btn = document.querySelector('button[aria-label="Record a Yap"]') as HTMLButtonElement | null;
+				btn?.click();
+			});
 
 			// YapRecorder component should appear with start/stop/cancel controls
 			await expect(
@@ -112,16 +118,20 @@ test.describe('Media messaging — Clip recorder', () => {
 		await page.getByRole('button', { name: /Sign In/i }).click();
 		await page.waitForURL(/\/explore/, { timeout: 20_000 });
 		await waitForAppReady(page);
-		await page.goto(`/servers/${serverId}/channels/${channelId}`);
+		await navigateClientSide(page, `/servers/${serverId}/channels/${channelId}`);
 		await expect(page.locator('textarea[aria-label="Message"]').first()).toBeEnabled({ timeout: 60_000 });
 
-		// Find the Clip recorder button
+		// Find the Clip recorder button — restrict to <button> to be safe
 		const clipBtn = page.locator(
-			'[aria-label*="Clip" i], [aria-label*="Record a Clip" i], [data-testid="clip-btn"]',
+			'button[aria-label*="Clip" i], button[aria-label*="Record a Clip" i], [data-testid="clip-btn"]',
 		).first();
 
 		if (await clipBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
-			await clipBtn.click({ force: true });
+			await expect(clipBtn).toBeEnabled({ timeout: 10_000 });
+			await page.evaluate(() => {
+				const btn = document.querySelector('button[aria-label="Record a Clip"]') as HTMLButtonElement | null;
+				btn?.click();
+			});
 
 			// ClipRecorder component should appear with video preview and controls
 			await expect(

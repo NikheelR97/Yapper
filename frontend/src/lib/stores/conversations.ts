@@ -160,52 +160,82 @@ export async function loadMessages(conversationId: string, peerId: string): Prom
 	const raw = mergeDmHistoryMessages(remoteMessages, cachedMessages);
 	await storeDmHistoryMessages(remoteMessages);
 
-	const messages: Message[] = await Promise.all(
-		raw.map(async (message) => {
-			try {
-				const text = await decryptDm(
-					conversationId,
-					peerId,
-					message.sender_device_id,
-					message.sender_signal_device_id,
-					{
-						ciphertext: message.ciphertext,
-						ephemeral_key: message.ephemeral_key,
-						opk_id: message.opk_id,
-						msg_num: message.msg_num,
-						ratchet_pub: message.ratchet_pub,
-						previous_chain_len: message.previous_chain_len,
-						crypto_version: message.crypto_version,
-					}
-				);
-				return {
-					id: message.id,
-					conversationId: message.conversation_id,
-					senderId: message.sender_id,
-					text,
-					decryptError: false,
-					createdAt: message.created_at,
-					messageType: inferDmMessageType(text),
-				};
-			} catch {
-				return {
-					id: message.id,
-					conversationId: message.conversation_id,
-					senderId: message.sender_id,
-					text: null,
-					decryptError: true,
-					createdAt: message.created_at,
-					messageType: 'text',
-				};
-			}
-		})
-	);
+	// Decrypt sequentially — concurrent decryptDm calls race to create/update
+	// the same IDB session, stomping each other's ratchet state.
+	const messages: Message[] = [];
+	for (const message of raw) {
+		try {
+			const text = await decryptDm(
+				conversationId,
+				peerId,
+				message.sender_device_id,
+				message.sender_signal_device_id,
+				{
+					ciphertext: message.ciphertext,
+					ephemeral_key: message.ephemeral_key,
+					opk_id: message.opk_id,
+					msg_num: message.msg_num,
+					ratchet_pub: message.ratchet_pub,
+					previous_chain_len: message.previous_chain_len,
+					crypto_version: message.crypto_version,
+				}
+			);
+			messages.push({
+				id: message.id,
+				conversationId: message.conversation_id,
+				senderId: message.sender_id,
+				text,
+				decryptError: false,
+				createdAt: message.created_at,
+				messageType: inferDmMessageType(text),
+			});
+		} catch (e) {
+			console.error('[loadMessages] decryptDm failed for', message.id, e);
+			messages.push({
+				id: message.id,
+				conversationId: message.conversation_id,
+				senderId: message.sender_id,
+				text: null,
+				decryptError: true,
+				createdAt: message.created_at,
+				messageType: 'text',
+			});
+		}
+	}
 
-	store.set(messages);
+	// Merge with the current store:
+	// 1. Prefer successfully-decrypted messages already in the store (WS or optimistic)
+	//    over a new decryptError from replay-detection.
+	// 2. Preserve optimistic sends that are in the current store but not yet in the
+	//    API response (race: user sent while loadMessages was in flight).
+	store.update(current => {
+		const currentById = new Map(current.map(m => [m.id, m]));
+		const apiIds = new Set(messages.map(m => m.id));
+		const merged = messages.map(m => {
+			if (m.decryptError) {
+				const existing = currentById.get(m.id);
+				if (existing && !existing.decryptError && existing.text !== null) {
+					return existing;
+				}
+			}
+			return m;
+		});
+		// Keep any messages that are in the current store but not in the API response
+		// (e.g. optimistic sends that arrived after the API GET was dispatched).
+		for (const m of current) {
+			if (!apiIds.has(m.id)) {
+				merged.push(m);
+			}
+		}
+		merged.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+		return merged;
+	});
 }
 
 export async function sendMessage(conversationId: string, peerId: string, text: string): Promise<void> {
+	console.debug('[sendMessage] encrypting for convId=', conversationId, 'peerId=', peerId);
 	const encrypted = await encryptDm(conversationId, peerId, text);
+	console.debug('[sendMessage] encrypted envelopes=', encrypted.envelopes.length, 'posting...');
 	const response = await api.post<{ status: string; message_id: string; created_at: string }>(
 		`/api/v2/conversations/${conversationId}/messages`,
 		{
@@ -269,7 +299,8 @@ export function registerDmHandler(): () => void {
 					crypto_version: message.crypto_version,
 				}
 			);
-		} catch {
+		} catch (e) {
+			console.error('[WS dm_v2] decryptDm failed', e);
 			decryptError = true;
 		}
 
