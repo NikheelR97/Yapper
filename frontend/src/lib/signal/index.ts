@@ -706,7 +706,11 @@ export async function decryptChannel(
     encrypted,
     opts,
   );
-  await ks.storeReceiverKey(updatedRecord);
+  // Skip IDB write when the record hasn't changed (historical decrypts
+  // reuse initialChainKey and leave the current chain/iteration intact).
+  if (updatedRecord.chainKey !== record.chainKey) {
+    await ks.storeReceiverKey(updatedRecord);
+  }
   return new TextDecoder().decode(plaintext);
 }
 

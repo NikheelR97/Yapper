@@ -9,6 +9,8 @@ import { writable, get } from 'svelte/store';
 import { api } from '$api/client.js';
 import { decryptDm, encryptDm } from '$signal/index.js';
 import {
+	beginBatch,
+	endBatch,
 	listDmHistoryMessages,
 	storeDmHistoryMessages,
 	type CachedDmHistoryMessage,
@@ -160,76 +162,93 @@ export async function loadMessages(conversationId: string, peerId: string): Prom
 	const raw = mergeDmHistoryMessages(remoteMessages, cachedMessages);
 	await storeDmHistoryMessages(remoteMessages);
 
-	// Decrypt sequentially — concurrent decryptDm calls race to create/update
-	// the same IDB session, stomping each other's ratchet state.
-	const messages: Message[] = [];
-	for (const message of raw) {
-		try {
-			const text = await decryptDm(
-				conversationId,
-				peerId,
-				message.sender_device_id,
-				message.sender_signal_device_id,
-				{
-					ciphertext: message.ciphertext,
-					ephemeral_key: message.ephemeral_key,
-					opk_id: message.opk_id,
-					msg_num: message.msg_num,
-					ratchet_pub: message.ratchet_pub,
-					previous_chain_len: message.previous_chain_len,
-					crypto_version: message.crypto_version,
-				}
-			);
-			messages.push({
-				id: message.id,
-				conversationId: message.conversation_id,
-				senderId: message.sender_id,
-				text,
-				decryptError: false,
-				createdAt: message.created_at,
-				messageType: inferDmMessageType(text),
-			});
-		} catch (e) {
-			console.error('[loadMessages] decryptDm failed for', message.id, e);
-			messages.push({
-				id: message.id,
-				conversationId: message.conversation_id,
-				senderId: message.sender_id,
-				text: null,
-				decryptError: true,
-				createdAt: message.created_at,
-				messageType: 'text',
-			});
+	// Identify messages already decrypted in the current store (from WS or prior load)
+	const current = get(store);
+	const alreadyDecrypted = new Map<string, Message>();
+	for (const m of current) {
+		if (m.text !== null && !m.decryptError) {
+			alreadyDecrypted.set(m.id, m);
 		}
 	}
 
-	// Merge with the current store:
-	// 1. Prefer successfully-decrypted messages already in the store (WS or optimistic)
-	//    over a new decryptError from replay-detection.
-	// 2. Preserve optimistic sends that are in the current store but not yet in the
-	//    API response (race: user sent while loadMessages was in flight).
-	store.update(current => {
-		const currentById = new Map(current.map(m => [m.id, m]));
-		const apiIds = new Set(messages.map(m => m.id));
-		const merged = messages.map(m => {
-			if (m.decryptError) {
-				const existing = currentById.get(m.id);
-				if (existing && !existing.decryptError && existing.text !== null) {
-					return existing;
-				}
+	// Show message skeletons immediately so the UI renders the list right away
+	const apiIds = new Set(raw.map(m => m.id));
+	const placeholders: Message[] = raw.map(m => {
+		const existing = alreadyDecrypted.get(m.id);
+		if (existing) return existing;
+		return {
+			id: m.id,
+			conversationId: m.conversation_id,
+			senderId: m.sender_id,
+			text: null,
+			decryptError: false,
+			createdAt: m.created_at,
+			messageType: 'text',
+		};
+	});
+	// Preserve optimistic sends not yet in the API response
+	for (const m of current) {
+		if (!apiIds.has(m.id)) placeholders.push(m);
+	}
+	placeholders.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+	store.set(placeholders);
+
+	// Decrypt sequentially with coalesced IDB writes.
+	// beginBatch() makes storeSession update only the in-memory cache per message;
+	// endBatch() flushes all dirty sessions in a single IDB transaction at the end.
+	const BATCH_SIZE = 10;
+	const batch = new Map<string, { text: string | null; decryptError: boolean; messageType: string }>();
+
+	beginBatch();
+	try {
+		for (let i = 0; i < raw.length; i++) {
+			const message = raw[i];
+			if (alreadyDecrypted.has(message.id)) continue;
+
+			try {
+				const text = await decryptDm(
+					conversationId,
+					peerId,
+					message.sender_device_id,
+					message.sender_signal_device_id,
+					{
+						ciphertext: message.ciphertext,
+						ephemeral_key: message.ephemeral_key,
+						opk_id: message.opk_id,
+						msg_num: message.msg_num,
+						ratchet_pub: message.ratchet_pub,
+						previous_chain_len: message.previous_chain_len,
+						crypto_version: message.crypto_version,
+					}
+				);
+				batch.set(message.id, {
+					text,
+					decryptError: false,
+					messageType: inferDmMessageType(text),
+				});
+			} catch (e) {
+				console.error('[loadMessages] decryptDm failed for', message.id, e);
+				batch.set(message.id, { text: null, decryptError: true, messageType: 'text' });
 			}
-			return m;
-		});
-		// Keep any messages that are in the current store but not in the API response
-		// (e.g. optimistic sends that arrived after the API GET was dispatched).
-		for (const m of current) {
-			if (!apiIds.has(m.id)) {
-				merged.push(m);
+
+			// Flush decrypted messages to the UI in batches for progressive rendering
+			if (batch.size >= BATCH_SIZE || i === raw.length - 1) {
+				const flush = new Map(batch);
+				batch.clear();
+				store.update(msgs =>
+					msgs.map(m => {
+						const d = flush.get(m.id);
+						if (!d) return m;
+						// Never overwrite an already-decrypted message with a decrypt error
+						if (d.decryptError && m.text !== null && !m.decryptError) return m;
+						return { ...m, ...d };
+					})
+				);
 			}
 		}
-		merged.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
-		return merged;
-	});
+	} finally {
+		await endBatch();
+	}
 }
 
 export async function sendMessage(conversationId: string, peerId: string, text: string): Promise<void> {

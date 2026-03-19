@@ -86,6 +86,120 @@ let _dbPromise: Promise<IDBPDatabase> | null = null;
 let _scopeKey: string | null = null;
 let _desktopSecretSnapshot: SignalSecretSnapshot | null = null;
 
+// ─── In-memory caches ──────────────────────────────────────────────────────────
+// Eliminates redundant IDB + AES-GCM round-trips during batch decryption.
+// Cleared on scope change (configureSignalStore / resetSignalStoreScope).
+const _sessionCache = new Map<string, Session | null>();
+const _receiverKeyCache = new Map<string, SenderKeyRecord | null>();
+
+// ─── Batch mode (write coalescing) ─────────────────────────────────────────────
+// In batch mode, writes go to the in-memory cache only. Call endBatch() to
+// flush all dirty entries to IDB in a single transaction.
+let _batchMode = false;
+const _batchDirtySessions = new Set<string>();
+const _batchDirtyReceiverKeys = new Set<string>();
+
+function clearInMemoryCaches(): void {
+  _sessionCache.clear();
+  _receiverKeyCache.clear();
+  _batchDirtySessions.clear();
+  _batchDirtyReceiverKeys.clear();
+  _batchMode = false;
+}
+
+/**
+ * Enter batch mode — subsequent storeSession / storeReceiverKey calls update
+ * the in-memory cache but defer the IDB write until endBatch() is called.
+ */
+export function beginBatch(): void {
+  _batchMode = true;
+}
+
+/**
+ * Flush all deferred writes to IDB in a single transaction and exit batch mode.
+ */
+export async function endBatch(): Promise<void> {
+  _batchMode = false;
+
+  if (!_batchDirtySessions.size && !_batchDirtyReceiverKeys.size) {
+    return;
+  }
+
+  if (useDesktopVault()) {
+    const snapshot = await requireDesktopSecretSnapshot();
+    let changed = false;
+    for (const sessionId of _batchDirtySessions) {
+      const session = _sessionCache.get(sessionId);
+      if (session) {
+        snapshot.sessions = mergeByKey(
+          snapshot.sessions,
+          [session],
+          (s) => s.sessionId,
+        );
+        changed = true;
+      }
+    }
+    for (const rkId of _batchDirtyReceiverKeys) {
+      const record = _receiverKeyCache.get(rkId);
+      if (record) {
+        snapshot.receiverKeys = mergeByKey(
+          snapshot.receiverKeys,
+          [record],
+          (r) => receiverKeyId(r.channelId, r.senderId, r.senderDeviceId),
+        );
+        changed = true;
+      }
+    }
+    if (changed) await persistDesktopSecretSnapshot(snapshot);
+    _batchDirtySessions.clear();
+    _batchDirtyReceiverKeys.clear();
+    return;
+  }
+
+  // Pre-encrypt all dirty values outside the IDB transaction
+  const sessionEntries: unknown[] = [];
+  for (const sessionId of _batchDirtySessions) {
+    const session = _sessionCache.get(sessionId);
+    if (session) {
+      sessionEntries.push(await encryptForTx("dm_sessions", session));
+    }
+  }
+
+  const rkEntries: Array<{ encrypted: unknown; idbKey: string }> = [];
+  for (const rkId of _batchDirtyReceiverKeys) {
+    const record = _receiverKeyCache.get(rkId);
+    if (record) {
+      rkEntries.push({
+        encrypted: await encryptForTx("receiver_keys", record),
+        idbKey: receiverKeyId(
+          record.channelId,
+          record.senderId,
+          record.senderDeviceId,
+        ),
+      });
+    }
+  }
+
+  _batchDirtySessions.clear();
+  _batchDirtyReceiverKeys.clear();
+
+  if (!sessionEntries.length && !rkEntries.length) return;
+
+  const storeNames: string[] = [];
+  if (sessionEntries.length) storeNames.push("dm_sessions");
+  if (rkEntries.length) storeNames.push("receiver_keys");
+
+  const db = await getDB();
+  const tx = db.transaction(storeNames, "readwrite");
+  for (const enc of sessionEntries) {
+    await tx.objectStore("dm_sessions").put(enc);
+  }
+  for (const { encrypted, idbKey } of rkEntries) {
+    await tx.objectStore("receiver_keys").put(encrypted, idbKey);
+  }
+  await tx.done;
+}
+
 async function getDB(): Promise<IDBPDatabase> {
   if (_db) return _db;
   if (!_dbPromise) {
@@ -157,6 +271,7 @@ export async function configureSignalStore(
 
   _scopeKey = nextScope;
   _desktopSecretSnapshot = null;
+  clearInMemoryCaches();
   _db?.close();
   _db = null;
   _dbPromise = null;
@@ -175,6 +290,7 @@ export async function configureSignalStore(
 export function resetSignalStoreScope(): void {
   _scopeKey = null;
   _desktopSecretSnapshot = null;
+  clearInMemoryCaches();
   clearIdbEncryptionKey();
   _db?.close();
   _db = null;
@@ -703,6 +819,13 @@ export async function loadLatestSignedPreKey(): Promise<SignedPreKey | null> {
 // ─── Sessions ─────────────────────────────────────────────────────────────────
 
 export async function storeSession(session: Session): Promise<void> {
+  _sessionCache.set(session.sessionId, session);
+
+  if (_batchMode) {
+    _batchDirtySessions.add(session.sessionId);
+    return;
+  }
+
   if (useDesktopVault()) {
     const snapshot = await requireDesktopSecretSnapshot();
     await persistDesktopSecretSnapshot({
@@ -721,16 +844,24 @@ export async function storeSession(session: Session): Promise<void> {
 }
 
 export async function loadSession(sessionId: string): Promise<Session | null> {
-  if (useDesktopVault()) {
-    return (
-      (await requireDesktopSecretSnapshot()).sessions.find(
-        (record) => record.sessionId === sessionId,
-      ) ?? null
-    );
+  if (_sessionCache.has(sessionId)) {
+    return _sessionCache.get(sessionId) ?? null;
   }
 
-  const db = await getDB();
-  return (await secGet<Session>(db, "dm_sessions", sessionId)) ?? null;
+  let result: Session | null = null;
+
+  if (useDesktopVault()) {
+    result =
+      (await requireDesktopSecretSnapshot()).sessions.find(
+        (record) => record.sessionId === sessionId,
+      ) ?? null;
+  } else {
+    const db = await getDB();
+    result = (await secGet<Session>(db, "dm_sessions", sessionId)) ?? null;
+  }
+
+  _sessionCache.set(sessionId, result);
+  return result;
 }
 
 export async function listSessionsForPeer(
@@ -753,6 +884,8 @@ export async function listSessionsForPeer(
 }
 
 export async function deleteSession(sessionId: string): Promise<void> {
+  _sessionCache.delete(sessionId);
+
   if (useDesktopVault()) {
     const snapshot = await requireDesktopSecretSnapshot();
     await persistDesktopSecretSnapshot({
@@ -830,6 +963,18 @@ function receiverKeyId(
 }
 
 export async function storeReceiverKey(record: SenderKeyRecord): Promise<void> {
+  const cacheKey = receiverKeyId(
+    record.channelId,
+    record.senderId,
+    record.senderDeviceId,
+  );
+  _receiverKeyCache.set(cacheKey, record);
+
+  if (_batchMode) {
+    _batchDirtyReceiverKeys.add(cacheKey);
+    return;
+  }
+
   if (useDesktopVault()) {
     const snapshot = await requireDesktopSecretSnapshot();
     await persistDesktopSecretSnapshot({
@@ -842,12 +987,7 @@ export async function storeReceiverKey(record: SenderKeyRecord): Promise<void> {
   }
 
   const db = await getDB();
-  await secPut(
-    db,
-    "receiver_keys",
-    record,
-    receiverKeyId(record.channelId, record.senderId, record.senderDeviceId),
-  );
+  await secPut(db, "receiver_keys", record, cacheKey);
 }
 
 export async function loadReceiverKey(
@@ -855,47 +995,51 @@ export async function loadReceiverKey(
   senderId: string,
   senderDeviceId = "legacy",
 ): Promise<SenderKeyRecord | null> {
+  const cacheKey = receiverKeyId(channelId, senderId, senderDeviceId);
+  if (_receiverKeyCache.has(cacheKey)) {
+    return _receiverKeyCache.get(cacheKey) ?? null;
+  }
+
+  let result: SenderKeyRecord | null = null;
+
   if (useDesktopVault()) {
     const snapshot = await requireDesktopSecretSnapshot();
-    const exact =
+    result =
       snapshot.receiverKeys.find(
         (record) =>
           record.channelId === channelId &&
           record.senderId === senderId &&
           record.senderDeviceId === senderDeviceId,
       ) ?? null;
-    if (exact) return exact;
-    if (senderDeviceId !== "legacy") {
-      return (
+    if (!result && senderDeviceId !== "legacy") {
+      result =
         snapshot.receiverKeys.find(
           (record) =>
             record.channelId === channelId &&
             record.senderId === senderId &&
             record.senderDeviceId === "legacy",
-        ) ?? null
-      );
+        ) ?? null;
     }
-    return null;
-  }
-
-  const db = await getDB();
-  const exact =
-    (await secGet<SenderKeyRecord>(
-      db,
-      "receiver_keys",
-      receiverKeyId(channelId, senderId, senderDeviceId),
-    )) ?? null;
-  if (exact) return exact;
-  if (senderDeviceId !== "legacy") {
-    return (
+  } else {
+    const db = await getDB();
+    result =
       (await secGet<SenderKeyRecord>(
         db,
         "receiver_keys",
-        receiverKeyId(channelId, senderId, "legacy"),
-      )) ?? null
-    );
+        receiverKeyId(channelId, senderId, senderDeviceId),
+      )) ?? null;
+    if (!result && senderDeviceId !== "legacy") {
+      result =
+        (await secGet<SenderKeyRecord>(
+          db,
+          "receiver_keys",
+          receiverKeyId(channelId, senderId, "legacy"),
+        )) ?? null;
+    }
   }
-  return null;
+
+  _receiverKeyCache.set(cacheKey, result);
+  return result;
 }
 
 export async function deleteReceiverKey(
@@ -903,6 +1047,10 @@ export async function deleteReceiverKey(
   senderId: string,
   senderDeviceId = "legacy",
 ): Promise<void> {
+  _receiverKeyCache.delete(
+    receiverKeyId(channelId, senderId, senderDeviceId),
+  );
+
   if (useDesktopVault()) {
     const snapshot = await requireDesktopSecretSnapshot();
     await persistDesktopSecretSnapshot({
@@ -1143,6 +1291,8 @@ export async function importSignalSnapshot(snapshot: {
   channelHistory?: CachedChannelHistoryMessage[];
   bootstrapComplete?: boolean;
 }): Promise<void> {
+  clearInMemoryCaches();
+
   if (useDesktopVault()) {
     const current = await requireDesktopSecretSnapshot();
     await persistDesktopSecretSnapshot({
@@ -1274,6 +1424,7 @@ export async function importSignalSnapshot(snapshot: {
 }
 
 export async function clearCurrentSignalStore(): Promise<void> {
+  clearInMemoryCaches();
   const dbName = currentDbName();
   if (useDesktopVault() && _scopeKey) {
     await clearDesktopSignalVaultRecord(_scopeKey);

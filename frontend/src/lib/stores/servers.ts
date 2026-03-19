@@ -18,6 +18,8 @@ import { onWsMessage, sendChannelMessage as wsSendChannel } from '$stores/ws.js'
 import { authStore } from '$stores/auth.js';
 import type { Message } from '$stores/conversations.js';
 import {
+	beginBatch,
+	endBatch,
 	getCachedEmojis,
 	listChannelHistoryMessages,
 	setCachedEmojis,
@@ -280,67 +282,74 @@ export async function loadChannelMessages(channelId: string): Promise<void> {
 	await storeChannelHistoryMessages(remoteMessages);
 
 	let hadDecryptFailure = false;
-	const messages: Message[] = await Promise.all(
-		raw.map(async (m) => {
-			// Bot messages use plaintext column; all user messages use ciphertext
-			if (m.plaintext) {
-				return {
-					id: m.id,
-					conversationId: m.channel_id,
-					senderId: m.sender_id,
-					text: m.plaintext,
-					decryptError: false,
-					createdAt: m.created_at,
-					messageType: m.message_type ?? 'text',
-				};
-			}
-			if (!m.ciphertext) {
-				return {
-					id: m.id,
-					conversationId: m.channel_id,
-					senderId: m.sender_id,
-					text: null,
-					decryptError: true,
-					createdAt: m.created_at,
-					messageType: 'text',
-				};
-			}
-			try {
-				const text = await decryptChannel(
-					m.channel_id,
-					m.sender_id,
-					m.sender_device_id ?? 'legacy',
-					{
-						ciphertext: m.ciphertext,
-						msg_num: m.msg_num,
-					},
-					{ allowHistorical: true }
-				);
-				return {
-					id: m.id,
-					conversationId: m.channel_id,
-					senderId: m.sender_id,
-					text,
-					decryptError: false,
-					createdAt: m.created_at,
-					messageType: m.message_type ?? 'text',
-				};
-			} catch {
-				hadDecryptFailure = true;
-				return {
-					id: m.id,
-					conversationId: m.channel_id,
-					senderId: m.sender_id,
-					text: null,
-					decryptError: true,
-					createdAt: m.created_at,
-					messageType: 'text',
-				};
-			}
-		})
-	);
 
-	store.set(messages);
+	beginBatch();
+	try {
+		const messages: Message[] = await Promise.all(
+			raw.map(async (m) => {
+				// Bot messages use plaintext column; all user messages use ciphertext
+				if (m.plaintext) {
+					return {
+						id: m.id,
+						conversationId: m.channel_id,
+						senderId: m.sender_id,
+						text: m.plaintext,
+						decryptError: false,
+						createdAt: m.created_at,
+						messageType: m.message_type ?? 'text',
+					};
+				}
+				if (!m.ciphertext) {
+					return {
+						id: m.id,
+						conversationId: m.channel_id,
+						senderId: m.sender_id,
+						text: null,
+						decryptError: true,
+						createdAt: m.created_at,
+						messageType: 'text',
+					};
+				}
+				try {
+					const text = await decryptChannel(
+						m.channel_id,
+						m.sender_id,
+						m.sender_device_id ?? 'legacy',
+						{
+							ciphertext: m.ciphertext,
+							msg_num: m.msg_num,
+						},
+						{ allowHistorical: true }
+					);
+					return {
+						id: m.id,
+						conversationId: m.channel_id,
+						senderId: m.sender_id,
+						text,
+						decryptError: false,
+						createdAt: m.created_at,
+						messageType: m.message_type ?? 'text',
+					};
+				} catch {
+					hadDecryptFailure = true;
+					return {
+						id: m.id,
+						conversationId: m.channel_id,
+						senderId: m.sender_id,
+						text: null,
+						decryptError: true,
+						createdAt: m.created_at,
+						messageType: 'text',
+					};
+				}
+			})
+		);
+
+		store.set(messages);
+	} finally {
+		await endBatch();
+	}
+
 	if (hadDecryptFailure) {
 		void fetchPendingKeyDists(channelId).catch(() => {});
 	}
