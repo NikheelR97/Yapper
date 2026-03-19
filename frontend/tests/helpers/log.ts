@@ -17,7 +17,9 @@ export type LogCategory =
 	| 'AUTH'
 	| 'VAULT'
 	| 'WEBSOCKET'
-	| 'XSS';
+	| 'XSS'
+	| 'SESSION'
+	| 'INVITE';
 
 export function log(category: LogCategory, action: string, message: string): void {
 	const now = new Date();

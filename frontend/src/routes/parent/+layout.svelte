@@ -55,7 +55,7 @@
 			state = get(authStore);
 		}
 		// Allow any logged-in user to access the setup wizard (creates their parent account)
-		if (state.user.accountType !== 'parent') {
+		if (state.user?.accountType !== 'parent') {
 			if (!get(page).url.pathname.startsWith('/parent/children/setup')) {
 				await goto('/');
 				return;
