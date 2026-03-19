@@ -824,6 +824,13 @@
         );
       }
       if (current?.trust_state === "trusted") {
+        // If the encrypted history sync hasn't arrived yet, don't block
+        // activation — clear the pending sync request so the device can
+        // proceed. The sync snapshot is optional; the device will generate
+        // fresh signal keys and new messages will work immediately.
+        if (hasPendingDeviceSyncRequest(current.id)) {
+          clearPendingDeviceSyncRequest(current.id);
+        }
         if (await maybeActivateTrustedDevice(current.id, false)) {
           return;
         }
