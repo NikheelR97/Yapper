@@ -56,7 +56,7 @@ async function setupAuthAndExplore(
 }
 
 test.describe('XSS payload neutralization @security @xss @gui-execution', () => {
-	test('obfuscated script payloads in community names render as escaped text', async ({ page }) => {
+	test('obfuscated script payloads in community names render as escaped text @smoke', async ({ page }) => {
 		// Tripwire: if any XSS payload executes and fetches evil.com, the test fails.
 		let xssFetchMade = false;
 		await page.route('**evil.com**', async (route) => {

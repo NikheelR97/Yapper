@@ -11,7 +11,7 @@ import { log } from './helpers/log.js';
 test.use({ viewport: { width: 375, height: 667 } }); // iPhone SE
 
 test.describe('Brute-force auth @security @auth @mobile-layout', () => {
-	test('successive authentication failures trigger rate-limit lockdown', async ({ page }) => {
+	test('successive authentication failures trigger rate-limit lockdown @smoke', async ({ page }) => {
 		let loginAttempts = 0;
 
 		log('SECURITY', 'SETUP', 'Mounting login endpoint interceptor (mobile viewport 375×667)');

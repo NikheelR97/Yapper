@@ -13,7 +13,7 @@ const TEST_PASSWORD = process.env.E2E_PASSWORD ?? 'E2eTestPass1!';
 // ─── Login page ────────────────────────────────────────────────────────────────
 
 test.describe('Login page', () => {
-	test('renders form elements', async ({ page }) => {
+	test('renders form elements @smoke', async ({ page }) => {
 		await page.goto('/login');
 
 		await expect(page.locator('h1')).toContainText('Enter the Void');
@@ -22,14 +22,14 @@ test.describe('Login page', () => {
 		await expect(page.getByRole('button', { name: /Sign In/i })).toBeVisible();
 	});
 
-	test('submit button disabled when fields are empty', async ({ page }) => {
+	test('submit button disabled when fields are empty @smoke', async ({ page }) => {
 		await page.goto('/login');
 
 		const submitBtn = page.getByRole('button', { name: /Sign In/i });
 		await expect(submitBtn).toBeDisabled();
 	});
 
-	test('shows error banner on wrong credentials', async ({ page }) => {
+	test('shows error banner on wrong credentials @smoke', async ({ page }) => {
 		await page.goto('/login');
 
 		await page.fill('#email', 'nobody@nowhere.invalid');
@@ -41,21 +41,21 @@ test.describe('Login page', () => {
 		await expect(page.locator('[role="alert"]')).toBeVisible({ timeout: 8_000 });
 	});
 
-	test('navigates to /register via link', async ({ page }) => {
+	test('navigates to /register via link @smoke', async ({ page }) => {
 		await page.goto('/login');
 
 		await page.getByRole('link', { name: /Join the Hype/i }).click();
 		await expect(page).toHaveURL('/register');
 	});
 
-	test('navigates to /forgot-password via link', async ({ page }) => {
+	test('navigates to /forgot-password via link @smoke', async ({ page }) => {
 		await page.goto('/login');
 
 		await page.getByRole('link', { name: /Forgot password/i }).click();
 		await expect(page).toHaveURL('/forgot-password');
 	});
 
-	test('OAuth buttons are present', async ({ page }) => {
+	test('OAuth buttons are present @smoke', async ({ page }) => {
 		await page.goto('/login');
 
 		await expect(page.getByRole('button', { name: /Discord/i })).toBeVisible();

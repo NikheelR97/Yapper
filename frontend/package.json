@@ -36,6 +36,7 @@
     "idb": "^8.0.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.11.1",
     "@capacitor/cli": "^8.2.0",
     "@playwright/test": "^1.40.0",
     "@sveltejs/adapter-static": "^3.0.0",
@@ -45,6 +46,7 @@
     "@testing-library/svelte": "^5.0.0",
     "@typescript-eslint/eslint-plugin": "^8.57.0",
     "@typescript-eslint/parser": "^8.57.0",
+    "allure-playwright": "^3.6.0",
     "dotenv-cli": "^11.0.0",
     "eslint": "^9.39.4",
     "eslint-plugin-svelte": "^2.0.0",

@@ -53,6 +53,26 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
+      - name: Install Playwright browsers (for Tauri E2E)
+        run: npx playwright install --with-deps chromium
+        working-directory: frontend
+
+      - name: Run Tauri E2E tests (Windows)
+        run: npx playwright test --project=tauri-desktop
+        working-directory: frontend
+        env:
+          CI: true
+          TAURI_BINARY: src-tauri/target/release/yapper.exe
+        continue-on-error: true  # Don't block release on E2E failure
+
+      - name: Upload Tauri test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: tauri-e2e-results
+          path: frontend/playwright-report/
+          retention-days: 7
+
       - name: Upload Windows installer
         uses: actions/upload-artifact@v7
         with:

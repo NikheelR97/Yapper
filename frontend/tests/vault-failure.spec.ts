@@ -48,7 +48,7 @@ async function setupVaultFailure(page: Parameters<typeof mockAuthEndpoints>[0]):
 }
 
 test.describe('Vault failure modes @desktop-native @encryption @edge-case', () => {
-	test('OS-level write revocation surfaces Secure Storage Unavailable UI', async ({ page }) => {
+	test('OS-level write revocation surfaces Secure Storage Unavailable UI @smoke', async ({ page }) => {
 		await setupVaultFailure(page);
 
 		log('NETWORK', 'NAVIGATE', 'Navigating to /explore with IndexedDB disabled');

@@ -390,6 +390,34 @@ export async function mockPremiumEndpoints(
 	});
 }
 
+// ─── R2 Upload ────────────────────────────────────────────────────────────────
+
+/**
+ * Intercept Cloudflare R2 PUT requests (media uploads) and track whether a
+ * call was made. Returns a `getCalled()` accessor so callers can assert.
+ */
+export async function mockR2Upload(page: Page): Promise<{ getCalled: () => boolean }> {
+	let called = false;
+	await page.route('**r2.yapperhq.com/**', async (route) => {
+		if (route.request().method() === 'PUT') {
+			called = true;
+			await route.fulfill({ status: 200, body: '' });
+		} else {
+			await route.continue();
+		}
+	});
+	// Also intercept generic R2-style presigned upload URLs that may come from the backend
+	await page.route('**/upload*', async (route) => {
+		if (route.request().method() === 'PUT') {
+			called = true;
+			await route.fulfill({ status: 200, body: '' });
+		} else {
+			await route.continue();
+		}
+	});
+	return { getCalled: () => called };
+}
+
 // ─── MediaStream ──────────────────────────────────────────────────────────────
 
 /**

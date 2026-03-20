@@ -156,6 +156,141 @@ test.describe('Media messaging — Clip recorder', () => {
 	});
 });
 
+// ─── Yap recorder — cancel flow ──────────────────────────────────────────────
+
+test.describe('Media messaging — Yap cancel flow', () => {
+	test.use({ storageState: { cookies: [], origins: [] } });
+	test.skip(!TEST_EMAIL, 'Set E2E_EMAIL / E2E_PASSWORD to run media messaging tests');
+
+	let serverId: string;
+	let channelId: string;
+
+	test.beforeAll(async () => {
+		seedTrustedPrimaryDevice();
+		const session = await client.login(TEST_EMAIL, TEST_PASSWORD, PRIMARY_INSTALLATION_ID, 'Media Cancel Test');
+		const result = await client.createServer(session, `E2E Yap Cancel ${Date.now()}`);
+		serverId = result.serverId;
+		channelId = result.channelId;
+	});
+
+	test('cancelling Yap recording dismisses recorder without sending a message @smoke', async ({ page }) => {
+		await mockMediaStream(page);
+
+		// Track whether a message POST was issued
+		let messagePosted = false;
+		await page.route('**/api/v1/channels/*/messages', async (route) => {
+			if (route.request().method() === 'POST') {
+				messagePosted = true;
+			}
+			await route.continue();
+		});
+
+		await setInstallationId(page, PRIMARY_INSTALLATION_ID);
+		await page.goto('/login');
+		await page.fill('#email', TEST_EMAIL);
+		await page.fill('#password', TEST_PASSWORD);
+		await page.getByRole('button', { name: /Sign In/i }).click();
+		await page.waitForURL(/\/explore/, { timeout: 20_000 });
+		await waitForAppReady(page);
+		await navigateClientSide(page, `/servers/${serverId}/channels/${channelId}`);
+		await expect(page.locator('textarea[aria-label="Message"]').first()).toBeEnabled({ timeout: 60_000 });
+
+		// Open Yap recorder
+		const yapBtn = page.locator(
+			'button[aria-label*="Yap" i], button[aria-label*="Record a Yap" i], [data-testid="yap-btn"]',
+		).first();
+		if (!await yapBtn.isVisible({ timeout: 5_000 }).catch(() => false)) return;
+
+		await expect(yapBtn).toBeEnabled({ timeout: 10_000 });
+		await yapBtn.click();
+
+		// Wait for recorder to appear
+		const recorderLocator = page.locator(
+			'.yap-recorder, [data-testid="yap-recorder"], [aria-label*="stop" i]',
+		).first();
+		await expect(recorderLocator).toBeVisible({ timeout: 10_000 });
+
+		// Brief recording then Cancel
+		await page.waitForTimeout(500);
+		const cancelBtn = page.locator('button[aria-label*="cancel" i], button:has-text("Cancel")').first();
+		if (await cancelBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
+			await cancelBtn.click();
+		}
+
+		// Recorder should be gone
+		await expect(recorderLocator).toHaveCount(0, { timeout: 5_000 });
+
+		// No message should have been POSTed
+		expect(messagePosted, 'Cancel must not POST a channel message').toBe(false);
+	});
+});
+
+// ─── Yap recorder — size limit ────────────────────────────────────────────────
+
+test.describe('Media messaging — Yap size limit', () => {
+	test.use({ storageState: { cookies: [], origins: [] } });
+	test.skip(!TEST_EMAIL, 'Set E2E_EMAIL / E2E_PASSWORD to run media messaging tests');
+
+	let serverId: string;
+	let channelId: string;
+
+	test.beforeAll(async () => {
+		seedTrustedPrimaryDevice();
+		const session = await client.login(TEST_EMAIL, TEST_PASSWORD, PRIMARY_INSTALLATION_ID, 'Media Size Test');
+		const result = await client.createServer(session, `E2E Yap Size ${Date.now()}`);
+		serverId = result.serverId;
+		channelId = result.channelId;
+	});
+
+	test('recording that exceeds size limit shows an error toast @regression', async ({ page }) => {
+		await mockMediaStream(page);
+
+		// Override MediaRecorder to immediately dispatch an oversized blob (26 MB)
+		await page.addInitScript(() => {
+			const OVERSIZED_BYTES = 26 * 1024 * 1024; // 26 MB > typical 25 MB limit
+			const OriginalMediaRecorder = window.MediaRecorder;
+			class FatMediaRecorder extends OriginalMediaRecorder {
+				start(timeslice?: number): void {
+					super.start(timeslice);
+					// Fire oversized dataavailable immediately
+					setTimeout(() => {
+						const bigBuf = new ArrayBuffer(OVERSIZED_BYTES);
+						const blob = new Blob([bigBuf], { type: 'audio/webm' });
+						const eventData = { data: blob };
+						const event = Object.assign(new Event('dataavailable'), eventData);
+						this.dispatchEvent(event);
+					}, 100);
+				}
+			}
+			window.MediaRecorder = FatMediaRecorder as unknown as typeof MediaRecorder;
+		});
+
+		await setInstallationId(page, PRIMARY_INSTALLATION_ID);
+		await page.goto('/login');
+		await page.fill('#email', TEST_EMAIL);
+		await page.fill('#password', TEST_PASSWORD);
+		await page.getByRole('button', { name: /Sign In/i }).click();
+		await page.waitForURL(/\/explore/, { timeout: 20_000 });
+		await waitForAppReady(page);
+		await navigateClientSide(page, `/servers/${serverId}/channels/${channelId}`);
+		await expect(page.locator('textarea[aria-label="Message"]').first()).toBeEnabled({ timeout: 60_000 });
+
+		const yapBtn = page.locator(
+			'button[aria-label*="Yap" i], button[aria-label*="Record a Yap" i], [data-testid="yap-btn"]',
+		).first();
+		if (!await yapBtn.isVisible({ timeout: 5_000 }).catch(() => false)) return;
+
+		await expect(yapBtn).toBeEnabled({ timeout: 10_000 });
+		await yapBtn.click();
+
+		// The oversized blob fires immediately — app should show a size-limit toast
+		const toast = page.locator(
+			'text=/too large|size limit|max.*size|exceeds/i',
+		).first();
+		await expect(toast).toBeVisible({ timeout: 10_000 });
+	});
+});
+
 // ─── DM media buttons ─────────────────────────────────────────────────────────
 
 test.describe('Media messaging — DM recorder buttons', () => {

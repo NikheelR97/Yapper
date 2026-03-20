@@ -19,7 +19,10 @@ export type LogCategory =
 	| 'WEBSOCKET'
 	| 'XSS'
 	| 'SESSION'
-	| 'INVITE';
+	| 'INVITE'
+	| 'MOCK'
+	| 'STATE'
+	| 'UI';
 
 export function log(category: LogCategory, action: string, message: string): void {
 	const now = new Date();

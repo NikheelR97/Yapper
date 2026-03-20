@@ -11,7 +11,7 @@ test.setTimeout(120_000);
 const API_URL = process.env.VITE_API_URL ?? 'https://api.yapperhq.com';
 
 test.describe('Authenticated shell', () => {
-	test('boots explore, covers settings sections, survives reload, and logs out', async ({ page }) => {
+	test('boots explore, covers settings sections, survives reload, and logs out @smoke', async ({ page }) => {
 		const currentDevice = buildMockDevice({
 			id: 'auth-shell-primary-device',
 			installation_id: 'auth-shell-primary-installation',
