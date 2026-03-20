@@ -484,38 +484,10 @@ pub async fn fetch_key_distributions(
         .collect::<Result<Vec<_>, sqlx::Error>>()
         .map_err(AppError::from)?;
 
-    // Broadcast key_dist_request so online members (including the same user's
-    // other devices) send this device their sender key.
-    let member_rows = sqlx::query(
-        "SELECT DISTINCT u.id as user_id \
-         FROM server_memberships sm \
-         JOIN channels c ON c.server_id = sm.server_id \
-         JOIN users u ON u.id = sm.user_id \
-         WHERE c.id = $1 AND u.deleted_at IS NULL",
-    )
-    .bind(channel_id)
-    .fetch_all(state.db.pool())
-    .await
-    .unwrap_or_default();
-
-    let other_user_ids: Vec<Uuid> = member_rows
-        .iter()
-        .filter_map(|r| r.try_get::<Uuid, _>("user_id").ok())
-        .collect();
-
-    if !other_user_ids.is_empty() {
-        state.hub.broadcast(
-            &other_user_ids,
-            crate::hub::WsOutbound::Message {
-                payload: serde_json::json!({
-                    "type": "key_dist_request",
-                    "channel_id": channel_id,
-                    "requester_user_id": user_id,
-                    "requester_device_id": device_id,
-                }),
-            },
-        );
-    }
+    // NOTE: Do NOT broadcast key_dist_request here.  The broadcast is handled
+    // by store_key_distributions (with broadcast_request=true) during the
+    // initial joinChannel flow.  Repeating it on every GET fetch causes
+    // excessive redistributions and API overload.
 
     Ok(result)
 }
