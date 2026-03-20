@@ -136,8 +136,7 @@ pub async fn list_my_servers(user_id: Uuid, state: &AppState) -> AppResult<Vec<S
 
     let rows = sqlx::query(
         "SELECT s.id, s.name, s.slug, s.owner_id, s.icon_url, s.description, s.is_public, \
-                sm.role, \
-                (SELECT COUNT(*) FROM server_memberships WHERE server_id = s.id) AS member_count \
+                sm.role, s.member_count \
          FROM servers s \
          JOIN server_memberships sm ON sm.server_id = s.id AND sm.user_id = $1 \
          ORDER BY sm.joined_at ASC",
@@ -170,8 +169,7 @@ pub async fn get_server(user_id: Uuid, server_id: Uuid, state: &AppState) -> App
 
     let row = sqlx::query(
         "SELECT s.id, s.name, s.slug, s.owner_id, s.icon_url, s.description, s.is_public, \
-                sm.role, \
-                (SELECT COUNT(*) FROM server_memberships WHERE server_id = s.id) AS member_count \
+                sm.role, s.member_count \
          FROM servers s \
          LEFT JOIN server_memberships sm ON sm.server_id = s.id AND sm.user_id = $2 \
          WHERE s.id = $1",

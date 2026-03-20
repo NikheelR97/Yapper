@@ -55,13 +55,10 @@ async fn get_communities(
     State(state): State<AppState>,
 ) -> AppResult<impl IntoResponse> {
     let rows = sqlx::query(
-        "SELECT s.id, s.name, s.slug, s.icon_url, s.description, s.tags,
-                COUNT(sm.user_id) AS member_count
+        "SELECT s.id, s.name, s.slug, s.icon_url, s.description, s.tags, s.member_count
          FROM servers s
-         LEFT JOIN server_memberships sm ON sm.server_id = s.id
          WHERE s.is_public = TRUE
-         GROUP BY s.id
-         ORDER BY member_count DESC
+         ORDER BY s.member_count DESC
          LIMIT 50",
     )
     .fetch_all(state.db.pool())
@@ -93,13 +90,11 @@ async fn get_live_servers(
     State(state): State<AppState>,
 ) -> AppResult<impl IntoResponse> {
     let rows = sqlx::query(
-        "SELECT s.id, s.name, s.slug, s.icon_url, s.description, s.tags,
-                COUNT(DISTINCT sm.user_id) AS member_count,
+        "SELECT s.id, s.name, s.slug, s.icon_url, s.description, s.tags, s.member_count,
                 MAX(m.created_at) AS last_active
          FROM servers s
          JOIN channels c ON c.server_id = s.id
          JOIN messages m ON m.channel_id = c.id
-         LEFT JOIN server_memberships sm ON sm.server_id = s.id
          WHERE s.is_public = TRUE
            AND m.created_at > NOW() - INTERVAL '30 minutes'
            AND m.deleted_at IS NULL

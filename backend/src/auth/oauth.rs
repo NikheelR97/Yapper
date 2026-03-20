@@ -53,9 +53,9 @@ fn frontend_base() -> String {
 
 fn new_state_token() -> String {
     use std::fmt::Write;
-    let mut bytes = [0u8; 16];
+    let mut bytes = [0u8; 32];
     getrandom::getrandom(&mut bytes).expect("getrandom failed");
-    bytes.iter().fold(String::with_capacity(32), |mut s, b| {
+    bytes.iter().fold(String::with_capacity(64), |mut s, b| {
         write!(s, "{:02x}", b).unwrap();
         s
     })

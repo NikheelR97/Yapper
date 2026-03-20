@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.78"
 
+[lib]
+name = "yapper_server"
+path = "src/lib.rs"
+
 [[bin]]
 name = "yapper-server"
 path = "src/main.rs"
@@ -84,6 +88,7 @@ dotenvy = "0.15"
 [dev-dependencies]
 tokio = { version = "1", features = ["full", "test-util"] }
 axum-test = "14"
+serial_test = "3"
 
 [profile.release]
 opt-level = 2       # 2 vs 3 is negligible for an I/O-bound server

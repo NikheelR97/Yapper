@@ -294,10 +294,13 @@ impl LoginRateLimiter {
 
     fn maybe_gc(&self) {
         let now = Instant::now();
-        let mut last_gc = self
-            .last_gc
-            .lock()
-            .expect("login limiter gc mutex poisoned");
+        let mut last_gc = match self.last_gc.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                tracing::warn!("Login limiter GC mutex was poisoned, recovering");
+                poisoned.into_inner()
+            }
+        };
         if now.duration_since(*last_gc) < Duration::from_secs(Self::GC_INTERVAL_SECS) {
             return;
         }

@@ -37,11 +37,36 @@ use sqlx::Row;
 use std::io::{Cursor, Write};
 use uuid::Uuid;
 
+use serde::Deserialize;
+
 use crate::{
     auth::AuthUser,
     error::{AppError, AppResult},
     AppState,
 };
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UpdateNotificationsReq {
+    #[serde(rename = "pushEnabled")]
+    push_enabled: Option<bool>,
+    #[serde(rename = "notifyDMs")]
+    notify_dms: Option<bool>,
+    #[serde(rename = "notifyMentions")]
+    notify_mentions: Option<bool>,
+    #[serde(rename = "notifyFriendRequests")]
+    notify_friend_requests: Option<bool>,
+    #[serde(rename = "notifyServerActivity")]
+    notify_server_activity: Option<bool>,
+    #[serde(rename = "notifyYapRecordings")]
+    notify_yap_recordings: Option<bool>,
+    #[serde(rename = "dndEnabled")]
+    dnd_enabled: Option<bool>,
+    #[serde(rename = "dndStart")]
+    dnd_start: Option<Option<String>>,
+    #[serde(rename = "dndEnd")]
+    dnd_end: Option<Option<String>>,
+}
 
 // ─── Validation constants ─────────────────────────────────────────────────────
 
@@ -1192,20 +1217,8 @@ async fn get_notifications(
 async fn update_notifications(
     auth: AuthUser,
     State(state): State<AppState>,
-    Json(body): Json<serde_json::Value>,
+    Json(req): Json<UpdateNotificationsReq>,
 ) -> AppResult<impl IntoResponse> {
-    // Parse all fields manually to handle the camelCase mapping cleanly
-    let push_enabled = body.get("pushEnabled").and_then(|v| v.as_bool());
-    let notify_dms = body.get("notifyDMs").and_then(|v| v.as_bool());
-    let notify_mentions = body.get("notifyMentions").and_then(|v| v.as_bool());
-    let notify_fr = body.get("notifyFriendRequests").and_then(|v| v.as_bool());
-    let notify_srv = body.get("notifyServerActivity").and_then(|v| v.as_bool());
-    let notify_yap = body.get("notifyYapRecordings").and_then(|v| v.as_bool());
-    let dnd_enabled = body.get("dndEnabled").and_then(|v| v.as_bool());
-    // dndStart / dndEnd are either a "HH:MM" string or null (to clear)
-    let dnd_start: Option<Option<&str>> = body.get("dndStart").map(|v| v.as_str());
-    let dnd_end: Option<Option<&str>> = body.get("dndEnd").map(|v| v.as_str());
-
     sqlx::query(
         "INSERT INTO user_notification_settings
              (user_id, push_enabled, notify_dms, notify_mentions, notify_friend_requests,
@@ -1228,15 +1241,15 @@ async fn update_notifications(
              updated_at             = NOW()",
     )
     .bind(auth.user_id)
-    .bind(push_enabled)
-    .bind(notify_dms)
-    .bind(notify_mentions)
-    .bind(notify_fr)
-    .bind(notify_srv)
-    .bind(notify_yap)
-    .bind(dnd_enabled)
-    .bind(dnd_start.flatten())
-    .bind(dnd_end.flatten())
+    .bind(req.push_enabled)
+    .bind(req.notify_dms)
+    .bind(req.notify_mentions)
+    .bind(req.notify_friend_requests)
+    .bind(req.notify_server_activity)
+    .bind(req.notify_yap_recordings)
+    .bind(req.dnd_enabled)
+    .bind(req.dnd_start.flatten().as_deref())
+    .bind(req.dnd_end.flatten().as_deref())
     .execute(state.db.pool())
     .await?;
 

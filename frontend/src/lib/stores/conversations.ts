@@ -93,6 +93,9 @@ export const conversationsStore = writable<ConversationStore>({
 	loadError: false,
 });
 
+/** Keep at most this many messages per conversation in memory. */
+const MAX_MESSAGES_IN_MEMORY = 200;
+
 const messageStores = new Map<string, ReturnType<typeof writable<Message[]>>>();
 
 export function getMessageStore(conversationId: string) {
@@ -100,6 +103,12 @@ export function getMessageStore(conversationId: string) {
 		messageStores.set(conversationId, writable<Message[]>([]));
 	}
 	return messageStores.get(conversationId)!;
+}
+
+/** Trim a message array to keep the most recent MAX_MESSAGES_IN_MEMORY entries. */
+function capMessages(msgs: Message[]): Message[] {
+	if (msgs.length <= MAX_MESSAGES_IN_MEMORY) return msgs;
+	return msgs.slice(msgs.length - MAX_MESSAGES_IN_MEMORY);
 }
 
 function inferDmMessageType(text: string | null): string {
@@ -191,7 +200,7 @@ export async function loadMessages(conversationId: string, peerId: string): Prom
 		if (!apiIds.has(m.id)) placeholders.push(m);
 	}
 	placeholders.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
-	store.set(placeholders);
+	store.set(capMessages(placeholders));
 
 	// Decrypt sequentially with coalesced IDB writes.
 	// beginBatch() makes storeSession update only the in-memory cache per message;
@@ -336,7 +345,7 @@ export function registerDmHandler(): () => void {
 				updated[existing] = { ...updated[existing], text, decryptError };
 				return updated;
 			}
-			return [
+			return capMessages([
 				...messages,
 				{
 					id: message.id,
@@ -347,7 +356,7 @@ export function registerDmHandler(): () => void {
 					createdAt,
 					messageType: inferDmMessageType(text),
 				},
-			];
+			]);
 		});
 		touchConversation(message.conversation_id, createdAt);
 	});

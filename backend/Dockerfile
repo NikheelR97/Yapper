@@ -18,7 +18,7 @@ ENV SQLX_OFFLINE=true
 RUN cargo build --release
 
 # ─── Runtime stage ────────────────────────────────────────────────────────────
-FROM alpine:3.19
+FROM alpine:3.21
 
 RUN apk add --no-cache ca-certificates libgcc \
     && addgroup -S yapper \

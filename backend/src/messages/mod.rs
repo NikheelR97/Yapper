@@ -181,17 +181,13 @@ async fn list_conversations_for_user(
             u.username   AS peer_username,
             u.display_name AS peer_display_name,
             u.avatar_url AS peer_avatar_url,
-            (
-                SELECT m.created_at FROM messages m
-                WHERE m.conversation_id = dc.id
-                ORDER BY m.created_at DESC LIMIT 1
-            ) AS last_message_at
+            dc.last_message_at
         FROM dm_conversations dc
         JOIN dm_participants dp_me   ON dp_me.conversation_id   = dc.id AND dp_me.user_id   = $1
         JOIN dm_participants dp_peer ON dp_peer.conversation_id = dc.id AND dp_peer.user_id != $1
         JOIN users u ON u.id = dp_peer.user_id
         WHERE u.deleted_at IS NULL
-        ORDER BY last_message_at DESC NULLS LAST
+        ORDER BY dc.last_message_at DESC NULLS LAST
         "#,
     )
     .bind(user_id)

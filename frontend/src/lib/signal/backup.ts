@@ -49,13 +49,14 @@ function jsonReviver(_key: string, value: unknown): unknown {
 }
 
 function validateRecoveryPassphrase(passphrase: string): void {
-  if (
-    passphrase.length < 8 ||
-    !/[A-Za-z]/.test(passphrase) ||
-    !/\d/.test(passphrase)
-  ) {
+  if (passphrase.length < 12) {
     throw new Error(
-      "Recovery passphrase must be at least 8 characters and include letters and numbers",
+      "Recovery passphrase must be at least 12 characters",
+    );
+  }
+  if (!/[A-Za-z]/.test(passphrase) || !/\d/.test(passphrase)) {
+    throw new Error(
+      "Recovery passphrase must include both letters and numbers",
     );
   }
 }

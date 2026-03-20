@@ -412,7 +412,10 @@ pub async fn store_key_distributions(
         .bind(channel_id)
         .fetch_all(state.db.pool())
         .await
-        .unwrap_or_default();
+        .unwrap_or_else(|e| {
+            tracing::warn!("Failed to fetch members for key_dist_request broadcast: {e}");
+            vec![]
+        });
 
         let other_user_ids: Vec<Uuid> = member_rows
             .iter()

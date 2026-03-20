@@ -84,11 +84,11 @@ describe("signal backup restore", () => {
   it("restores a backup without replacing the source device by default", async () => {
     const snapshot = JSON.stringify({ bootstrapComplete: true });
     vi.mocked(api.get).mockResolvedValue({
-      encrypted_blob: await encryptBackupBlob("alpha2468", snapshot),
+      encrypted_blob: await encryptBackupBlob("alphapass2468", snapshot),
     });
     vi.mocked(api.post).mockResolvedValue({});
 
-    const restored = await restoreKeys("alpha2468", "source-device-1");
+    const restored = await restoreKeys("alphapass2468", "source-device-1");
 
     expect(restored).toBe(true);
     expect(api.get).toHaveBeenCalledWith(
@@ -106,11 +106,11 @@ describe("signal backup restore", () => {
   it("can explicitly request source-device replacement", async () => {
     const snapshot = JSON.stringify({ bootstrapComplete: true });
     vi.mocked(api.get).mockResolvedValue({
-      encrypted_blob: await encryptBackupBlob("alpha2468", snapshot),
+      encrypted_blob: await encryptBackupBlob("alphapass2468", snapshot),
     });
     vi.mocked(api.post).mockResolvedValue({});
 
-    const restored = await restoreKeys("alpha2468", "source-device-1", {
+    const restored = await restoreKeys("alphapass2468", "source-device-1", {
       replaceSourceDevice: true,
     });
 
@@ -124,7 +124,7 @@ describe("signal backup restore", () => {
   it("returns false when no backup exists for the selected source device", async () => {
     vi.mocked(api.get).mockRejectedValue({ status: 404 });
 
-    const restored = await restoreKeys("alpha2468", "missing-device");
+    const restored = await restoreKeys("alphapass2468", "missing-device");
 
     expect(restored).toBe(false);
     expect(api.post).not.toHaveBeenCalled();
@@ -132,7 +132,7 @@ describe("signal backup restore", () => {
   });
 
   it("rejects weak recovery passphrases before upload", async () => {
-    await expect(backupKeys("2468")).rejects.toThrow(/at least 8 characters/i);
+    await expect(backupKeys("2468")).rejects.toThrow(/at least 12 characters/i);
     expect(api.put).not.toHaveBeenCalled();
   });
 });

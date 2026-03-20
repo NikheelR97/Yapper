@@ -1322,6 +1322,12 @@ async fn handle_typing_start(channel_id: Uuid, user_id: Uuid, state: &AppState) 
     let Some(member_ids) = fetch_channel_member_ids(channel_id, state).await else {
         return;
     };
+
+    // Only members may broadcast typing indicators (S-002 audit fix).
+    if !member_ids.contains(&user_id) {
+        return;
+    }
+
     let key = (channel_id, user_id);
 
     // Abort any existing timer to reset the 5-second window

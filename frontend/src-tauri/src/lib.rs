@@ -1,13 +1,38 @@
 mod tauri_commands;
 
 use argon2::Argon2;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager, WindowEvent,
 };
 use tauri_commands::{AppSettingsState, TrayBadgeUpdater};
+
+/// App data directory, populated in `.setup()`.  The Stronghold password
+/// closure reads this to locate the per-installation salt file.
+static APP_DATA_DIR: OnceLock<std::path::PathBuf> = OnceLock::new();
+
+/// Returns a 16-byte random salt, creating and persisting it on first use.
+fn get_or_create_salt() -> Vec<u8> {
+    let salt_path = match APP_DATA_DIR.get() {
+        Some(dir) => dir.join("stronghold-salt.bin"),
+        None => {
+            // Fallback: derive from a static salt if setup hasn't run yet.
+            // This should never happen in practice (vault unlock requires UI).
+            return b"yapper-stronghold-v1".to_vec();
+        }
+    };
+    if let Ok(salt) = std::fs::read(&salt_path) {
+        if salt.len() == 16 {
+            return salt;
+        }
+    }
+    let mut salt = [0u8; 16];
+    getrandom::getrandom(&mut salt).expect("getrandom failed");
+    let _ = std::fs::write(&salt_path, &salt);
+    salt.to_vec()
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -19,9 +44,10 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(
             tauri_plugin_stronghold::Builder::new(|password| {
+                let salt = get_or_create_salt();
                 let mut output = [0u8; 32];
                 Argon2::default()
-                    .hash_password_into(password.as_bytes(), b"yapper-stronghold-v1", &mut output)
+                    .hash_password_into(password.as_bytes(), &salt, &mut output)
                     .expect("failed to derive stronghold key");
                 output.to_vec()
             })
@@ -34,6 +60,7 @@ pub fn run() {
             // Ensure the app data directory exists so Stronghold can write the vault file.
             if let Ok(data_dir) = app.path().app_data_dir() {
                 let _ = std::fs::create_dir_all(&data_dir);
+                let _ = APP_DATA_DIR.set(data_dir);
             }
 
             let handle = app.handle().clone();

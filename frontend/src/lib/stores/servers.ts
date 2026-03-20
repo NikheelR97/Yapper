@@ -81,7 +81,14 @@ function mergeChannelHistoryMessages(
 export const serversStore = writable<ServersState>({ servers: [], loading: false });
 
 // Per-channel message lists
+/** Keep at most this many messages per channel in memory. */
+const MAX_CHANNEL_MESSAGES = 200;
 const channelMessageStores = new Map<string, ReturnType<typeof writable<Message[]>>>();
+
+function capChannelMessages(msgs: Message[]): Message[] {
+	if (msgs.length <= MAX_CHANNEL_MESSAGES) return msgs;
+	return msgs.slice(msgs.length - MAX_CHANNEL_MESSAGES);
+}
 const pendingChannelDecryptTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 function appendLocalChannelMessage(
@@ -95,7 +102,7 @@ function appendLocalChannelMessage(
 ): void {
 	const userId = get(authStore).user?.id ?? '';
 	const store = getChannelMessageStore(channelId);
-	store.update((msgs) => [
+	store.update((msgs) => capChannelMessages([
 		...msgs,
 		{
 			id: options.messageId ?? crypto.randomUUID(),
@@ -106,7 +113,7 @@ function appendLocalChannelMessage(
 			createdAt: options.createdAt ?? new Date().toISOString(),
 			messageType: options.messageType ?? 'text',
 		},
-	]);
+	]));
 }
 
 export function getChannelMessageStore(channelId: string) {
@@ -345,7 +352,7 @@ export async function loadChannelMessages(channelId: string): Promise<void> {
 			})
 		);
 
-		store.set(messages);
+		store.set(capChannelMessages(messages));
 	} finally {
 		await endBatch();
 	}
@@ -443,7 +450,7 @@ export function registerChannelHandler(): () => void {
 		}
 
 		const store = getChannelMessageStore(msg.channel_id);
-		store.update((msgs) => [
+		store.update((msgs) => capChannelMessages([
 			...msgs,
 			{
 				id: msg.id,
@@ -454,7 +461,7 @@ export function registerChannelHandler(): () => void {
 				createdAt,
 				messageType: msg.message_type ?? 'text',
 			},
-		]);
+		]));
 	});
 
 	const unregisterSenderKeyReady = onSenderKeyReady((event) =>
