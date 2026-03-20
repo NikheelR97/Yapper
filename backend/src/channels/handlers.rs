@@ -143,9 +143,14 @@ pub(super) struct KeyDistItem {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(super) struct PostKeyDistsReq {
     distributions: Vec<KeyDistItem>,
+    /// When true, broadcast a `key_dist_request` to all channel members so they
+    /// redistribute their sender keys to the caller.  Only the *new joiner*
+    /// should set this; responses to a `key_dist_request` must leave it false
+    /// to avoid an infinite broadcast loop.
+    #[serde(default)]
+    broadcast_request: bool,
 }
 
 pub(super) async fn post_key_dists(
@@ -181,8 +186,15 @@ pub(super) async fn post_key_dists(
         })
         .collect::<AppResult<Vec<_>>>()?;
 
-    service::store_key_distributions(auth.user_id, auth.device_id, channel_id, items, &state)
-        .await?;
+    service::store_key_distributions(
+        auth.user_id,
+        auth.device_id,
+        channel_id,
+        items,
+        req.broadcast_request,
+        &state,
+    )
+    .await?;
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }
 

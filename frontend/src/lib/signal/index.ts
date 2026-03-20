@@ -806,6 +806,7 @@ export async function joinChannel(channelId: string): Promise<void> {
   if (distributions.length > 0) {
     await api.post("/api/v1/channels/" + channelId + "/sender-key-dist", {
       distributions,
+      broadcast_request: true,
     });
   }
 
@@ -1149,7 +1150,9 @@ export async function handleKeyDistRequest(event: {
     return;
 
   const senderKey = await ks.loadSenderKey(event.channel_id);
-  if (!senderKey) return; // We don't have a key for this channel
+  if (!senderKey) {
+    return; // We don't have a key for this channel
+  }
 
   const distPayload: SenderKeyDistPayload = signSenderKeyDistPayload(
     {

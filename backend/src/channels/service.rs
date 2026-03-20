@@ -307,6 +307,7 @@ pub async fn store_key_distributions(
     from_device_id: Uuid,
     channel_id: Uuid,
     items: Vec<KeyDistItem>,
+    broadcast_request: bool,
     state: &AppState,
 ) -> AppResult<()> {
     debug_assert!(from_user != Uuid::nil());
@@ -396,38 +397,42 @@ pub async fn store_key_distributions(
         }
     }
 
-    // After storing all distributions, broadcast a key_dist_request to all
-    // online channel members (including the same user's other devices) so they
-    // redistribute their sender key to the joining device.
-    let member_rows = sqlx::query(
-        "SELECT DISTINCT u.id as user_id \
-         FROM server_memberships sm \
-         JOIN channels c ON c.server_id = sm.server_id \
-         JOIN users u ON u.id = sm.user_id \
-         WHERE c.id = $1 AND u.deleted_at IS NULL",
-    )
-    .bind(channel_id)
-    .fetch_all(state.db.pool())
-    .await
-    .unwrap_or_default();
+    // Only broadcast key_dist_request when a NEW member is joining the channel.
+    // Redistributions (responses to key_dist_request) must NOT re-broadcast,
+    // otherwise an infinite loop occurs: A redistributes → backend broadcasts
+    // key_dist_request for A → B redistributes → backend broadcasts for B → …
+    if broadcast_request {
+        let member_rows = sqlx::query(
+            "SELECT DISTINCT u.id as user_id \
+             FROM server_memberships sm \
+             JOIN channels c ON c.server_id = sm.server_id \
+             JOIN users u ON u.id = sm.user_id \
+             WHERE c.id = $1 AND u.deleted_at IS NULL",
+        )
+        .bind(channel_id)
+        .fetch_all(state.db.pool())
+        .await
+        .unwrap_or_default();
 
-    let other_user_ids: Vec<Uuid> = member_rows
-        .iter()
-        .filter_map(|r| r.try_get::<Uuid, _>("user_id").ok())
-        .collect();
+        let other_user_ids: Vec<Uuid> = member_rows
+            .iter()
+            .filter_map(|r| r.try_get::<Uuid, _>("user_id").ok())
+            .filter(|uid| *uid != from_user)
+            .collect();
 
-    if !other_user_ids.is_empty() {
-        state.hub.broadcast(
-            &other_user_ids,
-            crate::hub::WsOutbound::Message {
-                payload: serde_json::json!({
-                    "type": "key_dist_request",
-                    "channel_id": channel_id,
-                    "requester_user_id": from_user,
-                    "requester_device_id": from_device_id,
-                }),
-            },
-        );
+        if !other_user_ids.is_empty() {
+            state.hub.broadcast(
+                &other_user_ids,
+                crate::hub::WsOutbound::Message {
+                    payload: serde_json::json!({
+                        "type": "key_dist_request",
+                        "channel_id": channel_id,
+                        "requester_user_id": from_user,
+                        "requester_device_id": from_device_id,
+                    }),
+                },
+            );
+        }
     }
 
     Ok(())
@@ -648,4 +653,125 @@ async fn fanout_to_members(
     }
 
     Ok(())
+}
+
+// ─── Tests ───────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use sqlx::postgres::PgPoolOptions;
+    use sqlx::{PgPool, Row};
+    use uuid::Uuid;
+
+    async fn test_pool() -> Option<PgPool> {
+        let url = std::env::var("DATABASE_URL").ok()?;
+        let pool = PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&url)
+            .await
+            .ok()?;
+        if sqlx::migrate!("./migrations").run(&pool).await.is_err() {
+            return None;
+        }
+        Some(pool)
+    }
+
+    async fn insert_user(pool: &PgPool, suffix: &str) -> Uuid {
+        let row = sqlx::query(
+            "INSERT INTO users (email, username, display_name, account_type, parental_controls_enabled) \
+             VALUES ($1, $2, $3, 'standard', FALSE) RETURNING id",
+        )
+        .bind(format!("channel_test+{suffix}@example.com"))
+        .bind(format!("channel_test_{suffix}"))
+        .bind(format!("Test {suffix}"))
+        .fetch_one(pool)
+        .await
+        .expect("insert user");
+        row.try_get("id").expect("id")
+    }
+
+    async fn insert_server(pool: &PgPool, owner_id: Uuid, suffix: &str) -> Uuid {
+        let row = sqlx::query(
+            "INSERT INTO servers (name, slug, owner_id) VALUES ($1, $2, $3) RETURNING id",
+        )
+        .bind(format!("TestSrv {suffix}"))
+        .bind(format!("test-srv-{suffix}"))
+        .bind(owner_id)
+        .fetch_one(pool)
+        .await
+        .expect("insert server");
+        row.try_get("id").expect("id")
+    }
+
+    async fn insert_channel(pool: &PgPool, server_id: Uuid, suffix: &str) -> Uuid {
+        let row = sqlx::query(
+            "INSERT INTO channels (server_id, name, type, position) VALUES ($1, $2, 'text', 0) RETURNING id",
+        )
+        .bind(server_id)
+        .bind(format!("general-{suffix}"))
+        .fetch_one(pool)
+        .await
+        .expect("insert channel");
+        row.try_get("id").expect("id")
+    }
+
+    async fn insert_membership(pool: &PgPool, user_id: Uuid, server_id: Uuid, role: &str) {
+        sqlx::query(
+            "INSERT INTO server_memberships (user_id, server_id, role) VALUES ($1, $2, $3)",
+        )
+        .bind(user_id)
+        .bind(server_id)
+        .bind(role)
+        .execute(pool)
+        .await
+        .expect("insert membership");
+    }
+
+    /// Regression test: the key_dist_request broadcast query must reference the
+    /// `server_memberships` table (not `server_members`). A wrong table name
+    /// caused the query to silently fail via `.unwrap_or_default()`, preventing
+    /// SenderKey redistribution on multi-device setups.
+    #[tokio::test]
+    async fn key_dist_member_lookup_uses_correct_table() {
+        let Some(pool) = test_pool().await else {
+            return;
+        };
+
+        let suffix = Uuid::new_v4().simple().to_string();
+        let user_a = insert_user(&pool, &format!("a_{suffix}")).await;
+        let user_b = insert_user(&pool, &format!("b_{suffix}")).await;
+        let server_id = insert_server(&pool, user_a, &suffix).await;
+        let channel_id = insert_channel(&pool, server_id, &suffix).await;
+        insert_membership(&pool, user_a, server_id, "owner").await;
+        insert_membership(&pool, user_b, server_id, "member").await;
+
+        // This is the exact query from store_key_distributions / fetch_key_distributions.
+        // Before the fix it referenced the non-existent `server_members` table.
+        let rows = sqlx::query(
+            "SELECT DISTINCT u.id as user_id \
+             FROM server_memberships sm \
+             JOIN channels c ON c.server_id = sm.server_id \
+             JOIN users u ON u.id = sm.user_id \
+             WHERE c.id = $1 AND u.deleted_at IS NULL",
+        )
+        .bind(channel_id)
+        .fetch_all(&pool)
+        .await
+        .expect("member lookup query must succeed");
+
+        let member_ids: Vec<Uuid> = rows
+            .iter()
+            .map(|r| r.try_get::<Uuid, _>("user_id").expect("user_id"))
+            .collect();
+
+        assert!(
+            member_ids.contains(&user_a),
+            "user_a should be in member list"
+        );
+        assert!(
+            member_ids.contains(&user_b),
+            "user_b should be in member list"
+        );
+        assert_eq!(member_ids.len(), 2, "exactly 2 members expected");
+    }
 }
