@@ -401,7 +401,7 @@ pub async fn store_key_distributions(
     // redistribute their sender key to the joining device.
     let member_rows = sqlx::query(
         "SELECT DISTINCT u.id as user_id \
-         FROM server_members sm \
+         FROM server_memberships sm \
          JOIN channels c ON c.server_id = sm.server_id \
          JOIN users u ON u.id = sm.user_id \
          WHERE c.id = $1 AND u.deleted_at IS NULL",
@@ -483,7 +483,7 @@ pub async fn fetch_key_distributions(
     // other devices) send this device their sender key.
     let member_rows = sqlx::query(
         "SELECT DISTINCT u.id as user_id \
-         FROM server_members sm \
+         FROM server_memberships sm \
          JOIN channels c ON c.server_id = sm.server_id \
          JOIN users u ON u.id = sm.user_id \
          WHERE c.id = $1 AND u.deleted_at IS NULL",
