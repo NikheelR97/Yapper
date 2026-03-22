@@ -87,7 +87,7 @@ jobs:
           if-no-files-found: error
 
       - name: Run Trivy filesystem scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.35.0
         with:
           scan-type: fs
           scan-ref: .
@@ -101,7 +101,7 @@ jobs:
         run: docker build -t yapper-backend-security-scan -f backend/Dockerfile backend
 
       - name: Run Trivy image scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.35.0
         with:
           scan-type: image
           image-ref: yapper-backend-security-scan
