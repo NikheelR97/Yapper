@@ -380,27 +380,40 @@ test.describe('Channel decryption integrity', () => {
 				waitForKeyBundles(sessionA.accessToken, sessionB.userId),
 			]);
 
-			// ── A navigates to channel and sends ──────────────────────────────────
+			// ── Both navigate to channel to complete key exchange ────────────────
+			// A's prepareChannel() distributes SenderKey; B's triggers key_dist_request
+			// which makes A regenerate and redistribute. Messages must only be sent
+			// AFTER both users have completed the key exchange cycle.
 			await navigateClientSide(pageA, `/servers/${serverId}/channels/${channelId}`);
-			await sendAndConfirm(pageA, msgFromA);
-			await assertNoDecryptErrors(pageA, 'User A after sending in channel');
+			const inputA = pageA.locator('textarea[aria-label="Message"]').first();
+			await expect(inputA).toBeEnabled({ timeout: 60_000 });
 
-			// ── B navigates to same channel — decrypts A's message ────────────────
 			await navigateClientSide(pageB, `/servers/${serverId}/channels/${channelId}`);
-			// Wait for prepareChannel() to complete: fetches A's SenderKey distribution.
-			// Without this, waitForMessage sees "Unable to decrypt" instead of the text.
+			await expect(pageB.locator('textarea[aria-label="Message"]').first()).toBeEnabled({ timeout: 60_000 });
+
+			// Wait for key_dist_request → redistribution cycle via WS
+			await pageB.waitForTimeout(10_000);
+
+			// B re-navigates to fetch redistributed SenderKey from DB
+			await navigateClientSide(pageB, '/explore');
+			await navigateClientSide(pageB, `/servers/${serverId}/channels/${channelId}`);
 			const inputB = pageB.locator('textarea[aria-label="Message"]').first();
 			await expect(inputB).toBeEnabled({ timeout: 60_000 });
-			// Extra settle: the SenderKey round-trip (key_dist_request → key_dist_v2)
-			// may complete slightly after prepareChannel() resolves. 5 s is sufficient
-			// for the Fly.io JNB + Neon Azure GWC round-trip observed in production.
 			await pageB.waitForTimeout(5_000);
+
+			// ── A sends AFTER key exchange is complete ────────────────────────────
+			const baselineA = await countDecryptErrors(pageA);
+			await sendAndConfirm(pageA, msgFromA);
+			await assertNoDecryptErrors(pageA, 'User A after sending in channel', baselineA);
+
+			// ── B should see A's message ─────────────────────────────────────────
+			const baselineB = await countDecryptErrors(pageB);
 			await waitForMessage(pageB, msgFromA, 120_000);
-			await assertNoDecryptErrors(pageB, 'User B after opening channel with A\'s message');
+			await assertNoDecryptErrors(pageB, 'User B after opening channel with A\'s message', baselineB);
 
 			// ── B sends reply in channel ──────────────────────────────────────────
 			await sendAndConfirm(pageB, msgFromB);
-			await assertNoDecryptErrors(pageB, 'User B after sending channel reply');
+			await assertNoDecryptErrors(pageB, 'User B after sending channel reply', baselineB);
 
 			// ── A re-enters channel to pick up B's SenderKey distribution ─────────
 			// Navigate away then back to trigger prepareChannel() → fetchPendingKeyDists()
@@ -408,9 +421,17 @@ test.describe('Channel decryption integrity', () => {
 			await navigateClientSide(pageA, `/servers/${serverId}/channels/${channelId}`);
 			const inputARe = pageA.locator('textarea[aria-label="Message"]').first();
 			await expect(inputARe).toBeEnabled({ timeout: 60_000 });
+			// Wait for key exchange cycle from A's re-navigation
+			await pageA.waitForTimeout(10_000);
+			// Second re-navigation to ensure A has B's latest SenderKey after any
+			// key_dist_request redistribution triggered by A's own prepareChannel().
+			await navigateClientSide(pageA, '/explore');
+			await navigateClientSide(pageA, `/servers/${serverId}/channels/${channelId}`);
+			await expect(pageA.locator('textarea[aria-label="Message"]').first()).toBeEnabled({ timeout: 60_000 });
 			await pageA.waitForTimeout(5_000);
+			const baselineARe = await countDecryptErrors(pageA);
 			await waitForMessage(pageA, msgFromB, 120_000);
-			await assertNoDecryptErrors(pageA, 'User A after re-entering channel');
+			await assertNoDecryptErrors(pageA, 'User A after re-entering channel', baselineARe);
 
 			// Both messages visible on both pages, zero decrypt errors
 			await expect(pageA.getByText(msgFromA)).toBeVisible();

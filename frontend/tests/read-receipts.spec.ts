@@ -68,6 +68,10 @@ test.describe('Read receipts — DM', () => {
 			await pageA.waitForURL(/\/explore/, { timeout: 20_000 });
 			await waitForAppReady(pageA);
 
+			// Fresh browser contexts upload NEW Signal keys as a background promise
+			// (initializeSignalKeys). Wait for keys to settle before sending.
+			await Promise.all([pageA.waitForTimeout(15_000), pageB.waitForTimeout(15_000)]);
+
 			// Wait for BOTH users' key bundles to land on the server before A
 			// sends. initializeSignalKeys() runs as a background promise after
 			// the loading screen hides, so encryptDm() can race with key upload.

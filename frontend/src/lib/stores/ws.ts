@@ -140,7 +140,7 @@ function doConnect(): void {
 	const { accessToken } = get(authStore);
 	if (!accessToken) return;
 
-	const ws = new WebSocket(`${WS_URL}/ws`);
+	const ws = new WebSocket(WS_URL);
 	socket = ws;
 
 	ws.onopen = () => {

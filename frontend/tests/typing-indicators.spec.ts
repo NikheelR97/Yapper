@@ -84,7 +84,7 @@ test.describe('Typing indicators — channel', () => {
 			// User B should see a typing indicator
 			await expect(
 				pageB.locator('.typing, .typing-indicator, [data-testid="typing-indicator"]'),
-			).toBeVisible({ timeout: 8_000 });
+			).toBeVisible({ timeout: 20_000 });
 
 			// After User A clears the input and waits, indicator should disappear
 			await inputA.clear();

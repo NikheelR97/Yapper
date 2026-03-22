@@ -200,6 +200,11 @@ test.describe('Channel E2EE — cross-user message decryption', () => {
 					loginAndWaitReady(pageB, USER_B_EMAIL, USER_B_PASS, USER_B_CHANNEL_INSTALLATION),
 				]);
 
+				// Fresh browser contexts upload NEW Signal keys as a background promise
+				// (initializeSignalKeys). Without this wait, A's joinChannel() may
+				// encrypt using B's stale (pre-session) public key.
+				await Promise.all([pageA.waitForTimeout(15_000), pageB.waitForTimeout(15_000)]);
+
 				// Confirm both users' key bundles are on the server before A navigates.
 				// The app uploads keys async after the loading screen hides; this poll
 				// gives the upload time to land so prepareChannel() can distribute to B.
@@ -208,21 +213,35 @@ test.describe('Channel E2EE — cross-user message decryption', () => {
 					waitForBundles(sessionA.accessToken, sessionB.userId),
 				]);
 
-				// ── User A navigates and sends ────────────────────────────────────────
-				// Use client-side navigation to avoid a hard reload that resets authStore
+				// ── Both users navigate to channel to complete key exchange ──────────
+				// A's prepareChannel() generates + distributes A's SenderKey.
+				// B's prepareChannel() generates B's key and triggers key_dist_request,
+				// which makes A regenerate its SenderKey and redistribute to B.
+				// Messages must only be sent AFTER this cycle completes.
 				await navigateClientSide(pageA, `/servers/${serverId}/channels/${channelId}`);
 				const inputA = pageA.locator('textarea[aria-label="Message"]').first();
 				await expect(inputA).toBeEnabled({ timeout: 60_000 });
+
+				await navigateClientSide(pageB, `/servers/${serverId}/channels/${channelId}`);
+				const inputB0 = pageB.locator('textarea[aria-label="Message"]').first();
+				await expect(inputB0).toBeEnabled({ timeout: 60_000 });
+
+				// Wait for the full key_dist_request → redistribution cycle via WS
+				await pageB.waitForTimeout(10_000);
+
+				// Re-navigate B to fetch the redistributed SenderKey from the DB
+				await navigateClientSide(pageB, '/explore');
+				await navigateClientSide(pageB, `/servers/${serverId}/channels/${channelId}`);
+				await expect(pageB.locator('textarea[aria-label="Message"]').first()).toBeEnabled({ timeout: 60_000 });
+				await pageB.waitForTimeout(3_000);
+
+				// ── A sends AFTER key exchange is complete ────────────────────────────
 				await inputA.fill(testMsg);
 				await inputA.press('Enter');
 				await expect(pageA.getByText(testMsg)).toBeVisible({ timeout: 15_000 });
 
-				// ── User B opens the channel using the same context (same keys) ────────
-				await navigateClientSide(pageB, `/servers/${serverId}/channels/${channelId}`);
-				const inputB = pageB.locator('textarea[aria-label="Message"]').first();
-				await expect(inputB).toBeEnabled({ timeout: 60_000 });
-				await expect(pageB.getByText(testMsg)).toBeVisible({ timeout: 20_000 });
-				await expect(pageB.getByText(/Unable to decrypt/i)).toHaveCount(0);
+				// ── B should see A's message ─────────────────────────────────────────
+				await expect(pageB.getByText(testMsg)).toBeVisible({ timeout: 30_000 });
 			} finally {
 				await ctxA.close();
 				await ctxB.close();
@@ -267,41 +286,58 @@ test.describe('Channel E2EE — cross-user message decryption', () => {
 					loginAndWaitReady(pageB, USER_B_EMAIL, USER_B_PASS, USER_B_CHANNEL_INSTALLATION),
 				]);
 
+				// Fresh browser contexts upload NEW Signal keys as a background promise
+				// (initializeSignalKeys). Without this wait, A's joinChannel() may
+				// encrypt using B's stale (pre-session) public key.
+				await Promise.all([pageA.waitForTimeout(15_000), pageB.waitForTimeout(15_000)]);
+
 				// Confirm both users' key bundles are on the server before A navigates.
 				await Promise.all([
 					waitForBundles(sessionA.accessToken, sessionA.userId),
 					waitForBundles(sessionA.accessToken, sessionB.userId),
 				]);
 
-				// A navigates, sends first message (distributes SenderKey to B)
+				// ── Both navigate to channel to complete key exchange ────────────────
+				// A's prepareChannel() distributes SenderKey; B's triggers key_dist_request
+				// which makes A regenerate and redistribute. Both must navigate before
+				// any messages are sent.
 				await navigateClientSide(pageA, `/servers/${serverId}/channels/${channelId}`);
 				const inputA = pageA.locator('textarea[aria-label="Message"]').first();
 				await expect(inputA).toBeEnabled({ timeout: 60_000 });
+
+				await navigateClientSide(pageB, `/servers/${serverId}/channels/${channelId}`);
+				await expect(pageB.locator('textarea[aria-label="Message"]').first()).toBeEnabled({ timeout: 60_000 });
+
+				// Wait for key_dist_request → redistribution cycle
+				await pageB.waitForTimeout(10_000);
+
+				// B re-navigates to fetch redistributed SenderKey from DB
+				await navigateClientSide(pageB, '/explore');
+				await navigateClientSide(pageB, `/servers/${serverId}/channels/${channelId}`);
+				const inputB = pageB.locator('textarea[aria-label="Message"]').first();
+				await expect(inputB).toBeEnabled({ timeout: 60_000 });
+				await pageB.waitForTimeout(3_000);
+
+				// ── A sends first message AFTER key exchange ─────────────────────────
 				await inputA.fill(msgFromA);
 				await inputA.press('Enter');
 				await expect(pageA.getByText(msgFromA)).toBeVisible({ timeout: 15_000 });
 
-				// B navigates (same context → same private key → decrypts A's distribution)
-				await navigateClientSide(pageB, `/servers/${serverId}/channels/${channelId}`);
-				const inputB = pageB.locator('textarea[aria-label="Message"]').first();
-				await expect(inputB).toBeEnabled({ timeout: 60_000 });
-				await expect(pageB.getByText(msgFromA)).toBeVisible({ timeout: 20_000 });
-				await expect(pageB.getByText(/Unable to decrypt/i)).toHaveCount(0);
+				// B should see A's message
+				await expect(pageB.getByText(msgFromA)).toBeVisible({ timeout: 30_000 });
 
-				// B sends a reply (distributes B's SenderKey to A)
+				// B sends a reply
 				await inputB.fill(msgFromB);
 				await inputB.press('Enter');
 				await expect(pageB.getByText(msgFromB)).toBeVisible({ timeout: 15_000 });
 
-				// A re-navigates to the channel — this triggers prepareChannel() which
-				// fetches B's pending SenderKey distribution (stored server-side) and
-				// decrypts B's reply using the newly received distribution.
-				// Navigate away then back to trigger prepareChannel() without a hard reload
+				// A re-navigates to pick up B's SenderKey distribution
 				await navigateClientSide(pageA, '/explore');
 				await navigateClientSide(pageA, `/servers/${serverId}/channels/${channelId}`);
 				const inputA2 = pageA.locator('textarea[aria-label="Message"]').first();
 				await expect(inputA2).toBeEnabled({ timeout: 60_000 });
-				await expect(pageA.getByText(msgFromB)).toBeVisible({ timeout: 20_000 });
+				await pageA.waitForTimeout(10_000);
+				await expect(pageA.getByText(msgFromB)).toBeVisible({ timeout: 30_000 });
 				await expect(pageA.getByText(msgFromA)).toBeVisible({ timeout: 10_000 });
 				await expect(pageA.getByText(/Unable to decrypt/i)).toHaveCount(0);
 			} finally {

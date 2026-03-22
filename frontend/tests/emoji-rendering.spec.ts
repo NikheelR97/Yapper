@@ -107,7 +107,7 @@ test.describe('Custom emoji rendering @smoke', () => {
 			{ name: 'party_parrot', url: SAFE_EMOJI_URL },
 		]);
 
-		await page.goto(`/servers/${serverId}/${channelId}`);
+		await page.goto(`/servers/${serverId}/channels/${channelId}`);
 		await expect(page.locator('[aria-label="Loading Yapper"]')).toHaveCount(0, { timeout: 20_000 });
 
 		// Wait for message list to render
@@ -134,7 +134,7 @@ test.describe('Custom emoji rendering @smoke', () => {
 		const jsErrors: string[] = [];
 		page.on('pageerror', (err) => jsErrors.push(err.message));
 
-		await page.goto(`/servers/${serverId}/${channelId}`);
+		await page.goto(`/servers/${serverId}/channels/${channelId}`);
 		await expect(page.locator('[aria-label="Loading Yapper"]')).toHaveCount(0, { timeout: 20_000 });
 		await page.waitForTimeout(2_000);
 
@@ -159,7 +159,7 @@ test.describe('Emoji picker integration @smoke', () => {
 			{ name: 'thumbsup', url: SAFE_EMOJI_URL },
 		]);
 
-		await page.goto(`/servers/${serverId}/${channelId}`);
+		await page.goto(`/servers/${serverId}/channels/${channelId}`);
 		await expect(page.locator('[aria-label="Loading Yapper"]')).toHaveCount(0, { timeout: 20_000 });
 
 		// Look for emoji picker toggle button near the message input

@@ -39,9 +39,11 @@ async function setupParentAuth(
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
-			body: JSON.stringify([
-				{ id: 'child-1', username: 'kiddo', displayName: 'Kiddo', avatarUrl: null },
-			]),
+			body: JSON.stringify({
+				children: [
+					{ id: 'child-1', username: 'kiddo', display_name: 'Kiddo', avatar_url: null, date_of_birth: null, last_seen_at: null },
+				],
+			}),
 		});
 	});
 
@@ -89,7 +91,7 @@ test.describe('Screen Time — parent dashboard @smoke', () => {
 			limit: { daily_minutes: 180 },
 		});
 
-		await page.goto('/parent');
+		await page.goto('/parent/dashboard');
 		await expect(page.locator('[aria-label="Loading Yapper"]')).toHaveCount(0, { timeout: 20_000 });
 
 		// The parent dashboard should render the safety dashboard or child list
@@ -106,7 +108,7 @@ test.describe('Screen Time — parent dashboard @smoke', () => {
 			limit: { daily_minutes: 120 },
 		});
 
-		await page.goto('/parent');
+		await page.goto('/parent/dashboard');
 		await expect(page.locator('[aria-label="Loading Yapper"]')).toHaveCount(0, { timeout: 20_000 });
 
 		// The dashboard should show screen time related content

@@ -295,20 +295,19 @@ export async function mockCanvasEndpoints(
 	const clips = data.clips ?? [];
 
 	// Canvas state — backend path is /api/v1/canvas/servers/:server_id
-	await page.route(`**/api/v1/canvas/servers/*`, async (route) => {
-		if (route.request().url().includes('/clips')) {
-			// clips sub-path — handled separately below
-			await route.continue();
-			return;
-		}
+	await page.route(`**/api/v1/canvas/servers/*/state**`, async (route) => {
 		const normalizedPolls = polls.map((p) => ({
 			id: p.id,
 			channel_id: 'mock-channel',
+			poll_type: 'multiple_choice' as const,
 			question: p.question,
 			options: p.options,
 			vote_counts: p.vote_counts ?? {},
+			anonymous: false,
+			status: 'active' as const,
 			ends_at: null,
 			created_at: new Date().toISOString(),
+			my_vote: null,
 		}));
 		await route.fulfill({
 			status: 200,
