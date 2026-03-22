@@ -4,6 +4,7 @@
 	import { toast } from "$stores/toast.js";
 	import { get } from "svelte/store";
 	import { onMount } from "svelte";
+	import { API_URL } from "$lib/env.js";
 
 	$: user = $authStore.user;
 
@@ -15,7 +16,7 @@
 	let uploadingBanner = false;
 	let bannerUrl: string | null = null;
 
-	const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8080";
+	const BASE_URL = API_URL;
 
 	const themes = ["#7c3aed", "#ec4899", "#0891b2", "#059669", "#f59e0b"];
 

@@ -119,7 +119,9 @@ export async function lockDesktopVault(): Promise<void> {
 
   const { stronghold } = vaultHandle;
   vaultHandle = null;
-  await stronghold.unload().catch(() => {});
+  await stronghold.unload().catch((e) => {
+    console.warn('[vault] Failed to unload stronghold:', e);
+  });
 }
 
 export async function loadDesktopSignalVaultRecord<T>(

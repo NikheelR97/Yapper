@@ -239,10 +239,11 @@ async fn upload_one_time_prekeys(
     State(state): State<AppState>,
     Json(req): Json<UploadOtpkReq>,
 ) -> AppResult<Json<serde_json::Value>> {
-    if req.keys.is_empty() || req.keys.len() > 200 {
-        return Err(AppError::BadRequest(
-            "Provide 1–200 one-time prekeys".into(),
-        ));
+    if req.keys.is_empty() || req.keys.len() > crate::constants::MAX_OPK_BATCH {
+        return Err(AppError::BadRequest(format!(
+            "Provide 1–{} one-time prekeys",
+            crate::constants::MAX_OPK_BATCH
+        )));
     }
 
     let mut tx = state.db.pool().begin().await?;

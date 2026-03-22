@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use crate::{
     channels::service::{require_admin, require_member},
+    constants,
     error::{AppError, AppResult},
     AppState,
 };
@@ -412,6 +413,20 @@ pub(crate) async fn do_join(
     if parental_controls {
         tx.rollback().await.ok();
         return handle_parental_intercept(user_id, server_id, invite_code, state).await;
+    }
+
+    // Enforce server member cap (Rule 3 — bounded allocation)
+    let member_count: i64 =
+        sqlx::query("SELECT COUNT(*) FROM server_memberships WHERE server_id = $1")
+            .bind(server_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map(|r| r.try_get::<i64, _>(0).unwrap_or(0))
+            .unwrap_or(0);
+
+    if member_count >= constants::MAX_SERVER_MEMBERS_MVP {
+        tx.rollback().await.ok();
+        return Err(AppError::Forbidden);
     }
 
     sqlx::query(

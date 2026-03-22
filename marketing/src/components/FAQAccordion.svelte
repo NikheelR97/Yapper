@@ -9,8 +9,8 @@
       a: 'Discord is not end-to-end encrypted — their team can read your messages and comply with data requests. Yapper encrypts everything by default. We also ship parental controls that respect E2EE — parents manage who their child connects with, not what they say.',
     },
     {
-      q: 'When will Yapper launch?',
-      a: "We're in active development following a 6-month sprint plan. Sign up for the waitlist and you'll be among the first to know — and the first to get access.",
+      q: 'Is Yapper available now?',
+      a: "Yes! Yapper is live on web, Windows, macOS, and Linux. iOS and Android apps are available on the App Store and Google Play. Head to <a href='https://app.yapperhq.com/register'>app.yapperhq.com</a> to create your account.",
     },
     {
       q: 'Is it free?',
@@ -21,8 +21,8 @@
       a: "E2EE is inviolable — parents can never read message content and that's by design. What parents control is the social graph: friend requests to children require parent approval before any encrypted session is established. Server joins work the same way. Screen time limits use iOS DeviceActivity and Android UsageStatsManager APIs at the OS level.",
     },
     {
-      q: 'Will it be available on iOS and Android at launch?',
-      a: 'Yes. Web, iOS, Android, macOS, and Windows are all planned for launch.',
+      q: 'What platforms is Yapper available on?',
+      a: 'Yapper is available on Web, iOS, Android, macOS, Windows, and Linux. All platforms share the same end-to-end encryption and sync seamlessly across your devices.',
     },
   ];
 

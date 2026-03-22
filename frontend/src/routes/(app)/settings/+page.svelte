@@ -6,6 +6,7 @@
 	import { toast } from "$stores/toast.js";
 	import { get } from "svelte/store";
 	import { clearCurrentSignalStore } from "$signal/keystore.js";
+	import { API_URL } from "$lib/env.js";
 	import ProfileForm from "$components/settings/ProfileForm.svelte";
 	import PrivacySafety from "$components/settings/PrivacySafety.svelte";
 	import Appearance from "$components/settings/Appearance.svelte";
@@ -45,7 +46,7 @@
 		last_seen_at: string | null;
 	}> = [];
 	let revokingDeviceId: string | null = null;
-	const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8080";
+	const BASE_URL = API_URL;
 
 	$: user = $authStore.user;
 	$: currentDevice = $authStore.device;
@@ -106,7 +107,9 @@
 		try {
 			await api.delete(`/api/v2/devices/${deviceId}`);
 			if (deviceId === currentDevice?.id) {
-				await clearCurrentSignalStore().catch(() => {});
+				await clearCurrentSignalStore().catch((err) => {
+					console.warn("[signal] Failed to clear store on device revoke:", err);
+				});
 				clearAuth();
 				await goto("/login");
 				return;

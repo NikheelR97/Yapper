@@ -126,6 +126,21 @@ pub fn verify_password(password: &str, hash: &str) -> AppResult<bool> {
         .is_ok())
 }
 
+/// Async wrapper that runs Argon2 verification on the blocking thread pool,
+/// preventing it from stalling the Tokio runtime (~200-500ms per call).
+pub async fn verify_password_async(password: String, hash: String) -> AppResult<bool> {
+    tokio::task::spawn_blocking(move || verify_password(&password, &hash))
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("spawn_blocking join: {e}")))?
+}
+
+/// Async wrapper for password hashing on the blocking thread pool.
+pub async fn hash_password_async(password: String) -> AppResult<String> {
+    tokio::task::spawn_blocking(move || hash_password(&password))
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("spawn_blocking join: {e}")))?
+}
+
 // ─── Token generation ─────────────────────────────────────────────────────────
 
 pub fn generate_access_token(

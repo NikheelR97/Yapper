@@ -175,23 +175,27 @@ pub async fn register_or_reuse_device(
     validate_bootstrap(bootstrap)?;
 
     if let Some(installation_id) = bootstrap.installation_id {
-        if let Some(existing) = find_device_by_installation(user_id, installation_id, state).await?
-        {
-            sqlx::query(
-                r#"
-                UPDATE devices
-                SET platform = $1,
-                    label = $2,
-                    last_seen_at = NOW()
-                WHERE id = $3
-                "#,
-            )
-            .bind(&bootstrap.platform)
-            .bind(&bootstrap.label)
-            .bind(existing.id)
-            .execute(state.db.pool())
-            .await?;
-            return get_device_for_user(user_id, existing.id, state).await;
+        // Try to find and update an existing device in a single query (saves 2 round-trips)
+        let row = sqlx::query(
+            r#"
+            UPDATE devices
+            SET platform = $3,
+                label = $4,
+                last_seen_at = NOW()
+            WHERE user_id = $1 AND installation_id = $2 AND revoked_at IS NULL
+            RETURNING id, user_id, signal_device_id, installation_id, platform, label,
+                      trust_state, created_at, last_seen_at, approved_at, revoked_at
+            "#,
+        )
+        .bind(user_id)
+        .bind(installation_id)
+        .bind(&bootstrap.platform)
+        .bind(&bootstrap.label)
+        .fetch_optional(state.db.pool())
+        .await?;
+
+        if let Some(row) = row {
+            return device_from_row(&row);
         }
     }
 
@@ -225,7 +229,8 @@ pub async fn register_or_reuse_device(
         INSERT INTO devices
             (user_id, signal_device_id, installation_id, platform, label, trust_state, last_seen_at, approved_at)
         VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7)
-        RETURNING id
+        RETURNING id, user_id, signal_device_id, installation_id, platform, label,
+                  trust_state, created_at, last_seen_at, approved_at, revoked_at
         "#,
     )
     .bind(user_id)
@@ -238,8 +243,7 @@ pub async fn register_or_reuse_device(
     .fetch_one(state.db.pool())
     .await?;
 
-    let device_id: Uuid = row.try_get("id")?;
-    let device = get_device_for_user(user_id, device_id, state).await?;
+    let device = device_from_row(&row)?;
 
     if device.trust_state == DeviceTrustState::PendingTrust {
         enqueue_trust_request(device.id, user_id, None, state).await?;
@@ -617,27 +621,6 @@ async fn enqueue_trust_request(
     }
 
     Ok(())
-}
-
-async fn find_device_by_installation(
-    user_id: Uuid,
-    installation_id: Uuid,
-    state: &AppState,
-) -> AppResult<Option<DeviceRecord>> {
-    let row = sqlx::query(
-        r#"
-        SELECT id, user_id, signal_device_id, installation_id, platform, label,
-               trust_state, created_at, last_seen_at, approved_at, revoked_at
-        FROM devices
-        WHERE user_id = $1 AND installation_id = $2 AND revoked_at IS NULL
-        "#,
-    )
-    .bind(user_id)
-    .bind(installation_id)
-    .fetch_optional(state.db.pool())
-    .await?;
-
-    row.as_ref().map(device_from_row).transpose()
 }
 
 async fn next_signal_device_id(user_id: Uuid, state: &AppState) -> AppResult<i32> {

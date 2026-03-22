@@ -13,8 +13,8 @@ use uuid::Uuid;
 use validator::Validate;
 
 use super::service::{
-    generate_access_token, generate_email_token, generate_refresh_token, hash_password,
-    validate_refresh_token, verify_password, JwtKeys, REFRESH_TTL_SECS,
+    generate_access_token, generate_email_token, generate_refresh_token, hash_password_async,
+    validate_refresh_token, verify_password_async, REFRESH_TTL_SECS,
 };
 use crate::{
     error::{AppError, AppResult},
@@ -36,6 +36,10 @@ pub struct RegisterRequest {
     pub password: String,
 
     pub display_name: Option<String>,
+
+    /// Date of birth (YYYY-MM-DD). Required for COPPA compliance —
+    /// users under 13 must be created through the parental child-account flow.
+    pub date_of_birth: Option<String>,
 }
 
 // Username: alphanumeric + underscores, no spaces
@@ -111,6 +115,20 @@ pub async fn register(
         ));
     }
 
+    // COPPA: block direct registration for users under 13.
+    // Under-13 accounts can only be created via POST /api/v1/parental/children.
+    if let Some(ref dob_str) = req.date_of_birth {
+        if let Ok(dob) = dob_str.parse::<chrono::NaiveDate>() {
+            let today = chrono::Utc::now().date_naive();
+            let age = today.years_since(dob).unwrap_or(0);
+            if age < 13 {
+                return Err(AppError::BadRequest(
+                    "Users under 13 require a parent-managed account".to_string(),
+                ));
+            }
+        }
+    }
+
     let pool = state.db.pool();
 
     // Check username + email uniqueness
@@ -129,7 +147,7 @@ pub async fn register(
         ));
     }
 
-    let password_hash = hash_password(&req.password)?;
+    let password_hash = hash_password_async(req.password.clone()).await?;
     let email_token = generate_email_token();
     let display_name = req.display_name.unwrap_or_else(|| req.username.clone());
 
@@ -159,11 +177,13 @@ pub async fn register(
         let _ = send_verification_email(&email, &token, &resend_key).await;
     });
 
+    let family_id = Uuid::new_v4();
     let access_token = generate_access_token(user.id, &user.account_type, None, &state.jwt_keys)?;
-    let refresh_token = generate_refresh_token(user.id, Uuid::new_v4(), None, &state.jwt_keys)?;
+    let refresh_token = generate_refresh_token(user.id, family_id, None, &state.jwt_keys)?;
 
-    // Store refresh token session
-    store_session(pool, user.id, &refresh_token, None, &state.jwt_keys).await?;
+    // Store refresh token session — use pre-known claims to skip redundant JWT decode
+    let exp = (Utc::now() + chrono::Duration::seconds(REFRESH_TTL_SECS)).timestamp();
+    store_session_with_claims(pool, user.id, &refresh_token, None, family_id, exp).await?;
 
     let (cookies, csrf_token) = auth_cookies(&refresh_token);
     Ok((
@@ -227,7 +247,7 @@ pub async fn login(
         ));
     };
 
-    if !verify_password(&req.password, hash)? {
+    if !verify_password_async(req.password.clone(), hash.clone()).await? {
         let locked = state.login_limiter.record_failure(ip);
         if locked {
             return Err(AppError::RateLimited);
@@ -241,7 +261,8 @@ pub async fn login(
     let access_token = generate_access_token(row.id, &row.account_type, None, &state.jwt_keys)?;
     let refresh_token = generate_refresh_token(row.id, family_id, None, &state.jwt_keys)?;
 
-    store_session(pool, row.id, &refresh_token, None, &state.jwt_keys).await?;
+    let exp = (Utc::now() + chrono::Duration::seconds(REFRESH_TTL_SECS)).timestamp();
+    store_session_with_claims(pool, row.id, &refresh_token, None, family_id, exp).await?;
 
     let user = UserDto {
         id: row.id,
@@ -335,14 +356,9 @@ pub async fn refresh(
     let new_refresh =
         generate_refresh_token(user.id, claims.family_id, claims.device_id, &state.jwt_keys)?;
 
-    store_session(
-        pool,
-        user.id,
-        &new_refresh,
-        claims.device_id,
-        &state.jwt_keys,
-    )
-    .await?;
+    let exp = (Utc::now() + chrono::Duration::seconds(REFRESH_TTL_SECS)).timestamp();
+    store_session_with_claims(pool, user.id, &new_refresh, claims.device_id, claims.family_id, exp)
+        .await?;
 
     let (cookies, csrf_token) = refresh_cookie(&new_refresh);
     Ok((
@@ -486,16 +502,17 @@ pub async fn request_password_reset(
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-pub(crate) async fn store_session(
+/// Store a session row using pre-extracted claims, avoiding redundant JWT validation.
+pub(crate) async fn store_session_with_claims(
     pool: &sqlx::PgPool,
     user_id: Uuid,
     refresh_token: &str,
     device_id: Option<Uuid>,
-    keys: &JwtKeys,
+    family_id: Uuid,
+    exp: i64,
 ) -> AppResult<()> {
-    let claims = validate_refresh_token(refresh_token, keys)?.claims;
     let token_hash = sha256_hex(refresh_token);
-    let expires_at = chrono::DateTime::from_timestamp(claims.exp, 0).unwrap_or_else(Utc::now);
+    let expires_at = chrono::DateTime::from_timestamp(exp, 0).unwrap_or_else(Utc::now);
 
     sqlx::query(
         r#"
@@ -504,7 +521,7 @@ pub(crate) async fn store_session(
         "#,
     )
     .bind(user_id)
-    .bind(claims.family_id)
+    .bind(family_id)
     .bind(token_hash)
     .bind(expires_at)
     .bind(device_id)
@@ -633,12 +650,13 @@ pub(crate) async fn send_verification_email(
         return Ok(());
     }
 
+    static HTTP: once_cell::sync::Lazy<reqwest::Client> =
+        once_cell::sync::Lazy::new(reqwest::Client::new);
+
     let frontend_url =
         std::env::var("FRONTEND_URL").unwrap_or_else(|_| "http://localhost:5173".to_string());
 
-    let client = reqwest::Client::new();
-    client
-        .post("https://api.resend.com/emails")
+    HTTP.post("https://api.resend.com/emails")
         .bearer_auth(api_key)
         .json(&serde_json::json!({
             "from": std::env::var("EMAIL_FROM").unwrap_or_else(|_| "Yapper <hello@yapperhq.com>".to_string()),
@@ -661,12 +679,13 @@ async fn send_password_reset_email(to: &str, token: &str, api_key: &str) -> anyh
         return Ok(());
     }
 
+    static HTTP: once_cell::sync::Lazy<reqwest::Client> =
+        once_cell::sync::Lazy::new(reqwest::Client::new);
+
     let frontend_url =
         std::env::var("FRONTEND_URL").unwrap_or_else(|_| "http://localhost:5173".to_string());
 
-    let client = reqwest::Client::new();
-    client
-        .post("https://api.resend.com/emails")
+    HTTP.post("https://api.resend.com/emails")
         .bearer_auth(api_key)
         .json(&serde_json::json!({
             "from": std::env::var("EMAIL_FROM").unwrap_or_else(|_| "Yapper <hello@yapperhq.com>".to_string()),
@@ -706,7 +725,7 @@ pub async fn confirm_password_reset(
         return Err(AppError::BadRequest("Token is required".to_string()));
     }
 
-    let new_hash = hash_password(&req.new_password)?;
+    let new_hash = hash_password_async(req.new_password.clone()).await?;
 
     let updated = sqlx::query!(
         r#"
@@ -781,11 +800,11 @@ pub async fn change_password(
         ));
     };
 
-    if !verify_password(&req.current_password, &current_hash)? {
+    if !verify_password_async(req.current_password.clone(), current_hash.clone()).await? {
         return Err(AppError::Unauthorized);
     }
 
-    let new_hash = hash_password(&req.new_password)?;
+    let new_hash = hash_password_async(req.new_password.clone()).await?;
     sqlx::query!(
         "UPDATE users SET password_hash = $2 WHERE id = $1",
         auth.user_id,

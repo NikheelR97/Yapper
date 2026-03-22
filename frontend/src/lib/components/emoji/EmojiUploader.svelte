@@ -3,6 +3,7 @@
 	import { get } from 'svelte/store';
 	import { authStore } from '$stores/auth.js';
 	import { toast } from '$stores/toast.js';
+	import { API_URL } from '$lib/env.js';
 
 	export let serverId: string;
 
@@ -59,7 +60,7 @@
 
 			// Use fetch directly (FormData, not JSON)
 			const { accessToken } = get(authStore);
-			const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8080';
+			const BASE_URL = API_URL;
 
 			const res = await fetch(`${BASE_URL}/api/v1/servers/${serverId}/emojis`, {
 				method: 'POST',

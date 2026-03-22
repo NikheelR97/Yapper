@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { api } from '$api/client.js';
 	import { toast } from '$stores/toast.js';
+	import { API_URL } from '$lib/env.js';
 
 	interface ConnectedAccount {
 		provider: 'discord' | 'google' | 'apple';
@@ -17,7 +18,7 @@
 
 	let unlinkConfirm: 'discord' | 'google' | 'apple' | null = null;
 
-	const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8080';
+	const BASE_URL = API_URL;
 
 	onMount(async () => {
 		try {

@@ -157,7 +157,9 @@ export async function initIdbEncryption(scopeKey: string): Promise<void> {
 export function clearIdbEncryptionKey(removeFromStorage = false): void {
   if (removeFromStorage && _scopeKey) {
     const scope = _scopeKey;
-    void removeStoredKey(scope).catch(() => {});
+    void removeStoredKey(scope).catch((e) => {
+      console.warn('[idbCrypto] Failed to remove stored key:', e);
+    });
     try {
       localStorage.removeItem(storageKeyName(scope));
     } catch {

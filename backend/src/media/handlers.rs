@@ -1,12 +1,42 @@
 use axum::{extract::State, Json};
+use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
+use sqlx::Row;
+use std::sync::LazyLock;
+use std::time::Instant;
+use uuid::Uuid;
 
 use super::r2;
 use crate::{
     auth::AuthUser,
+    constants,
     error::{AppError, AppResult},
     AppState,
 };
+
+/// Per-user upload rate limiter: stores recent upload timestamps.
+static UPLOAD_TIMESTAMPS: LazyLock<DashMap<Uuid, Vec<Instant>>> =
+    LazyLock::new(DashMap::new);
+
+/// Check if the user has exceeded MAX_UPLOADS_PER_MINUTE. Returns Err if so.
+fn check_upload_rate(user_id: Uuid) -> AppResult<()> {
+    let now = Instant::now();
+    let window = std::time::Duration::from_secs(60);
+    let max = constants::MAX_UPLOADS_PER_MINUTE as usize;
+
+    let mut entry = UPLOAD_TIMESTAMPS.entry(user_id).or_default();
+    // Prune timestamps older than 60s
+    entry.retain(|t| now.duration_since(*t) < window);
+
+    if entry.len() >= max {
+        return Err(AppError::BadRequest(
+            "Upload rate limit exceeded. Try again in a minute.".into(),
+        ));
+    }
+
+    entry.push(now);
+    Ok(())
+}
 
 // ─── Request / Response types ─────────────────────────────────────────────────
 
@@ -14,6 +44,8 @@ use crate::{
 #[serde(deny_unknown_fields)]
 pub struct UploadUrlReq {
     media_type: String,
+    /// Client-declared content length in bytes (server enforces tier-based cap).
+    content_length: Option<u64>,
 }
 
 #[derive(Serialize)]
@@ -42,7 +74,9 @@ pub async fn upload_url(
     State(_state): State<AppState>,
     Json(req): Json<UploadUrlReq>,
 ) -> AppResult<Json<UploadUrlResp>> {
-    debug_assert!(auth.user_id != uuid::Uuid::nil());
+    debug_assert!(auth.user_id != Uuid::nil());
+
+    check_upload_rate(auth.user_id)?;
 
     let media_type = req.media_type.trim().to_lowercase();
     if !r2::ALLOWED_MEDIA_TYPES.contains(&media_type.as_str()) {
@@ -52,7 +86,53 @@ pub async fn upload_url(
         )));
     }
 
+    // Enforce upload size cap based on premium status.
+    // Propagate DB errors rather than silently defaulting — a transient Neon
+    // failure should surface as 500, not silently cap premium users at 10 MB.
+    let is_premium: bool = sqlx::query("SELECT is_premium FROM users WHERE id = $1")
+        .bind(auth.user_id)
+        .fetch_one(_state.db.pool())
+        .await
+        .map_err(|e| {
+            tracing::error!(user_id = %auth.user_id, "Failed to check premium status: {e}");
+            AppError::Internal(e.into())
+        })?
+        .try_get::<bool, _>("is_premium")
+        .unwrap_or(false); // Column may be NULL — default to free tier is safe
+
+    let max_size = if is_premium {
+        constants::MAX_UPLOAD_SIZE_PREMIUM
+    } else {
+        constants::MAX_UPLOAD_SIZE
+    };
+
+    if let Some(size) = req.content_length {
+        if size > max_size {
+            return Err(AppError::BadRequest(format!(
+                "File too large. Maximum upload size is {} MB",
+                max_size / (1024 * 1024)
+            )));
+        }
+    }
+
     let target = r2::generate_upload_url(&media_type).await?;
+
+    // Track the upload for quota/GC (best-effort — don't fail the request)
+    if let Some(size) = req.content_length {
+        if let Err(e) = sqlx::query(
+            "INSERT INTO media_uploads (user_id, object_key, media_type, size_bytes) \
+             VALUES ($1, $2, $3, $4)",
+        )
+        .bind(auth.user_id)
+        .bind(&target.object_key)
+        .bind(&media_type)
+        .bind(size as i64)
+        .execute(_state.db.pool())
+        .await
+        {
+            tracing::warn!(user_id = %auth.user_id, "Failed to track media upload: {e}");
+        }
+    }
 
     Ok(Json(UploadUrlResp {
         upload_url: target.upload_url,

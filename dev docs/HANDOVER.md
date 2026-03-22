@@ -1,7 +1,7 @@
 # YAPPER — Developer Handover Document
 
-**Last updated:** 2026-03-16 (rev 3)
-**Project status:** Active development — S0–S12 complete; Support tickets + HubSpot integration live; CI build pipeline optimised (GHA layer cache, ~90s deploys)
+**Last updated:** 2026-03-22 (rev 4)
+**Project status:** Active development — S0–S15 complete; Canvas Expansion (music queue, enhanced polls, clip reactions, events) live; CI build pipeline optimised (GHA layer cache, ~90s deploys)
 **Full implementation plan:** `C:\Users\rajma\.claude\plans\quizzical-yawning-starfish.md`
 
 ---
@@ -328,7 +328,7 @@ These are non-negotiable security requirements, not suggestions.
 
 ### Headers
 - HSTS, CSP, X-Frame-Options, X-Content-Type-Options: nosniff — all via `tower-http`.
-- CORS allowlist: `yapperhq.com`, `tauri://localhost`, `capacitor://localhost`.
+- CORS allowlist: `yapperhq.com`, `tauri://localhost`, `http://tauri.localhost`, `capacitor://localhost`.
 
 ### Secrets
 - Never committed to git. Always in Fly.io secrets or Cloudflare Worker secrets.
@@ -360,7 +360,7 @@ d:\Development\Claude\yapper\
 │   │   ├── messages/           ← Ciphertext store + delivery
 │   │   ├── keys/               ← Signal Protocol key bundles
 │   │   ├── media/              ← R2 pre-signed URL generation
-│   │   ├── canvas/             ← Live Canvas: music, polls
+│   │   ├── canvas/             ← Live Canvas: music (queue, skip, DJ), polls (types, anonymous), clips (reactions, pinning), events (countdown)
 │   │   ├── emojis/             ← Custom emoji management
 │   │   ├── parental/           ← Child accounts, approval flows
 │   │   ├── screentime/         ← OS-level screen time ingestion
@@ -374,8 +374,8 @@ d:\Development\Claude\yapper\
 ├── frontend/                   ← SvelteKit (static adapter)
 │   ├── src/
 │   │   ├── lib/
-│   │   │   ├── components/     ← auth/, chat/, canvas/, explore/, emoji/, profile/, settings/, parental/
-│   │   │   ├── stores/         ← auth.ts, messages.ts, ws.ts, parental.ts
+│   │   │   ├── components/     ← auth/, chat/, canvas/ (7 widgets), explore/, emoji/, profile/, settings/, parental/
+│   │   │   ├── stores/         ← auth.ts, messages.ts, ws.ts, canvas.ts, parental.ts
 │   │   │   ├── api/            ← Typed fetch wrapper
 │   │   │   ├── signal/         ← libsignal WASM wrapper + keystore
 │   │   │   └── plugins/        ← Capacitor/Tauri plugin bridges
@@ -444,7 +444,7 @@ Mitigations for Neon cold starts (500ms–2s):
 | 4 | Servers & Groups | ✅ Complete | Server/channel CRUD, Sender Keys group E2EE, invite links |
 | 5 | Media Messages | ✅ Complete | R2 credentials staged; real-time typing, read receipts, presence |
 | 6 | Real-Time Features | ✅ Complete | Typing indicators (5s auto-stop), away detection, presence dots |
-| 7 | Live Canvas | ✅ Complete | Music state, polls (live bar animation), clips carousel |
+| 7 | Live Canvas | ✅ Complete | Music (now playing + queue + skip voting + DJ roles + history), polls (binary/multiple/emoji, anonymous, admin close), clips (reactions, pinning), events (countdown/live), canvas state hydration |
 | 8 | Explore Page | ✅ Complete | Search (pg_trgm), trending tags (5-min cache), live servers |
 | 9 | User Profiles | ✅ Complete (BE + FE) | Public profiles, follow/unfollow, Hype Moments, BioCard, top communities |
 | 10 | Parental Controls | ✅ Complete (BE + FE) | Child accounts (COPPA DOB), approval workflows, SafetyDashboard, 3-step setup wizard (wizard now collects username/email/password for full `CreateChildInput` payload) |
@@ -643,22 +643,22 @@ For any developer picking up this project:
 - [x] Review the security standards in Section 4 — these are non-negotiable
 - [ ] Check the current phase status and pick up where it left off
 
-### Where to Pick Up Next (as of 2026-03-16, rev 3)
+### Where to Pick Up Next (as of 2026-03-22, rev 4)
 
-**S0–S12 complete. Support tickets live. Build pipeline optimised.** Priority order:
+**S0–S15 complete. Canvas Expansion live. Audit remediation done.** Priority order:
 
-1. **E2E Testing** — Write Playwright tests (`e2e-nightly.yml` is configured, test accounts needed: `E2E_USER_EMAIL/PASSWORD` as GitHub Secrets)
-2. **macOS DMG build** — Run on Mac: `cargo tauri build --target universal-apple-darwin`
-3. **iOS build** — Run on Mac: `cd frontend/ios && pod install`, then Xcode archive + App Store Connect upload
-4. **Google Play submission** — Build AAB, create Play Console listing ($25 one-time)
-5. **Marketing site update** — Update hero copy, add download links for Windows installer
-6. **Wishlist email blast** — Send launch announcement to all wishlist subscribers via Resend
-7. **Generate Tauri signing keys** — `cargo tauri signer generate`, set `TAURI_SIGNING_PRIVATE_KEY` + `TAURI_SIGNING_PASSWORD` as GitHub Secrets
-8. **Apple OAuth credentials** — Create Apple Sign-In service ID, configure redirect URIs
+1. **Deploy Canvas Expansion** — Run migration `000029_canvas_expansion.sql` against Neon prod, deploy backend via `flyctl deploy`, push frontend to Cloudflare Pages
+2. **Admin role wiring** — `LiveCanvas.svelte` has `isAdmin`/`isAdminOrDj` flags as local `let` — wire to actual server membership role from `serversStore`
+3. **E2E Testing** — Write Playwright tests for canvas features (`e2e-nightly.yml` configured, test accounts needed)
+4. **macOS DMG build** — Run on Mac: `cargo tauri build --target universal-apple-darwin`
+5. **iOS build** — Run on Mac: `cd frontend/ios && pod install`, then Xcode archive + App Store Connect upload
+6. **Google Play submission** — Build AAB, create Play Console listing ($25 one-time)
+7. **Marketing site update** — Update hero copy, add download links for Windows installer
+8. **Wishlist email blast** — Send launch announcement to all wishlist subscribers via Resend
+9. **Generate Tauri signing keys** — `cargo tauri signer generate`, set `TAURI_SIGNING_PRIVATE_KEY` + `TAURI_SIGNING_PASSWORD` as GitHub Secrets
+10. **Apple OAuth credentials** — Create Apple Sign-In service ID, configure redirect URIs
 
-**Completed since last handover (2026-03-03 rev 2 → rev 3):**
-- Support tickets: `POST/GET /api/v1/support/tickets`, migration 000026, HubSpot CRM Tickets API (`HUBSPOT_ACCESS_TOKEN` on Fly.io), `Support.svelte` with type selector/priority chips/ticket history in settings
-- Build pipeline: GHA Docker layer caching (`type=gha,mode=max`), `flyctl deploy --image <sha>`, Cargo profile tuning (`codegen-units=16, lto=false`). Deploy time: ~700s → ~90s steady-state
-- All 17 Dependabot PRs merged — npm/Cargo/GH Actions fully up to date
-- Project management: Linear integration guide at `dev docs/LINEAR_INTEGRATION.md`
-- Docs: `dev docs/BUILD_SPEED_OPTIMISATION.md`, `dev docs/LINEAR_INTEGRATION.md`
+**Completed since last handover (2026-03-16 rev 3 → rev 4):**
+- Canvas Expansion (S16): Full-stack implementation of expanded Live Canvas — migration `000029`, refactored `canvas/` module (mod.rs + handlers.rs + service.rs + types.rs), 23 new API endpoints, 13 new WS event types, `Hub::count_online()`, rewritten `canvas.ts` store, 7 Svelte components (MusicWidget, MusicQueue, AddTrackModal, PollWidget, PollCreator, ClipsCarousel, CountdownWidget, CountdownWidget, LiveCanvas). Spec: `dev docs/CANVAS_EXPANSION_SPEC.md`
+- Security audit (S14): Full pen-test — 0 Critical, 0 High, 4 Medium, 5 Low, 4 Info findings. All compliance fixes applied, 217 BE + 52 FE tests passing
+- All Dependabot PRs merged — npm/Cargo/GH Actions fully up to date

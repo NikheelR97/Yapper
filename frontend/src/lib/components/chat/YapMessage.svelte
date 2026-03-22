@@ -1,5 +1,6 @@
 <script lang="ts">
     import { decryptMedia } from "$lib/signal/mediaEncrypt.js";
+    import { R2_PUBLIC_URL } from "$lib/env.js";
 
     /** Signal-decrypted JSON payload: { object_key, key, iv, mime_type } */
     export let payload: {
@@ -9,8 +10,7 @@
         mime_type: string;
     };
 
-    // R2 public base URL — served via Cloudflare CDN
-    const R2_BASE = import.meta.env.VITE_R2_PUBLIC_URL ?? "";
+    const R2_BASE = R2_PUBLIC_URL;
 
     let audioEl: HTMLAudioElement;
     let blobUrl: string | null = null;

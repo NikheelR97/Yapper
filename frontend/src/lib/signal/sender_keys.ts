@@ -254,7 +254,7 @@ export async function encryptWithSenderKey(
  * Saves message keys for skipped messages (up to MAX_SKIP steps ahead).
  */
 const MAX_SKIP = 100;
-const MAX_HISTORY_SKIP = 2_048;
+const MAX_HISTORY_SKIP = 2_000;
 
 function deriveForIteration(
   startChainKey: Uint8Array,

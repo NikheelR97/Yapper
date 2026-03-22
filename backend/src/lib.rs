@@ -34,6 +34,7 @@ const CSP_API: &str = "default-src 'none'; frame-ancestors 'none'";
 
 // ─── Module declarations ───────────────────────────────────────────────────────
 
+pub mod constants;
 pub mod auth;
 pub mod bots;
 pub mod canvas;
@@ -84,6 +85,8 @@ pub struct AppState {
     pub oauth_states: Arc<OAuthStateStore>,
     /// State tokens for the Discord profile-import flow: csrf_token → (user_id, created_at)
     pub discord_import_states: Arc<DiscordImportStateStore>,
+    /// Shared HTTP client — reuses TLS sessions and connection pools across requests.
+    pub http_client: reqwest::Client,
 }
 
 // ─── Router builders ───────────────────────────────────────────────────────────
@@ -172,7 +175,7 @@ pub(crate) fn cors_layer() -> CorsLayer {
 
     let origins: Vec<HeaderValue> = std::env::var("CORS_ORIGINS")
         .unwrap_or_else(|_| {
-            "http://localhost:5173,tauri://localhost,capacitor://localhost".to_string()
+            "http://localhost:5173,tauri://localhost,capacitor://localhost,http://tauri.localhost".to_string()
         })
         .split(',')
         .filter_map(|s| s.trim().parse().ok())

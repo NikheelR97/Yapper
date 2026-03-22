@@ -1,5 +1,6 @@
 <script lang="ts">
     import { decryptMedia } from "$lib/signal/mediaEncrypt.js";
+    import { R2_PUBLIC_URL } from "$lib/env.js";
 
     export let payload: {
         object_key: string;
@@ -8,7 +9,7 @@
         mime_type: string;
     };
 
-    const R2_BASE = import.meta.env.VITE_R2_PUBLIC_URL ?? "";
+    const R2_BASE = R2_PUBLIC_URL;
 
     let videoEl: HTMLVideoElement;
     let blobUrl: string | null = null;

@@ -24,10 +24,15 @@ import WishlistForm from './WishlistForm.svelte';
         Not even we can read your chats.
       </p>
 
+      <div class="hero-cta-row">
+        <a href="https://app.yapperhq.com/register" class="btn-primary">Get started free</a>
+        <a href="#platforms" class="btn-ghost">Download apps</a>
+      </div>
+
       <WishlistForm client:load apiUrl={import.meta.env.PUBLIC_API_URL ?? ''} />
 
       <p class="hero-legal">
-        No credit card. No spam. Unsubscribe any time.
+        Free forever. No credit card required.
       </p>
     </div>
 
@@ -114,6 +119,17 @@ import WishlistForm from './WishlistForm.svelte';
   .hero-sub strong {
     color: var(--color-brand-light);
     font-weight: 600;
+  }
+
+  .hero-cta-row {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  @media (max-width: 900px) {
+    .hero-cta-row { justify-content: center; }
   }
 
   .hero-legal {

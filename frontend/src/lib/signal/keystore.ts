@@ -674,7 +674,9 @@ async function migrateDesktopVaultIfNeeded(): Promise<void> {
     await persistDesktopSecretSnapshot(snapshot);
     await clearIndexedDbSecretStores(db);
     if (currentDbName() !== DB_NAME) {
-      await clearIndexedDbSecretStoresByName(DB_NAME).catch(() => {});
+      await clearIndexedDbSecretStoresByName(DB_NAME).catch((e) => {
+        console.warn('[keystore] Failed to clear legacy IDB stores:', e);
+      });
     }
   }
 }

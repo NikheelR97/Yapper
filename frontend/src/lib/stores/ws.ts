@@ -11,11 +11,7 @@
 import { get, writable } from 'svelte/store';
 import { authStore } from '$stores/auth.js';
 import { receiveSenderKeyDist, handleKeyDistRequest } from '$lib/signal/index.js';
-
-const WS_URL = (import.meta.env.VITE_API_URL ?? 'http://localhost:8080').replace(
-	/^http/,
-	'ws'
-);
+import { WS_URL } from '$lib/env.js';
 
 type MessageHandler = (payload: unknown) => void;
 
@@ -165,6 +161,8 @@ function doConnect(): void {
 				wsStore.set({ connected: true, error: null });
 				reconnectDelay = 1000;
 				startPing(ws);
+				// Notify reconnect listeners so stale stores can refresh
+				handlers.get('_reconnected')?.forEach((h) => h({}));
 				break;
 
 			case 'message': {

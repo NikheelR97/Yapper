@@ -57,6 +57,7 @@
     hasPendingDeviceSyncRequest,
     importTrustedDeviceSnapshot,
   } from "$lib/device/sync.js";
+  import { API_URL } from "$lib/env.js";
 
   import { initUpdater } from "$lib/desktop/updater.js";
   import { initDeepLinks } from "$lib/desktop/deepLinks.js";
@@ -83,6 +84,7 @@
   let unregisterEmojiHandler: (() => void) | null = null;
   let unregisterDeviceSyncHandler: (() => void) | null = null;
   let unregisterWsErrorHandler: (() => void) | null = null;
+  let unregisterReconnectHandler: (() => void) | null = null;
   let stopScreenTimeTracker: (() => void) | null = null;
   let servicesStarted = false;
   let pendingStatusRefresh = false;
@@ -96,7 +98,7 @@
   let desktopVaultError: string | null = null;
   let secureStoreError: string | null = null;
   let bootSequenceStarted = false;
-  const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8080";
+  const BASE_URL = API_URL;
   const DEVICE_SYNC_CHUNK_SIZE = 24 * 1024;
   const trustedSyncPublicKeys = new Map<string, string>();
   const APPROVED_UNSYNCED_KEY = "yapper_approved_unsynced_devices";
@@ -291,7 +293,9 @@
         target_device_id: state.device.id,
         sync_public_key: syncRequest.publicKey,
       })
-      .catch(() => {});
+      .catch((err) => {
+        console.warn("[device] Trust request failed (will retry):", err);
+      });
   }
 
   async function syncTrustedSnapshotToDevice(
@@ -549,7 +553,9 @@
     if (deviceId) {
       clearPendingDeviceSyncRequest(deviceId);
     }
-    await clearCurrentSignalStore().catch(() => {});
+    await clearCurrentSignalStore().catch((err) => {
+      console.warn("[signal] Failed to clear signal store on logout:", err);
+    });
     clearAuth();
     ready = true;
     toast.error("This device was revoked. Sign in again to continue.");
@@ -624,11 +630,28 @@
     unregisterPresenceHandler = registerPresenceHandler();
     unregisterCanvasHandler = registerCanvasHandler();
     unregisterEmojiHandler = registerEmojiHandler();
-    fetchConversations().catch(() => {});
-    fetchServers().catch(() => {});
+    fetchConversations().catch((err) => {
+      console.error('[boot] Failed to fetch conversations:', err);
+      toast.error('Failed to load conversations');
+    });
+    fetchServers().catch((err) => {
+      console.error('[boot] Failed to fetch servers:', err);
+      toast.error('Failed to load servers');
+    });
+
+    unregisterReconnectHandler = onWsMessage('_reconnected', () => {
+      fetchConversations().catch((err) => {
+        console.warn('[reconnect] Failed to refresh conversations:', err);
+      });
+      fetchServers().catch((err) => {
+        console.warn('[reconnect] Failed to refresh servers:', err);
+      });
+    });
 
     stopScreenTimeTracker = startYapperUsageTracker();
-    reportScreenTimeUsage().catch(() => {});
+    reportScreenTimeUsage().catch((err) => {
+      console.warn('[screentime] Usage report failed:', err);
+    });
 
     initUpdater();
     initDeepLinks();
@@ -647,9 +670,13 @@
     unregisterCanvasHandler = null;
     unregisterEmojiHandler?.();
     unregisterEmojiHandler = null;
+    unregisterReconnectHandler?.();
+    unregisterReconnectHandler = null;
     stopScreenTimeTracker?.();
     stopScreenTimeTracker = null;
-    reportScreenTimeUsage().catch(() => {});
+    reportScreenTimeUsage().catch((err) => {
+      console.warn('[screentime] Final usage report failed:', err);
+    });
     wsDisconnect();
     servicesStarted = false;
   }

@@ -19,7 +19,7 @@ use std::{num::NonZeroU32, sync::Arc};
 use tokio::sync::{mpsc, watch};
 use uuid::Uuid;
 
-use crate::{devices::DeviceTrustState, AppState};
+use crate::{constants, devices::DeviceTrustState, AppState};
 
 /// Max frame size: 64KB (Rule 3).
 const MAX_WS_FRAME_SIZE: usize = 64 * 1024;
@@ -96,6 +96,7 @@ impl Hub {
             .msg_limiters
             .entry(*user_id)
             .or_insert_with(|| {
+                // SAFETY: Literal 5 and 20 are non-zero; NonZeroU32::new cannot fail.
                 let quota = governor::Quota::per_second(NonZeroU32::new(5).unwrap())
                     .allow_burst(NonZeroU32::new(20).unwrap());
                 Arc::new(RateLimiter::direct(quota))
@@ -279,6 +280,16 @@ impl Hub {
             self.send_to_user(user_id, msg.clone());
         }
     }
+
+    /// Count how many of the given user_ids have at least one active WS connection.
+    /// Used by music skip-vote threshold calculation.
+    pub fn count_online(&self, user_ids: &[Uuid]) -> usize {
+        user_ids
+            .iter()
+            .take(MAX_FANOUT_MEMBERS as usize)
+            .filter(|uid| self.connections.contains_key(uid))
+            .count()
+    }
 }
 
 /// Messages sent FROM client TO server over WebSocket.
@@ -361,6 +372,8 @@ pub enum WsOutbound {
 // ─── Shared helpers ──────────────────────────────────────────────────────────
 
 fn send_ws_error(tx: &ConnTx, code: u16, message: &str) {
+    // SAFETY: If the channel is full or closed the client is already disconnecting;
+    // the error frame is best-effort and dropping it is acceptable.
     let _ = tx.try_send(WsOutbound::Error {
         code,
         message: message.to_string(),
@@ -383,100 +396,73 @@ pub async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> 
 // ─── Socket lifecycle ────────────────────────────────────────────────────────
 
 async fn handle_socket(socket: WebSocket, state: AppState) {
-    let (mut sender, mut receiver) = socket.split();
+    let (sender, mut receiver) = socket.split();
     let conn_id = ConnectionId::new();
-    let (tx, mut rx) = mpsc::channel::<WsOutbound>(MAX_OUTBOUND_QUEUE);
-    let (close_tx, mut close_rx) = watch::channel(false);
+    let (tx, rx) = mpsc::channel::<WsOutbound>(MAX_OUTBOUND_QUEUE);
+    let (close_tx, close_rx) = watch::channel(false);
 
-    let mut send_task = tokio::spawn(async move {
-        loop {
-            tokio::select! {
-                changed = close_rx.changed() => {
-                    if changed.is_ok() && *close_rx.borrow() {
-                        break;
-                    }
-                    if changed.is_err() {
-                        break;
-                    }
-                }
-                msg = rx.recv() => {
-                    let Some(msg) = msg else {
-                        break;
-                    };
-                    let text = match serde_json::to_string(&msg) {
-                        Ok(t) => t,
-                        Err(e) => {
-                            tracing::error!("WS serialize error: {e}");
-                            continue;
-                        }
-                    };
-                    if sender.send(Message::Text(text)).await.is_err() {
-                        break;
-                    }
-                }
-            }
-        }
-    });
+    let mut send_task = spawn_ws_send_task(sender, rx, close_rx);
 
     let auth = match wait_for_auth(&mut receiver, &state).await {
         Some(auth) => auth,
-        None => {
-            send_task.abort();
-            return;
-        }
+        None => { send_task.abort(); return; }
     };
 
-    if !state.hub.register(
-        auth.user_id,
-        auth.device_id,
-        auth.trust_state != Some(DeviceTrustState::PendingTrust),
-        conn_id.clone(),
-        ConnectionHandle {
-            tx: tx.clone(),
-            close_tx: close_tx.clone(),
-        },
-    ) {
+    let handle = ConnectionHandle { tx: tx.clone(), close_tx: close_tx.clone() };
+    let is_trusted = auth.trust_state != Some(DeviceTrustState::PendingTrust);
+    if !state.hub.register(auth.user_id, auth.device_id, is_trusted, conn_id.clone(), handle) {
         send_ws_error(&tx, 4008, "Too many connections");
         send_task.abort();
         return;
     }
-    let _ = tx.try_send(WsOutbound::Ready {
-        user_id: auth.user_id,
-    });
-    if auth.trust_state != Some(DeviceTrustState::PendingTrust) {
-        deliver_offline_messages(&auth.user_id, auth.device_id.as_ref(), &state, &tx).await;
-        deliver_pending_key_dists(&auth.user_id, auth.device_id.as_ref(), &state, &tx).await;
 
-        // Notify peers this user just came online
-        broadcast_presence(auth.user_id, true, None, false, &state).await;
-        // Start the away inactivity timer (5 min of silence → away)
-        state.hub.reset_away_timer(auth.user_id, state.clone());
-    }
-    deliver_pending_sync_events(auth.device_id.as_ref(), &state, &tx).await;
+    let _ = tx.try_send(WsOutbound::Ready { user_id: auth.user_id });
+    deliver_on_connect(&auth, is_trusted, &state, &tx).await;
 
-    run_receive_loop(
-        &mut receiver,
-        &mut send_task,
-        auth.user_id,
-        auth.device_id,
-        &state,
-        &tx,
-    )
-    .await;
+    run_receive_loop(&mut receiver, &mut send_task, auth.user_id, auth.device_id, &state, &tx)
+        .await;
 
-    // unregister() cancels the away timer and clears away_users
-    state
-        .hub
-        .unregister(&auth.user_id, auth.device_id.as_ref(), &conn_id);
+    state.hub.unregister(&auth.user_id, auth.device_id.as_ref(), &conn_id);
     update_last_seen(auth.user_id, &state);
 
-    // Only broadcast offline if the user has no remaining connections
-    if auth.trust_state != Some(DeviceTrustState::PendingTrust)
-        && !state.hub.is_online(&auth.user_id)
-    {
+    if is_trusted && !state.hub.is_online(&auth.user_id) {
         let last_seen = chrono::Utc::now().to_rfc3339();
         broadcast_presence(auth.user_id, false, Some(last_seen), false, &state).await;
     }
+}
+
+fn spawn_ws_send_task(
+    mut sender: futures::stream::SplitSink<WebSocket, Message>,
+    mut rx: mpsc::Receiver<WsOutbound>,
+    mut close_rx: watch::Receiver<bool>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                changed = close_rx.changed() => {
+                    if changed.is_err() || *close_rx.borrow() { break; }
+                }
+                msg = rx.recv() => {
+                    let Some(msg) = msg else { break; };
+                    let Ok(text) = serde_json::to_string(&msg) else {
+                        tracing::error!("WS serialize error");
+                        continue;
+                    };
+                    if sender.send(Message::Text(text)).await.is_err() { break; }
+                }
+            }
+        }
+    })
+}
+
+async fn deliver_on_connect(auth: &WsAuth, is_trusted: bool, state: &AppState, tx: &ConnTx) {
+    if is_trusted {
+        deliver_offline_messages(&auth.user_id, auth.device_id.as_ref(), state, tx).await;
+        deliver_pending_key_dists(&auth.user_id, auth.device_id.as_ref(), state, tx).await;
+        broadcast_presence(auth.user_id, true, None, false, state).await;
+        state.hub.reset_away_timer(auth.user_id, state.clone());
+    }
+    deliver_pending_sync_events(auth.device_id.as_ref(), state, tx).await;
 }
 
 async fn run_receive_loop(
@@ -487,12 +473,18 @@ async fn run_receive_loop(
     state: &AppState,
     tx: &ConnTx,
 ) {
+    let mut processed = 0usize;
     loop {
         tokio::select! {
             msg = receiver.next() => {
                 match msg {
                     Some(Ok(Message::Text(text))) => {
                         handle_inbound(text, user_id, device_id, state, tx).await;
+                        processed += 1;
+                        if processed >= constants::MAX_MESSAGES_PER_TICK {
+                            processed = 0;
+                            tokio::task::yield_now().await;
+                        }
                     }
                     Some(Ok(Message::Close(_))) | None => break,
                     Some(Ok(Message::Ping(_))) => { let _ = tx.try_send(WsOutbound::Pong); }
@@ -507,10 +499,13 @@ async fn run_receive_loop(
 fn update_last_seen(user_id: Uuid, state: &AppState) {
     let pool = state.db.pool().clone();
     tokio::spawn(async move {
-        let _ = sqlx::query("UPDATE users SET last_seen_at = NOW() WHERE id = $1")
+        if let Err(e) = sqlx::query("UPDATE users SET last_seen_at = NOW() WHERE id = $1")
             .bind(user_id)
             .execute(&pool)
-            .await;
+            .await
+        {
+            tracing::warn!(user_id = %user_id, "Failed to update last_seen_at: {e}");
+        }
     });
 }
 
@@ -540,7 +535,10 @@ async fn broadcast_presence(
         .bind(user_id)
         .fetch_all(state.db.pool())
         .await
-        .unwrap_or_default();
+        .unwrap_or_else(|e| {
+            tracing::warn!(user_id = %user_id, "Failed to fetch DM peers for presence fanout: {e}");
+            vec![]
+        });
 
         let server_rows = sqlx::query(
             "SELECT user_id FROM server_memberships \
@@ -553,7 +551,10 @@ async fn broadcast_presence(
         .bind(MAX_FANOUT_MEMBERS)
         .fetch_all(state.db.pool())
         .await
-        .unwrap_or_default();
+        .unwrap_or_else(|e| {
+            tracing::warn!(user_id = %user_id, "Failed to fetch server peers for presence fanout: {e}");
+            vec![]
+        });
 
         let mut ids: Vec<Uuid> = dm_rows
             .iter()
@@ -659,102 +660,119 @@ async fn deliver_offline_messages(
     debug_assert!(*user_id != Uuid::nil());
 
     if let Some(device_id) = device_id {
-        let rows = sqlx::query(
-            r#"
-            SELECT e.id AS envelope_id,
-                   m.id,
-                   m.conversation_id,
-                   m.sender_id,
-                   m.sender_device_id,
-                   sd.signal_device_id AS sender_signal_device_id,
-                   e.recipient_device_id,
-                   e.ciphertext,
-                   e.ek_public,
-                   e.opk_id,
-                   e.msg_num
-            FROM dm_message_envelopes e
-            JOIN messages m ON m.id = e.message_id
-            JOIN devices sd ON sd.id = m.sender_device_id
-            WHERE e.recipient_device_id = $1
-              AND e.delivered_at IS NULL
-              AND m.deleted_at IS NULL
-            ORDER BY m.created_at ASC
-            LIMIT 100
-            "#,
-        )
-        .bind(device_id)
-        .fetch_all(state.db.pool())
-        .await;
+        deliver_offline_envelopes(device_id, state, tx).await;
+    } else {
+        deliver_offline_legacy(user_id, state, tx).await;
+    }
+}
 
-        let Ok(rows) = rows else { return };
-        if rows.is_empty() {
-            return;
-        }
+/// Deliver per-device DM envelopes (v2 multi-device path).
+async fn deliver_offline_envelopes(
+    device_id: &Uuid,
+    state: &AppState,
+    tx: &ConnTx,
+) {
+    let rows = sqlx::query(
+        r#"
+        SELECT e.id AS envelope_id,
+               m.id,
+               m.conversation_id,
+               m.sender_id,
+               m.sender_device_id,
+               sd.signal_device_id AS sender_signal_device_id,
+               e.recipient_device_id,
+               e.ciphertext,
+               e.ek_public,
+               e.opk_id,
+               e.msg_num
+        FROM dm_message_envelopes e
+        JOIN messages m ON m.id = e.message_id
+        JOIN devices sd ON sd.id = m.sender_device_id
+        WHERE e.recipient_device_id = $1
+          AND e.delivered_at IS NULL
+          AND m.deleted_at IS NULL
+        ORDER BY m.created_at ASC
+        LIMIT 100
+        "#,
+    )
+    .bind(device_id)
+    .fetch_all(state.db.pool())
+    .await;
 
-        let mut delivered_ids: Vec<Uuid> = Vec::with_capacity(rows.len());
-        for row in &rows {
-            let Ok(envelope_id) = row.try_get::<Uuid, _>("envelope_id") else {
-                continue;
-            };
-            let Ok(msg_id) = row.try_get::<Uuid, _>("id") else {
-                continue;
-            };
-            let Ok(conv_id) = row.try_get::<Uuid, _>("conversation_id") else {
-                continue;
-            };
-            let Ok(sender_id) = row.try_get::<Uuid, _>("sender_id") else {
-                continue;
-            };
-            let Ok(sender_device_id) = row.try_get::<Uuid, _>("sender_device_id") else {
-                continue;
-            };
-            let Ok(sender_signal_device_id) = row.try_get::<i32, _>("sender_signal_device_id")
-            else {
-                continue;
-            };
-            let Ok(recipient_device_id) = row.try_get::<Uuid, _>("recipient_device_id") else {
-                continue;
-            };
-            let Ok(cipher) = row.try_get::<Vec<u8>, _>("ciphertext") else {
-                continue;
-            };
-            let ek: Option<Vec<u8>> = row.try_get("ek_public").ok().flatten();
-            let opk_id: Option<i32> = row.try_get("opk_id").ok().flatten();
-            let msg_num: i32 = row.try_get("msg_num").unwrap_or(0);
-
-            let payload = serde_json::json!({
-                "type": "dm_v2",
-                "id": msg_id,
-                "conversation_id": conv_id,
-                "sender_id": sender_id,
-                "sender_device_id": sender_device_id,
-                "sender_signal_device_id": sender_signal_device_id,
-                "recipient_device_id": recipient_device_id,
-                "ciphertext": BASE64.encode(&cipher),
-                "ephemeral_key": ek.as_ref().map(|k| BASE64.encode(k)),
-                "opk_id": opk_id,
-                "msg_num": msg_num,
-            });
-
-            if tx.try_send(WsOutbound::Message { payload }).is_ok() {
-                delivered_ids.push(envelope_id);
-            }
-        }
-
-        if !delivered_ids.is_empty() {
-            if let Err(e) = sqlx::query(
-                "UPDATE dm_message_envelopes SET delivered_at = NOW() WHERE id = ANY($1)",
-            )
-            .bind(&delivered_ids)
-            .execute(state.db.pool())
-            .await
-            {
-                tracing::warn!("Failed to mark DM envelopes delivered: {e}");
-            }
-        }
+    let Ok(rows) = rows else { return };
+    if rows.is_empty() {
         return;
     }
 
+    let mut delivered_ids: Vec<Uuid> = Vec::with_capacity(rows.len());
+    for row in &rows {
+        let Ok(envelope_id) = row.try_get::<Uuid, _>("envelope_id") else {
+            continue;
+        };
+        let Ok(msg_id) = row.try_get::<Uuid, _>("id") else {
+            continue;
+        };
+        let Ok(conv_id) = row.try_get::<Uuid, _>("conversation_id") else {
+            continue;
+        };
+        let Ok(sender_id) = row.try_get::<Uuid, _>("sender_id") else {
+            continue;
+        };
+        let Ok(sender_device_id) = row.try_get::<Uuid, _>("sender_device_id") else {
+            continue;
+        };
+        let Ok(sender_signal_device_id) = row.try_get::<i32, _>("sender_signal_device_id")
+        else {
+            continue;
+        };
+        let Ok(recipient_device_id) = row.try_get::<Uuid, _>("recipient_device_id") else {
+            continue;
+        };
+        let Ok(cipher) = row.try_get::<Vec<u8>, _>("ciphertext") else {
+            continue;
+        };
+        let ek: Option<Vec<u8>> = row.try_get("ek_public").ok().flatten();
+        let opk_id: Option<i32> = row.try_get("opk_id").ok().flatten();
+        let msg_num: i32 = row.try_get("msg_num").unwrap_or(0);
+
+        let payload = serde_json::json!({
+            "type": "dm_v2",
+            "id": msg_id,
+            "conversation_id": conv_id,
+            "sender_id": sender_id,
+            "sender_device_id": sender_device_id,
+            "sender_signal_device_id": sender_signal_device_id,
+            "recipient_device_id": recipient_device_id,
+            "ciphertext": BASE64.encode(&cipher),
+            "ephemeral_key": ek.as_ref().map(|k| BASE64.encode(k)),
+            "opk_id": opk_id,
+            "msg_num": msg_num,
+        });
+
+        if tx.try_send(WsOutbound::Message { payload }).is_ok() {
+            delivered_ids.push(envelope_id);
+        }
+    }
+
+    if !delivered_ids.is_empty() {
+        if let Err(e) = sqlx::query(
+            "UPDATE dm_message_envelopes SET delivered_at = NOW() WHERE id = ANY($1)",
+        )
+        .bind(&delivered_ids)
+        .execute(state.db.pool())
+        .await
+        {
+            tracing::warn!("Failed to mark DM envelopes delivered: {e}");
+        }
+    }
+}
+
+/// Deliver legacy DM messages (pre-multi-device path, no device_id).
+async fn deliver_offline_legacy(
+    user_id: &Uuid,
+    state: &AppState,
+    tx: &ConnTx,
+) {
     let rows = sqlx::query(
         "SELECT m.id, m.conversation_id, m.sender_id, m.ciphertext, m.ek_public, m.opk_id \
          FROM messages m \
@@ -1023,6 +1041,11 @@ async fn handle_send_dm(
 ) {
     debug_assert!(sender_id != Uuid::nil());
 
+    if ciphertext.len() > constants::MAX_MESSAGE_LENGTH {
+        send_ws_error(tx, 4010, "Message too large");
+        return;
+    }
+
     let cipher_bytes = match BASE64.decode(&ciphertext) {
         Ok(b) => b,
         Err(_) => {
@@ -1038,15 +1061,17 @@ async fn handle_send_dm(
     };
 
     store_and_route_dm(
-        conversation_id,
-        &cipher_bytes,
-        ek_bytes.as_deref(),
-        opk_id,
-        msg_num,
-        &ciphertext,
-        &ephemeral_key,
-        sender_id,
-        recipient_id,
+        DmContext {
+            conversation_id,
+            cipher_bytes: &cipher_bytes,
+            ek_bytes: ek_bytes.as_deref(),
+            opk_id,
+            msg_num,
+            ciphertext_b64: &ciphertext,
+            ephemeral_key: &ephemeral_key,
+            sender_id,
+            recipient_id,
+        },
         state,
         tx,
     )
@@ -1082,26 +1107,57 @@ async fn resolve_dm_recipient(
     .fetch_optional(state.db.pool())
     .await;
 
-    match recipient_row {
-        Ok(Some(row)) => row.try_get("user_id").ok(),
-        _ => None,
+    let recipient_id: Uuid = match recipient_row {
+        Ok(Some(row)) => match row.try_get("user_id").ok() {
+            Some(id) => id,
+            None => return None,
+        },
+        _ => return None,
+    };
+
+    // Prevent DMs to bot accounts
+    let is_bot = sqlx::query("SELECT account_type FROM users WHERE id = $1")
+        .bind(recipient_id)
+        .fetch_optional(state.db.pool())
+        .await
+        .ok()
+        .flatten()
+        .and_then(|r| r.try_get::<String, _>("account_type").ok())
+        .map(|t| t == "bot")
+        .unwrap_or(false);
+
+    if is_bot {
+        send_ws_error(tx, 4011, "Cannot send DMs to bot accounts");
+        return None;
     }
+
+    Some(recipient_id)
 }
 
-#[allow(clippy::too_many_arguments)]
-async fn store_and_route_dm(
+struct DmContext<'a> {
     conversation_id: Uuid,
-    cipher_bytes: &[u8],
-    ek_bytes: Option<&[u8]>,
+    cipher_bytes: &'a [u8],
+    ek_bytes: Option<&'a [u8]>,
     opk_id: Option<i32>,
     msg_num: u32,
-    ciphertext_b64: &str,
-    ephemeral_key: &Option<String>,
+    ciphertext_b64: &'a str,
+    ephemeral_key: &'a Option<String>,
     sender_id: Uuid,
     recipient_id: Uuid,
-    state: &AppState,
-    tx: &ConnTx,
-) {
+}
+
+async fn store_and_route_dm(dm: DmContext<'_>, state: &AppState, tx: &ConnTx) {
+    let DmContext {
+        conversation_id,
+        cipher_bytes,
+        ek_bytes,
+        opk_id,
+        msg_num,
+        ciphertext_b64,
+        ephemeral_key,
+        sender_id,
+        recipient_id,
+    } = dm;
     let recipient_online = state.hub.is_online(&recipient_id);
     let msg_id = Uuid::new_v4();
 
@@ -1133,6 +1189,23 @@ async fn store_and_route_dm(
     state
         .hub
         .send_to_user(&recipient_id, WsOutbound::Message { payload });
+
+    // Push notification to offline devices (best-effort, fire-and-forget)
+    if !recipient_online {
+        let state = state.clone();
+        let recipient_id = recipient_id;
+        let conversation_id = conversation_id;
+        let sender_id = sender_id;
+        tokio::spawn(async move {
+            let mut meta = std::collections::HashMap::new();
+            meta.insert("conversation_id".into(), conversation_id.to_string());
+            meta.insert("sender_id".into(), sender_id.to_string());
+            crate::notifications::notify_user_offline_devices(
+                recipient_id, "dm", &meta, &state,
+            )
+            .await;
+        });
+    }
 }
 
 // ─── Send Channel ────────────────────────────────────────────────────────────
@@ -1150,33 +1223,52 @@ async fn handle_send_channel(
 ) {
     debug_assert!(sender_id != Uuid::nil());
 
-    let cipher_bytes = match BASE64.decode(&ciphertext) {
-        Ok(b) => b,
-        Err(_) => {
-            send_ws_error(tx, 4005, "Invalid ciphertext encoding");
-            return;
-        }
-    };
+    if ciphertext.len() > constants::MAX_MESSAGE_LENGTH {
+        send_ws_error(tx, 4010, "Message too large");
+        return;
+    }
 
     let server_id = match resolve_channel_membership(channel_id, sender_id, state, tx).await {
         Some(id) => id,
         None => return,
     };
 
-    let msg_type = message_type.as_deref().unwrap_or("text");
-    store_and_fanout_channel(
-        channel_id,
-        server_id,
-        &cipher_bytes,
-        msg_type,
-        msg_num,
-        &ciphertext,
-        sender_id,
-        sender_device_id,
-        state,
-        tx,
-    )
-    .await;
+    // Bot messages are stored as plaintext (bots don't participate in E2EE)
+    let is_bot = is_bot_user(sender_id, state).await;
+
+    if is_bot {
+        let msg_type = message_type.as_deref().unwrap_or("text");
+        store_and_fanout_bot_channel(
+            channel_id, server_id, &ciphertext, msg_type, sender_id, state, tx,
+        )
+        .await;
+    } else {
+        let cipher_bytes = match BASE64.decode(&ciphertext) {
+            Ok(b) => b,
+            Err(_) => {
+                send_ws_error(tx, 4005, "Invalid ciphertext encoding");
+                return;
+            }
+        };
+        let msg_type = message_type.as_deref().unwrap_or("text");
+        store_and_fanout_channel(
+            channel_id, server_id, &cipher_bytes, msg_type, msg_num, &ciphertext,
+            sender_id, sender_device_id, state, tx,
+        )
+        .await;
+    }
+}
+
+async fn is_bot_user(user_id: Uuid, state: &AppState) -> bool {
+    sqlx::query("SELECT account_type FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(state.db.pool())
+        .await
+        .ok()
+        .flatten()
+        .and_then(|r| r.try_get::<String, _>("account_type").ok())
+        .map(|t| t == "bot")
+        .unwrap_or(false)
 }
 
 async fn resolve_channel_membership(
@@ -1218,6 +1310,48 @@ async fn resolve_channel_membership(
     Some(server_id)
 }
 
+async fn store_and_fanout_bot_channel(
+    channel_id: Uuid,
+    server_id: Uuid,
+    plaintext: &str,
+    msg_type: &str,
+    sender_id: Uuid,
+    state: &AppState,
+    tx: &ConnTx,
+) {
+    let msg_id = Uuid::new_v4();
+
+    let store_result = sqlx::query(
+        "INSERT INTO messages (id, channel_id, sender_id, plaintext, message_type, delivered) \
+         VALUES ($1, $2, $3, $4, $5, TRUE)",
+    )
+    .bind(msg_id)
+    .bind(channel_id)
+    .bind(sender_id)
+    .bind(plaintext)
+    .bind(msg_type)
+    .execute(state.db.pool())
+    .await;
+
+    if let Err(e) = store_result {
+        tracing::error!("Failed to store bot channel message: {e}");
+        send_ws_error(tx, 4007, "Failed to store message");
+        return;
+    }
+
+    fanout_to_channel_members(
+        channel_id,
+        server_id,
+        serde_json::json!({
+            "type": "channel", "id": msg_id, "channel_id": channel_id,
+            "server_id": server_id, "sender_id": sender_id,
+            "plaintext": plaintext, "message_type": msg_type, "is_bot": true,
+        }),
+        state,
+    )
+    .await;
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn store_and_fanout_channel(
     channel_id: Uuid,
@@ -1253,6 +1387,27 @@ async fn store_and_fanout_channel(
         return;
     }
 
+    fanout_to_channel_members(
+        channel_id,
+        server_id,
+        serde_json::json!({
+            "type": "channel", "id": msg_id, "channel_id": channel_id,
+            "server_id": server_id, "sender_id": sender_id,
+            "sender_device_id": sender_device_id,
+            "ciphertext": ciphertext_b64, "message_type": msg_type, "msg_num": msg_num,
+        }),
+        state,
+    )
+    .await;
+}
+
+async fn fanout_to_channel_members(
+    channel_id: Uuid,
+    server_id: Uuid,
+    payload: serde_json::Value,
+    state: &AppState,
+) {
+    debug_assert!(channel_id != Uuid::nil());
     let member_rows =
         match sqlx::query("SELECT user_id FROM server_memberships WHERE server_id = $1 LIMIT $2")
             .bind(server_id)
@@ -1266,13 +1421,6 @@ async fn store_and_fanout_channel(
                 return;
             }
         };
-
-    let payload = serde_json::json!({
-        "type": "channel", "id": msg_id, "channel_id": channel_id,
-        "server_id": server_id, "sender_id": sender_id,
-        "sender_device_id": sender_device_id,
-        "ciphertext": ciphertext_b64, "message_type": msg_type, "msg_num": msg_num,
-    });
 
     for m in member_rows.iter().take(MAX_FANOUT_MEMBERS as usize) {
         if let Ok(uid) = m.try_get::<Uuid, _>("user_id") {
@@ -1465,5 +1613,695 @@ mod tests {
         let hub = Hub::new();
         let user_id = Uuid::new_v4();
         hub.send_to_user(&user_id, WsOutbound::Pong);
+    }
+
+    // ─── Rate limiter tests ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_check_msg_rate_allows_burst() {
+        let hub = Hub::new();
+        let user_id = Uuid::new_v4();
+        // Burst of 20 should all pass
+        for i in 0..20 {
+            assert!(
+                hub.check_msg_rate(&user_id),
+                "message {i} within burst should be allowed"
+            );
+        }
+    }
+
+    #[test]
+    fn test_check_msg_rate_rejects_after_burst() {
+        let hub = Hub::new();
+        let user_id = Uuid::new_v4();
+        // Exhaust the burst of 20
+        for _ in 0..20 {
+            hub.check_msg_rate(&user_id);
+        }
+        // The 21st message should be rate-limited
+        assert!(
+            !hub.check_msg_rate(&user_id),
+            "message after burst exhausted should be rejected"
+        );
+    }
+
+    #[test]
+    fn test_check_msg_rate_independent_per_user() {
+        let hub = Hub::new();
+        let user_a = Uuid::new_v4();
+        let user_b = Uuid::new_v4();
+        // Exhaust user_a's burst
+        for _ in 0..20 {
+            hub.check_msg_rate(&user_a);
+        }
+        assert!(
+            !hub.check_msg_rate(&user_a),
+            "user_a should be rate-limited"
+        );
+        // user_b should still be fine
+        assert!(
+            hub.check_msg_rate(&user_b),
+            "user_b should not be affected by user_a's rate limit"
+        );
+    }
+
+    #[test]
+    fn test_rate_limiter_cleaned_up_on_unregister() {
+        let hub = Hub::new();
+        let user_id = Uuid::new_v4();
+        let conn_id = ConnectionId::new();
+        let (tx, _rx) = mpsc::channel(MAX_OUTBOUND_QUEUE);
+        let (close_tx, _close_rx) = watch::channel(false);
+        hub.register(
+            user_id,
+            None,
+            true,
+            conn_id.clone(),
+            ConnectionHandle { tx, close_tx },
+        );
+
+        // Trigger rate limiter creation
+        hub.check_msg_rate(&user_id);
+        assert!(hub.msg_limiters.contains_key(&user_id));
+
+        // Unregister (last connection) should clean up
+        hub.unregister(&user_id, None, &conn_id);
+        assert!(
+            !hub.msg_limiters.contains_key(&user_id),
+            "rate limiter should be removed when user fully disconnects"
+        );
+    }
+
+    // ─── WsInbound deserialization tests ─────────────────────────────────────
+
+    #[test]
+    fn test_ws_inbound_ping() {
+        let json = r#"{"type":"ping"}"#;
+        let msg: WsInbound = serde_json::from_str(json).unwrap();
+        assert!(matches!(msg, WsInbound::Ping));
+    }
+
+    #[test]
+    fn test_ws_inbound_auth() {
+        let json = r#"{"type":"auth","token":"my.jwt.token"}"#;
+        let msg: WsInbound = serde_json::from_str(json).unwrap();
+        match msg {
+            WsInbound::Auth { token } => assert_eq!(token, "my.jwt.token"),
+            other => panic!("Expected Auth, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_ws_inbound_reauth() {
+        let json = r#"{"type":"reauth","token":"refreshed.jwt.token"}"#;
+        let msg: WsInbound = serde_json::from_str(json).unwrap();
+        match msg {
+            WsInbound::Reauth { token } => assert_eq!(token, "refreshed.jwt.token"),
+            other => panic!("Expected Reauth, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_ws_inbound_send_dm_full() {
+        let conv_id = Uuid::new_v4();
+        let json = serde_json::json!({
+            "type": "send_dm",
+            "conversation_id": conv_id,
+            "ciphertext": "AQID",
+            "ephemeral_key": "BAUG",
+            "opk_id": 42,
+            "msg_num": 7
+        });
+        let msg: WsInbound = serde_json::from_value(json).unwrap();
+        match msg {
+            WsInbound::SendDm {
+                conversation_id,
+                ciphertext,
+                ephemeral_key,
+                opk_id,
+                msg_num,
+            } => {
+                assert_eq!(conversation_id, conv_id);
+                assert_eq!(ciphertext, "AQID");
+                assert_eq!(ephemeral_key, Some("BAUG".to_string()));
+                assert_eq!(opk_id, Some(42));
+                assert_eq!(msg_num, 7);
+            }
+            other => panic!("Expected SendDm, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_ws_inbound_send_dm_optional_fields_null() {
+        let conv_id = Uuid::new_v4();
+        let json = serde_json::json!({
+            "type": "send_dm",
+            "conversation_id": conv_id,
+            "ciphertext": "AQID",
+            "ephemeral_key": null,
+            "opk_id": null,
+            "msg_num": 0
+        });
+        let msg: WsInbound = serde_json::from_value(json).unwrap();
+        match msg {
+            WsInbound::SendDm {
+                ephemeral_key,
+                opk_id,
+                msg_num,
+                ..
+            } => {
+                assert_eq!(ephemeral_key, None);
+                assert_eq!(opk_id, None);
+                assert_eq!(msg_num, 0);
+            }
+            other => panic!("Expected SendDm, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_ws_inbound_send_channel() {
+        let ch_id = Uuid::new_v4();
+        let json = serde_json::json!({
+            "type": "send_channel",
+            "channel_id": ch_id,
+            "ciphertext": "YWJj",
+            "message_type": "text",
+            "msg_num": 5
+        });
+        let msg: WsInbound = serde_json::from_value(json).unwrap();
+        match msg {
+            WsInbound::SendChannel {
+                channel_id,
+                ciphertext,
+                message_type,
+                msg_num,
+            } => {
+                assert_eq!(channel_id, ch_id);
+                assert_eq!(ciphertext, "YWJj");
+                assert_eq!(message_type, Some("text".to_string()));
+                assert_eq!(msg_num, Some(5));
+            }
+            other => panic!("Expected SendChannel, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_ws_inbound_send_channel_optional_fields_missing() {
+        let ch_id = Uuid::new_v4();
+        let json = serde_json::json!({
+            "type": "send_channel",
+            "channel_id": ch_id,
+            "ciphertext": "YWJj"
+        });
+        let msg: WsInbound = serde_json::from_value(json).unwrap();
+        match msg {
+            WsInbound::SendChannel {
+                message_type,
+                msg_num,
+                ..
+            } => {
+                assert_eq!(message_type, None);
+                assert_eq!(msg_num, None);
+            }
+            other => panic!("Expected SendChannel, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_ws_inbound_typing_start() {
+        let ch_id = Uuid::new_v4();
+        let json = serde_json::json!({
+            "type": "typing_start",
+            "channel_id": ch_id
+        });
+        let msg: WsInbound = serde_json::from_value(json).unwrap();
+        match msg {
+            WsInbound::TypingStart { channel_id } => assert_eq!(channel_id, ch_id),
+            other => panic!("Expected TypingStart, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_ws_inbound_read() {
+        let msg_id = Uuid::new_v4();
+        let ch_id = Uuid::new_v4();
+        let json = serde_json::json!({
+            "type": "read",
+            "message_id": msg_id,
+            "channel_id": ch_id
+        });
+        let msg: WsInbound = serde_json::from_value(json).unwrap();
+        match msg {
+            WsInbound::Read {
+                message_id,
+                channel_id,
+            } => {
+                assert_eq!(message_id, msg_id);
+                assert_eq!(channel_id, ch_id);
+            }
+            other => panic!("Expected Read, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_ws_inbound_unknown_type_fails() {
+        let json = r#"{"type":"unknown_type"}"#;
+        let result = serde_json::from_str::<WsInbound>(json);
+        assert!(result.is_err(), "Unknown type should fail deserialization");
+    }
+
+    #[test]
+    fn test_ws_inbound_missing_required_field_fails() {
+        // send_dm without required ciphertext
+        let json = serde_json::json!({
+            "type": "send_dm",
+            "conversation_id": Uuid::new_v4(),
+            "msg_num": 0
+        });
+        let result = serde_json::from_value::<WsInbound>(json);
+        assert!(
+            result.is_err(),
+            "Missing required field should fail deserialization"
+        );
+    }
+
+    // ─── WsOutbound serialization tests ──────────────────────────────────────
+
+    #[test]
+    fn test_ws_outbound_pong() {
+        let msg = WsOutbound::Pong;
+        let json: serde_json::Value = serde_json::to_value(&msg).unwrap();
+        assert_eq!(json["type"], "pong");
+        // Pong has no other fields besides "type"
+        assert_eq!(json.as_object().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_ws_outbound_ready() {
+        let user_id = Uuid::new_v4();
+        let msg = WsOutbound::Ready { user_id };
+        let json: serde_json::Value = serde_json::to_value(&msg).unwrap();
+        assert_eq!(json["type"], "ready");
+        assert_eq!(json["user_id"], user_id.to_string());
+    }
+
+    #[test]
+    fn test_ws_outbound_presence_online() {
+        let user_id = Uuid::new_v4();
+        let msg = WsOutbound::Presence {
+            user_id,
+            online: true,
+            away: false,
+            last_seen_at: None,
+        };
+        let json: serde_json::Value = serde_json::to_value(&msg).unwrap();
+        assert_eq!(json["type"], "presence");
+        assert_eq!(json["user_id"], user_id.to_string());
+        assert_eq!(json["online"], true);
+        assert_eq!(json["away"], false);
+        assert!(json["last_seen_at"].is_null());
+    }
+
+    #[test]
+    fn test_ws_outbound_presence_offline_with_last_seen() {
+        let user_id = Uuid::new_v4();
+        let last_seen = "2026-03-21T12:00:00Z".to_string();
+        let msg = WsOutbound::Presence {
+            user_id,
+            online: false,
+            away: false,
+            last_seen_at: Some(last_seen.clone()),
+        };
+        let json: serde_json::Value = serde_json::to_value(&msg).unwrap();
+        assert_eq!(json["type"], "presence");
+        assert_eq!(json["online"], false);
+        assert_eq!(json["last_seen_at"], last_seen);
+    }
+
+    #[test]
+    fn test_ws_outbound_presence_away() {
+        let user_id = Uuid::new_v4();
+        let msg = WsOutbound::Presence {
+            user_id,
+            online: true,
+            away: true,
+            last_seen_at: None,
+        };
+        let json: serde_json::Value = serde_json::to_value(&msg).unwrap();
+        assert_eq!(json["type"], "presence");
+        assert_eq!(json["online"], true);
+        assert_eq!(json["away"], true);
+    }
+
+    #[test]
+    fn test_ws_outbound_message() {
+        let payload = serde_json::json!({
+            "type": "dm",
+            "id": Uuid::new_v4(),
+            "ciphertext": "encrypted_data"
+        });
+        let msg = WsOutbound::Message {
+            payload: payload.clone(),
+        };
+        let json: serde_json::Value = serde_json::to_value(&msg).unwrap();
+        assert_eq!(json["type"], "message");
+        assert_eq!(json["payload"], payload);
+    }
+
+    #[test]
+    fn test_ws_outbound_error() {
+        let msg = WsOutbound::Error {
+            code: 4029,
+            message: "Message rate limit exceeded".to_string(),
+        };
+        let json: serde_json::Value = serde_json::to_value(&msg).unwrap();
+        assert_eq!(json["type"], "error");
+        assert_eq!(json["code"], 4029);
+        assert_eq!(json["message"], "Message rate limit exceeded");
+    }
+
+    #[test]
+    fn test_ws_outbound_re_auth_required() {
+        let msg = WsOutbound::ReAuthRequired;
+        let json: serde_json::Value = serde_json::to_value(&msg).unwrap();
+        assert_eq!(json["type"], "re_auth_required");
+    }
+
+    #[test]
+    fn test_ws_outbound_typing() {
+        let ch_id = Uuid::new_v4();
+        let user_id = Uuid::new_v4();
+        let msg = WsOutbound::Typing {
+            channel_id: ch_id,
+            user_id,
+        };
+        let json: serde_json::Value = serde_json::to_value(&msg).unwrap();
+        assert_eq!(json["type"], "typing");
+        assert_eq!(json["channel_id"], ch_id.to_string());
+        assert_eq!(json["user_id"], user_id.to_string());
+    }
+
+    #[test]
+    fn test_ws_outbound_typing_stop() {
+        let ch_id = Uuid::new_v4();
+        let user_id = Uuid::new_v4();
+        let msg = WsOutbound::TypingStop {
+            channel_id: ch_id,
+            user_id,
+        };
+        let json: serde_json::Value = serde_json::to_value(&msg).unwrap();
+        assert_eq!(json["type"], "typing_stop");
+        assert_eq!(json["channel_id"], ch_id.to_string());
+        assert_eq!(json["user_id"], user_id.to_string());
+    }
+
+    #[test]
+    fn test_ws_outbound_read_receipt() {
+        let msg_id = Uuid::new_v4();
+        let user_id = Uuid::new_v4();
+        let msg = WsOutbound::ReadReceipt {
+            message_id: msg_id,
+            user_id,
+        };
+        let json: serde_json::Value = serde_json::to_value(&msg).unwrap();
+        assert_eq!(json["type"], "read_receipt");
+        assert_eq!(json["message_id"], msg_id.to_string());
+        assert_eq!(json["user_id"], user_id.to_string());
+    }
+
+    #[test]
+    fn test_ws_outbound_canvas_update() {
+        let payload = serde_json::json!({"kind": "music_changed", "url": "https://example.com"});
+        let msg = WsOutbound::CanvasUpdate {
+            payload: payload.clone(),
+        };
+        let json: serde_json::Value = serde_json::to_value(&msg).unwrap();
+        assert_eq!(json["type"], "canvas_update");
+        assert_eq!(json["payload"], payload);
+    }
+
+    #[test]
+    fn test_ws_outbound_parent_notification() {
+        let payload = serde_json::json!({"alert": "friend_request", "child_id": Uuid::new_v4()});
+        let msg = WsOutbound::ParentNotification {
+            payload: payload.clone(),
+        };
+        let json: serde_json::Value = serde_json::to_value(&msg).unwrap();
+        assert_eq!(json["type"], "parent_notification");
+        assert_eq!(json["payload"], payload);
+    }
+
+    // ─── WsOutbound round-trip (serialize → deserialize JSON) ────────────────
+
+    #[test]
+    fn test_ws_outbound_serializes_to_valid_json_string() {
+        // Verify that serializing to a JSON string works for the WebSocket send path
+        let msg = WsOutbound::Error {
+            code: 4000,
+            message: "Invalid message format".to_string(),
+        };
+        let text = serde_json::to_string(&msg).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(parsed["type"], "error");
+        assert_eq!(parsed["code"], 4000);
+    }
+
+    // ─── Hub broadcast tests ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_hub_broadcast_sends_to_registered_users() {
+        let hub = Hub::new();
+        let user_a = Uuid::new_v4();
+        let user_b = Uuid::new_v4();
+        let user_c = Uuid::new_v4(); // not registered
+
+        let (tx_a, mut rx_a) = mpsc::channel(MAX_OUTBOUND_QUEUE);
+        let (close_tx_a, _) = watch::channel(false);
+        hub.register(
+            user_a,
+            None,
+            true,
+            ConnectionId::new(),
+            ConnectionHandle {
+                tx: tx_a,
+                close_tx: close_tx_a,
+            },
+        );
+
+        let (tx_b, mut rx_b) = mpsc::channel(MAX_OUTBOUND_QUEUE);
+        let (close_tx_b, _) = watch::channel(false);
+        hub.register(
+            user_b,
+            None,
+            true,
+            ConnectionId::new(),
+            ConnectionHandle {
+                tx: tx_b,
+                close_tx: close_tx_b,
+            },
+        );
+
+        hub.broadcast(&[user_a, user_b, user_c], WsOutbound::Pong);
+
+        // user_a and user_b should each receive the message
+        assert!(rx_a.try_recv().is_ok());
+        assert!(rx_b.try_recv().is_ok());
+    }
+
+    #[test]
+    fn test_hub_broadcast_respects_fanout_limit() {
+        let hub = Hub::new();
+        let mut user_ids = Vec::new();
+        let mut receivers = Vec::new();
+
+        // Register MAX_FANOUT_MEMBERS + 10 users
+        for _ in 0..(MAX_FANOUT_MEMBERS as usize + 10) {
+            let uid = Uuid::new_v4();
+            let (tx, rx) = mpsc::channel(MAX_OUTBOUND_QUEUE);
+            let (close_tx, _) = watch::channel(false);
+            hub.register(
+                uid,
+                None,
+                true,
+                ConnectionId::new(),
+                ConnectionHandle { tx, close_tx },
+            );
+            user_ids.push(uid);
+            receivers.push(rx);
+        }
+
+        hub.broadcast(&user_ids, WsOutbound::Pong);
+
+        // First MAX_FANOUT_MEMBERS should receive
+        let mut received = 0;
+        for rx in receivers.iter_mut() {
+            if rx.try_recv().is_ok() {
+                received += 1;
+            }
+        }
+        assert_eq!(
+            received, MAX_FANOUT_MEMBERS as usize,
+            "broadcast should cap at MAX_FANOUT_MEMBERS"
+        );
+    }
+
+    // ─── Hub send_to_user tests ──────────────────────────────────────────────
+
+    #[test]
+    fn test_hub_send_to_user_delivers_to_all_connections() {
+        let hub = Hub::new();
+        let user_id = Uuid::new_v4();
+
+        let (tx1, mut rx1) = mpsc::channel(MAX_OUTBOUND_QUEUE);
+        let (close_tx1, _) = watch::channel(false);
+        hub.register(
+            user_id,
+            None,
+            true,
+            ConnectionId::new(),
+            ConnectionHandle {
+                tx: tx1,
+                close_tx: close_tx1,
+            },
+        );
+
+        let (tx2, mut rx2) = mpsc::channel(MAX_OUTBOUND_QUEUE);
+        let (close_tx2, _) = watch::channel(false);
+        hub.register(
+            user_id,
+            None,
+            true,
+            ConnectionId::new(),
+            ConnectionHandle {
+                tx: tx2,
+                close_tx: close_tx2,
+            },
+        );
+
+        hub.send_to_user(&user_id, WsOutbound::Pong);
+
+        assert!(rx1.try_recv().is_ok(), "connection 1 should receive");
+        assert!(rx2.try_recv().is_ok(), "connection 2 should receive");
+    }
+
+    // ─── Hub device connection tests ─────────────────────────────────────────
+
+    #[test]
+    fn test_hub_device_register_and_send() {
+        let hub = Hub::new();
+        let user_id = Uuid::new_v4();
+        let device_id = Uuid::new_v4();
+
+        let (tx, mut rx) = mpsc::channel(MAX_OUTBOUND_QUEUE);
+        let (close_tx, _) = watch::channel(false);
+        hub.register(
+            user_id,
+            Some(device_id),
+            true,
+            ConnectionId::new(),
+            ConnectionHandle { tx, close_tx },
+        );
+
+        assert!(hub.is_device_online(&device_id));
+
+        hub.send_to_device(&device_id, WsOutbound::Pong);
+        assert!(rx.try_recv().is_ok(), "device should receive message");
+    }
+
+    #[test]
+    fn test_hub_device_offline_after_unregister() {
+        let hub = Hub::new();
+        let user_id = Uuid::new_v4();
+        let device_id = Uuid::new_v4();
+        let conn_id = ConnectionId::new();
+
+        let (tx, _rx) = mpsc::channel(MAX_OUTBOUND_QUEUE);
+        let (close_tx, _) = watch::channel(false);
+        hub.register(
+            user_id,
+            Some(device_id),
+            true,
+            conn_id.clone(),
+            ConnectionHandle { tx, close_tx },
+        );
+        assert!(hub.is_device_online(&device_id));
+
+        hub.unregister(&user_id, Some(&device_id), &conn_id);
+        assert!(!hub.is_device_online(&device_id));
+    }
+
+    // ─── Hub away state tests ────────────────────────────────────────────────
+
+    #[test]
+    fn test_hub_away_state() {
+        let hub = Hub::new();
+        let user_id = Uuid::new_v4();
+        assert!(!hub.is_away(&user_id));
+
+        hub.away_users.insert(user_id, ());
+        assert!(hub.is_away(&user_id));
+
+        hub.away_users.remove(&user_id);
+        assert!(!hub.is_away(&user_id));
+    }
+
+    // ─── Hub non-trusted route_user_level=false tests ────────────────────────
+
+    #[test]
+    fn test_hub_register_non_trusted_device_not_in_user_connections() {
+        let hub = Hub::new();
+        let user_id = Uuid::new_v4();
+        let device_id = Uuid::new_v4();
+
+        let (tx, _rx) = mpsc::channel(MAX_OUTBOUND_QUEUE);
+        let (close_tx, _) = watch::channel(false);
+        // route_user_level=false (pending trust device)
+        hub.register(
+            user_id,
+            Some(device_id),
+            false,
+            ConnectionId::new(),
+            ConnectionHandle { tx, close_tx },
+        );
+
+        // Should NOT appear in user-level connections
+        assert!(
+            !hub.is_online(&user_id),
+            "non-trusted device should not count as user online"
+        );
+        // But SHOULD appear in device connections
+        assert!(hub.is_device_online(&device_id));
+    }
+
+    // ─── send_ws_error helper test ───────────────────────────────────────────
+
+    #[test]
+    fn test_send_ws_error_sends_error_variant() {
+        let (tx, mut rx) = mpsc::channel(MAX_OUTBOUND_QUEUE);
+        send_ws_error(&tx, 4029, "Message rate limit exceeded");
+        let msg = rx.try_recv().unwrap();
+        match msg {
+            WsOutbound::Error { code, message } => {
+                assert_eq!(code, 4029);
+                assert_eq!(message, "Message rate limit exceeded");
+            }
+            other => panic!("Expected Error, got {:?}", other),
+        }
+    }
+
+    // ─── ConnectionId tests ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_connection_id_unique() {
+        let id1 = ConnectionId::new();
+        let id2 = ConnectionId::new();
+        assert_ne!(id1, id2, "each ConnectionId should be unique");
+    }
+
+    #[test]
+    fn test_connection_id_clone_eq() {
+        let id = ConnectionId::new();
+        let cloned = id.clone();
+        assert_eq!(id, cloned);
     }
 }

@@ -54,9 +54,19 @@ function validateRecoveryPassphrase(passphrase: string): void {
       "Recovery passphrase must be at least 12 characters",
     );
   }
+  if (passphrase.length > 1024) {
+    throw new Error(
+      "Recovery passphrase must be at most 1024 characters",
+    );
+  }
   if (!/[A-Za-z]/.test(passphrase) || !/\d/.test(passphrase)) {
     throw new Error(
       "Recovery passphrase must include both letters and numbers",
+    );
+  }
+  if (!/[^A-Za-z0-9]/.test(passphrase) && !/[A-Z]/.test(passphrase)) {
+    throw new Error(
+      "Recovery passphrase must include an uppercase letter or special character",
     );
   }
 }

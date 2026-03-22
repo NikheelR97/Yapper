@@ -5,13 +5,14 @@
 	import type { User } from '$stores/auth.js';
 	import { getDeviceBootstrap, normalizeServerDevice } from '$lib/device/bootstrap.js';
 	import { isTauri as _isTauri } from '$lib/plugins/tauri-compat.js';
+	import { API_URL } from '$lib/env.js';
 
 	let email = '';
 	let password = '';
 	let error = '';
 	let loading = false;
 
-	const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:8080';
+	const apiUrl = API_URL;
 	const isTauri = _isTauri();
 	const oauthSuffix = isTauri ? '?platform=desktop' : '';
 

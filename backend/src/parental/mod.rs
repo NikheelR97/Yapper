@@ -53,7 +53,7 @@ pub fn router() -> Router<AppState> {
 
 // ─── Create child account ────────────────────────────────────────────────────
 
-#[derive(serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct CreateChildInput {
     username: String,
@@ -574,4 +574,517 @@ async fn audit(
     .bind(reference_id)
     .execute(state.db.pool())
     .await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ─── Validation constants sanity checks ─────────────────────────────────
+
+    #[test]
+    fn constants_are_sensible() {
+        assert!(MIN_USERNAME_LEN > 0);
+        assert!(MIN_USERNAME_LEN < MAX_USERNAME_LEN);
+        assert!(MIN_PASSWORD_LEN > 0);
+        assert!(MIN_PASSWORD_LEN < MAX_PASSWORD_BYTES);
+        assert!(MAX_DISPLAY_NAME_LEN > 0);
+        assert!(MAX_EMAIL_LEN > 0);
+    }
+
+    // ─── CreateChildInput deserialization ────────────────────────────────────
+
+    fn valid_json() -> &'static str {
+        r#"{
+            "username": "kiddo",
+            "display_name": "Cool Kid",
+            "email": "kid@example.com",
+            "password": "securepass123",
+            "date_of_birth": "2015-06-15"
+        }"#
+    }
+
+    #[test]
+    fn deserialize_valid_input() {
+        let input: CreateChildInput = serde_json::from_str(valid_json()).unwrap();
+        assert_eq!(input.username, "kiddo");
+        assert_eq!(input.display_name, "Cool Kid");
+        assert_eq!(input.email, "kid@example.com");
+        assert_eq!(input.password, "securepass123");
+        assert_eq!(input.date_of_birth, "2015-06-15");
+    }
+
+    #[test]
+    fn deserialize_rejects_unknown_fields() {
+        let json = r#"{
+            "username": "kiddo",
+            "display_name": "Cool Kid",
+            "email": "kid@example.com",
+            "password": "securepass123",
+            "date_of_birth": "2015-06-15",
+            "extra_field": "should fail"
+        }"#;
+        let result = serde_json::from_str::<CreateChildInput>(json);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("unknown field"),
+            "Expected 'unknown field' error, got: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn deserialize_rejects_missing_username() {
+        let json = r#"{
+            "display_name": "Cool Kid",
+            "email": "kid@example.com",
+            "password": "securepass123",
+            "date_of_birth": "2015-06-15"
+        }"#;
+        let result = serde_json::from_str::<CreateChildInput>(json);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("username"),
+            "Expected missing 'username' error, got: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn deserialize_rejects_missing_display_name() {
+        let json = r#"{
+            "username": "kiddo",
+            "email": "kid@example.com",
+            "password": "securepass123",
+            "date_of_birth": "2015-06-15"
+        }"#;
+        let result = serde_json::from_str::<CreateChildInput>(json);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("display_name"),
+            "Expected missing 'display_name' error, got: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn deserialize_rejects_missing_email() {
+        let json = r#"{
+            "username": "kiddo",
+            "display_name": "Cool Kid",
+            "password": "securepass123",
+            "date_of_birth": "2015-06-15"
+        }"#;
+        let result = serde_json::from_str::<CreateChildInput>(json);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("email"),
+            "Expected missing 'email' error, got: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn deserialize_rejects_missing_password() {
+        let json = r#"{
+            "username": "kiddo",
+            "display_name": "Cool Kid",
+            "email": "kid@example.com",
+            "date_of_birth": "2015-06-15"
+        }"#;
+        let result = serde_json::from_str::<CreateChildInput>(json);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("password"),
+            "Expected missing 'password' error, got: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn deserialize_rejects_missing_date_of_birth() {
+        let json = r#"{
+            "username": "kiddo",
+            "display_name": "Cool Kid",
+            "email": "kid@example.com",
+            "password": "securepass123"
+        }"#;
+        let result = serde_json::from_str::<CreateChildInput>(json);
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("date_of_birth"),
+            "Expected missing 'date_of_birth' error, got: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn deserialize_rejects_empty_json_object() {
+        let result = serde_json::from_str::<CreateChildInput>("{}");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn deserialize_rejects_null() {
+        let result = serde_json::from_str::<CreateChildInput>("null");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn deserialize_rejects_array() {
+        let result = serde_json::from_str::<CreateChildInput>("[]");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn deserialize_rejects_wrong_type_for_username() {
+        let json = r#"{
+            "username": 123,
+            "display_name": "Cool Kid",
+            "email": "kid@example.com",
+            "password": "securepass123",
+            "date_of_birth": "2015-06-15"
+        }"#;
+        let result = serde_json::from_str::<CreateChildInput>(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn deserialize_rejects_wrong_type_for_date_of_birth() {
+        // date_of_birth is a String, not a boolean
+        let json = r#"{
+            "username": "kiddo",
+            "display_name": "Cool Kid",
+            "email": "kid@example.com",
+            "password": "securepass123",
+            "date_of_birth": false
+        }"#;
+        let result = serde_json::from_str::<CreateChildInput>(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn deserialize_accepts_empty_string_values() {
+        // serde will accept empty strings — validation happens later in the handler
+        let json = r#"{
+            "username": "",
+            "display_name": "",
+            "email": "",
+            "password": "",
+            "date_of_birth": ""
+        }"#;
+        let input: CreateChildInput = serde_json::from_str(json).unwrap();
+        assert_eq!(input.username, "");
+        assert_eq!(input.password, "");
+    }
+
+    #[test]
+    fn deserialize_preserves_whitespace_in_fields() {
+        // Handler calls .trim() — serde should preserve raw whitespace
+        let json = r#"{
+            "username": "  spaced  ",
+            "display_name": "  Kid  ",
+            "email": "  kid@example.com  ",
+            "password": "pass with spaces",
+            "date_of_birth": "2015-06-15"
+        }"#;
+        let input: CreateChildInput = serde_json::from_str(json).unwrap();
+        assert_eq!(input.username, "  spaced  ");
+        assert_eq!(input.display_name, "  Kid  ");
+        assert_eq!(input.email, "  kid@example.com  ");
+    }
+
+    #[test]
+    fn deserialize_accepts_unicode_values() {
+        let json = r#"{
+            "username": "こども",
+            "display_name": "子供ちゃん",
+            "email": "kid@例え.jp",
+            "password": "パスワード12345",
+            "date_of_birth": "2015-06-15"
+        }"#;
+        let input: CreateChildInput = serde_json::from_str(json).unwrap();
+        assert_eq!(input.username, "こども");
+        assert_eq!(input.display_name, "子供ちゃん");
+    }
+
+    // ─── COPPA age validation logic (inline in handler) ─────────────────────
+
+    /// Mirrors the DOB parsing + age check from create_child.
+    /// Tests the same logic without needing DB/state.
+    fn validate_child_age(date_of_birth: &str) -> Result<u32, &'static str> {
+        let dob: chrono::NaiveDate = date_of_birth
+            .parse()
+            .map_err(|_| "Invalid date_of_birth — use YYYY-MM-DD")?;
+        let today = chrono::Utc::now().date_naive();
+        let age_years = today.years_since(dob).unwrap_or(99);
+        if age_years >= 18 {
+            return Err("Child accounts require a date of birth under 18 years ago");
+        }
+        Ok(age_years)
+    }
+
+    #[test]
+    fn coppa_rejects_adult_dob() {
+        // 30 years ago — definitely 18+
+        let dob = (chrono::Utc::now().date_naive() - chrono::Months::new(12 * 30))
+            .format("%Y-%m-%d")
+            .to_string();
+        assert!(validate_child_age(&dob).is_err());
+    }
+
+    #[test]
+    fn coppa_rejects_exactly_18() {
+        // Exactly 18 years ago today
+        let dob = (chrono::Utc::now().date_naive() - chrono::Months::new(12 * 18))
+            .format("%Y-%m-%d")
+            .to_string();
+        assert!(validate_child_age(&dob).is_err());
+    }
+
+    #[test]
+    fn coppa_accepts_under_18() {
+        // 10 years ago
+        let dob = (chrono::Utc::now().date_naive() - chrono::Months::new(12 * 10))
+            .format("%Y-%m-%d")
+            .to_string();
+        let result = validate_child_age(&dob);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 10);
+    }
+
+    #[test]
+    fn coppa_accepts_just_under_18() {
+        // 17 years ago
+        let dob = (chrono::Utc::now().date_naive() - chrono::Months::new(12 * 17))
+            .format("%Y-%m-%d")
+            .to_string();
+        let result = validate_child_age(&dob);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 17);
+    }
+
+    #[test]
+    fn coppa_accepts_newborn() {
+        // Today's date as DOB
+        let dob = chrono::Utc::now()
+            .date_naive()
+            .format("%Y-%m-%d")
+            .to_string();
+        let result = validate_child_age(&dob);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 0);
+    }
+
+    #[test]
+    fn coppa_rejects_invalid_date_format() {
+        assert!(validate_child_age("15-06-2015").is_err()); // DD-MM-YYYY
+        assert!(validate_child_age("06/15/2015").is_err()); // MM/DD/YYYY
+        assert!(validate_child_age("not-a-date").is_err());
+        assert!(validate_child_age("").is_err());
+        assert!(validate_child_age("2015-13-01").is_err()); // month 13
+        assert!(validate_child_age("2015-02-29").is_err()); // 2015 not a leap year
+    }
+
+    #[test]
+    fn coppa_rejects_future_date() {
+        // Future DOB — years_since returns None → unwrap_or(99) → >= 18 → rejected
+        let future = (chrono::Utc::now().date_naive() + chrono::Months::new(12))
+            .format("%Y-%m-%d")
+            .to_string();
+        assert!(validate_child_age(&future).is_err());
+    }
+
+    // ─── Inline validation logic (mirrors handler checks) ───────────────────
+
+    fn validate_password(password: &str) -> Result<(), String> {
+        if password.len() < MIN_PASSWORD_LEN || password.len() > MAX_PASSWORD_BYTES {
+            return Err(format!(
+                "Password must be {MIN_PASSWORD_LEN}–{MAX_PASSWORD_BYTES} characters"
+            ));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn password_too_short() {
+        assert!(validate_password("").is_err());
+        assert!(validate_password("1234567").is_err()); // 7 chars
+    }
+
+    #[test]
+    fn password_exactly_min() {
+        assert!(validate_password("12345678").is_ok()); // 8 chars = MIN_PASSWORD_LEN
+    }
+
+    #[test]
+    fn password_valid_length() {
+        assert!(validate_password("a_reasonable_password").is_ok());
+    }
+
+    #[test]
+    fn password_too_long() {
+        let long = "x".repeat(MAX_PASSWORD_BYTES + 1);
+        assert!(validate_password(&long).is_err());
+    }
+
+    #[test]
+    fn password_exactly_max() {
+        let max = "x".repeat(MAX_PASSWORD_BYTES);
+        assert!(validate_password(&max).is_ok());
+    }
+
+    fn validate_username(raw: &str) -> Result<(), String> {
+        let username = raw.trim();
+        if username.len() < MIN_USERNAME_LEN || username.len() > MAX_USERNAME_LEN {
+            return Err(format!(
+                "Username must be {MIN_USERNAME_LEN}–{MAX_USERNAME_LEN} characters"
+            ));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn username_too_short() {
+        assert!(validate_username("").is_err());
+        assert!(validate_username("a").is_err()); // 1 char < MIN_USERNAME_LEN (2)
+    }
+
+    #[test]
+    fn username_trims_to_too_short() {
+        assert!(validate_username("   a   ").is_err()); // trims to 1 char
+        assert!(validate_username("     ").is_err()); // trims to 0 chars
+    }
+
+    #[test]
+    fn username_exactly_min() {
+        assert!(validate_username("ab").is_ok()); // 2 chars = MIN_USERNAME_LEN
+    }
+
+    #[test]
+    fn username_valid() {
+        assert!(validate_username("cool_kid").is_ok());
+    }
+
+    #[test]
+    fn username_too_long() {
+        let long = "x".repeat(MAX_USERNAME_LEN + 1);
+        assert!(validate_username(&long).is_err());
+    }
+
+    #[test]
+    fn username_exactly_max() {
+        let max = "x".repeat(MAX_USERNAME_LEN);
+        assert!(validate_username(&max).is_ok());
+    }
+
+    fn validate_display_name(raw: &str) -> Result<(), String> {
+        let display_name = raw.trim();
+        if display_name.is_empty() || display_name.len() > MAX_DISPLAY_NAME_LEN {
+            return Err(format!(
+                "Display name must be 1–{MAX_DISPLAY_NAME_LEN} characters"
+            ));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn display_name_empty() {
+        assert!(validate_display_name("").is_err());
+    }
+
+    #[test]
+    fn display_name_whitespace_only() {
+        assert!(validate_display_name("   ").is_err()); // trims to empty
+    }
+
+    #[test]
+    fn display_name_valid() {
+        assert!(validate_display_name("Cool Kid").is_ok());
+    }
+
+    #[test]
+    fn display_name_too_long() {
+        let long = "x".repeat(MAX_DISPLAY_NAME_LEN + 1);
+        assert!(validate_display_name(&long).is_err());
+    }
+
+    #[test]
+    fn display_name_exactly_max() {
+        let max = "x".repeat(MAX_DISPLAY_NAME_LEN);
+        assert!(validate_display_name(&max).is_ok());
+    }
+
+    fn validate_email(raw: &str) -> Result<(), String> {
+        let email = raw.trim();
+        if email.is_empty() || email.len() > MAX_EMAIL_LEN || !email.contains('@') {
+            return Err("Invalid email address".into());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn email_empty() {
+        assert!(validate_email("").is_err());
+    }
+
+    #[test]
+    fn email_missing_at() {
+        assert!(validate_email("invalid-email.com").is_err());
+    }
+
+    #[test]
+    fn email_valid() {
+        assert!(validate_email("kid@example.com").is_ok());
+    }
+
+    #[test]
+    fn email_too_long() {
+        let long = format!("{}@example.com", "x".repeat(MAX_EMAIL_LEN));
+        assert!(validate_email(&long).is_err());
+    }
+
+    #[test]
+    fn email_whitespace_only() {
+        assert!(validate_email("   ").is_err()); // trims to empty
+    }
+
+    #[test]
+    fn email_at_only() {
+        // "@" alone has an '@' but is technically accepted by this simple check
+        assert!(validate_email("@").is_ok());
+    }
+
+    // ─── Friendship UID ordering (from approve_friend_request) ──────────────
+
+    fn ordered_pair(a: Uuid, b: Uuid) -> (Uuid, Uuid) {
+        if a < b {
+            (a, b)
+        } else {
+            (b, a)
+        }
+    }
+
+    #[test]
+    fn uid_pair_ordering_is_deterministic() {
+        let a = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+        let b = Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap();
+
+        let (u1, u2) = ordered_pair(a, b);
+        assert_eq!(u1, a);
+        assert_eq!(u2, b);
+
+        // Reversed input should produce the same order
+        let (u1r, u2r) = ordered_pair(b, a);
+        assert_eq!(u1r, a);
+        assert_eq!(u2r, b);
+    }
+
+    #[test]
+    fn uid_pair_ordering_same_id() {
+        let a = Uuid::parse_str("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa").unwrap();
+        let (u1, u2) = ordered_pair(a, a);
+        assert_eq!(u1, a);
+        assert_eq!(u2, a);
+    }
 }

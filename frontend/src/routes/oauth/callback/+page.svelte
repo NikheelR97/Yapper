@@ -6,10 +6,9 @@
 	import { setAuth } from '$stores/auth.js';
 	import type { User } from '$stores/auth.js';
 	import { getDeviceBootstrap, normalizeServerDevice } from '$lib/device/bootstrap.js';
+	import { API_URL } from '$lib/env.js';
 
 	let error = '';
-
-	const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8080';
 
 	onMount(async () => {
 		const params = get(page).url.searchParams;

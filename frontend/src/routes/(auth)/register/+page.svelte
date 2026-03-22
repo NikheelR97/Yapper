@@ -4,6 +4,7 @@
 	import { setAuth } from '$stores/auth.js';
 	import type { User } from '$stores/auth.js';
 	import { getDeviceBootstrap, normalizeServerDevice } from '$lib/device/bootstrap.js';
+	import { API_URL } from '$lib/env.js';
 
 	let username = '';
 	let email = '';
@@ -12,7 +13,7 @@
 	let error = '';
 	let loading = false;
 
-	const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:8080';
+	const apiUrl = API_URL;
 
 	// Password strength (0–4)
 	$: strength = getStrength(password);

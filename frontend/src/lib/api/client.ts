@@ -1,7 +1,8 @@
 import { get } from 'svelte/store';
 import { authStore } from '$stores/auth.js';
+import { API_URL } from '$lib/env.js';
 
-const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8080';
+const BASE_URL = API_URL;
 
 class ApiError extends Error {
 	constructor(public status: number, message: string) {

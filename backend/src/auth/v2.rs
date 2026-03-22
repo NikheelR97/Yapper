@@ -14,12 +14,13 @@ use validator::Validate;
 use super::{
     handlers::{
         append_set_cookie_headers, auth_cookies_for_path, clear_auth_cookies_for_path, extract_ip,
-        extract_refresh_cookie, send_verification_email, sha256_hex, store_session, LoginRequest,
+        extract_refresh_cookie, send_verification_email, sha256_hex, store_session_with_claims,
+        LoginRequest,
         RegisterRequest, UserDto, USERNAME_RE,
     },
     service::{
-        generate_access_token, generate_email_token, generate_refresh_token, hash_password,
-        validate_refresh_token, verify_password,
+        generate_access_token, generate_email_token, generate_refresh_token, hash_password_async,
+        validate_refresh_token, verify_password_async,
     },
     AuthUser,
 };
@@ -86,6 +87,19 @@ async fn register(
         ));
     }
 
+    // COPPA: block direct registration for users under 13.
+    if let Some(ref dob_str) = req.auth.date_of_birth {
+        if let Ok(dob) = dob_str.parse::<chrono::NaiveDate>() {
+            let today = chrono::Utc::now().date_naive();
+            let age = today.years_since(dob).unwrap_or(0);
+            if age < 13 {
+                return Err(AppError::BadRequest(
+                    "Users under 13 require a parent-managed account".to_string(),
+                ));
+            }
+        }
+    }
+
     let pool = state.db.pool();
     let exists = sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS(SELECT 1 FROM users WHERE username = $1 OR email = $2)",
@@ -102,7 +116,7 @@ async fn register(
         ));
     }
 
-    let password_hash = hash_password(&req.auth.password)?;
+    let password_hash = hash_password_async(req.auth.password.clone()).await?;
     let email_token = generate_email_token();
     let display_name = req
         .auth
@@ -180,7 +194,7 @@ async fn login(
         ));
     };
 
-    if !verify_password(&req.auth.password, &hash)? {
+    if !verify_password_async(req.auth.password.clone(), hash.clone()).await? {
         let locked = state.login_limiter.record_failure(ip);
         if locked {
             return Err(AppError::RateLimited);
@@ -312,14 +326,9 @@ async fn refresh(
     )?;
     let refresh_token =
         generate_refresh_token(user.id, claims.family_id, Some(device.id), &state.jwt_keys)?;
-    store_session(
-        state.db.pool(),
-        user.id,
-        &refresh_token,
-        Some(device.id),
-        &state.jwt_keys,
-    )
-    .await?;
+    let exp = (chrono::Utc::now() + chrono::Duration::seconds(super::service::REFRESH_TTL_SECS)).timestamp();
+    store_session_with_claims(state.db.pool(), user.id, &refresh_token, Some(device.id), claims.family_id, exp)
+        .await?;
     devices::touch_device(device.id, &state).await?;
 
     let (cookies, csrf_token) = auth_cookies_for_path(&refresh_token, REFRESH_COOKIE_PATH_V2);
@@ -378,15 +387,11 @@ pub(super) async fn issue_device_session(
     let refresh_token =
         generate_refresh_token(user.id, family_id, Some(device.id), &state.jwt_keys)?;
 
-    store_session(
-        state.db.pool(),
-        user.id,
-        &refresh_token,
-        Some(device.id),
-        &state.jwt_keys,
-    )
-    .await?;
-    devices::touch_device(device.id, state).await?;
+    let exp = (chrono::Utc::now() + chrono::Duration::seconds(super::service::REFRESH_TTL_SECS)).timestamp();
+    store_session_with_claims(state.db.pool(), user.id, &refresh_token, Some(device.id), family_id, exp)
+        .await?;
+    // Note: touch_device is skipped here because register_or_reuse_device
+    // already set last_seen_at = NOW() during device creation/update.
 
     let (cookies, csrf_token) = auth_cookies_for_path(&refresh_token, REFRESH_COOKIE_PATH_V2);
     Ok((

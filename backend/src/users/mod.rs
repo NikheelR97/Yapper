@@ -693,6 +693,7 @@ async fn get_feed(auth: AuthUser, State(state): State<AppState>) -> AppResult<im
 // ─── Hype moments ─────────────────────────────────────────────────────────────
 
 #[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct HypeMomentInput {
     message_id: Uuid,
     #[serde(rename = "type")]
@@ -1109,6 +1110,7 @@ async fn get_appearance(
 }
 
 #[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct UpdateAppearanceInput {
     theme: Option<String>,
     #[serde(rename = "fontSize")]

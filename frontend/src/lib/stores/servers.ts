@@ -358,7 +358,9 @@ export async function loadChannelMessages(channelId: string): Promise<void> {
 	}
 
 	if (hadDecryptFailure) {
-		void fetchPendingKeyDists(channelId).catch(() => {});
+		void fetchPendingKeyDists(channelId).catch((err) => {
+			console.warn('[signal] Failed to fetch pending key dists:', err);
+		});
 	}
 }
 
@@ -400,7 +402,9 @@ export function registerChannelHandler(): () => void {
 			channel_id: string;
 			sender_id: string;
 			sender_device_id?: string | null;
-			ciphertext: string;
+			ciphertext?: string;
+			plaintext?: string;
+			is_bot?: boolean;
 			message_type?: string;
 			msg_num: number | null;
 			created_at?: string;
@@ -417,13 +421,46 @@ export function registerChannelHandler(): () => void {
 		}
 
 		const createdAt = msg.created_at ?? new Date().toISOString();
+
+		// Bot messages arrive as plaintext — no decryption needed
+		if (msg.is_bot && msg.plaintext != null) {
+			await storeChannelHistoryMessages([
+				{
+					id: msg.id,
+					channel_id: msg.channel_id,
+					sender_id: msg.sender_id,
+					sender_device_id: null,
+					ciphertext: null,
+					plaintext: msg.plaintext,
+					message_type: msg.message_type ?? 'text',
+					msg_num: null,
+					created_at: createdAt,
+				},
+			]);
+
+			const store = getChannelMessageStore(msg.channel_id);
+			store.update((msgs) => capChannelMessages([
+				...msgs,
+				{
+					id: msg.id,
+					conversationId: msg.channel_id,
+					senderId: msg.sender_id,
+					text: msg.plaintext!,
+					decryptError: false,
+					createdAt,
+					messageType: msg.message_type ?? 'text',
+				},
+			]));
+			return;
+		}
+
 		await storeChannelHistoryMessages([
 			{
 				id: msg.id,
 				channel_id: msg.channel_id,
 				sender_id: msg.sender_id,
 				sender_device_id: msg.sender_device_id ?? null,
-				ciphertext: msg.ciphertext,
+				ciphertext: msg.ciphertext ?? '',
 				plaintext: null,
 				message_type: 'text',
 				msg_num: msg.msg_num,
@@ -439,13 +476,15 @@ export function registerChannelHandler(): () => void {
 				msg.sender_id,
 				msg.sender_device_id ?? 'legacy',
 				{
-					ciphertext: msg.ciphertext,
+					ciphertext: msg.ciphertext ?? '',
 					msg_num: msg.msg_num,
 				}
 			);
 			clearPendingChannelDecryptTimer(msg.id);
 		} catch {
-			void fetchPendingKeyDists(msg.channel_id).catch(() => {});
+			void fetchPendingKeyDists(msg.channel_id).catch((err) => {
+				console.warn('[signal] Failed to fetch pending key dists for channel:', err);
+			});
 			scheduleChannelDecryptFailure(msg.id, msg.channel_id);
 		}
 
@@ -560,16 +599,30 @@ export async function fetchServerEmojis(serverId: string): Promise<void> {
 		}));
 
 		applyEmojisToStore(serverId, emojis);
-		setCachedEmojis(serverId, emojis).catch(() => {});
+		setCachedEmojis(serverId, emojis).catch((err) => {
+			console.warn('[emoji] Failed to cache emojis:', err);
+		});
 	} catch {
 		// Non-fatal — cached or empty emoji list shown
 	}
 }
 
-/** Register a WS handler that refreshes the emoji cache when a new emoji is added. */
+/** Register WS handlers for emoji cache invalidation (add + remove). */
 export function registerEmojiHandler(): () => void {
-	return onWsMessage('emoji_added', (payload) => {
+	const unregAdded = onWsMessage('emoji_added', (payload) => {
 		const p = payload as { emoji?: { server_id?: string } };
-		if (p.emoji?.server_id) fetchServerEmojis(p.emoji.server_id).catch(() => {});
+		if (p.emoji?.server_id) fetchServerEmojis(p.emoji.server_id).catch((err) => {
+			console.warn('[emoji] Failed to refresh emojis after add:', err);
+		});
 	});
+	const unregRemoved = onWsMessage('emoji_removed', (payload) => {
+		const p = payload as { server_id?: string };
+		if (p.server_id) fetchServerEmojis(p.server_id).catch((err) => {
+			console.warn('[emoji] Failed to refresh emojis after remove:', err);
+		});
+	});
+	return () => {
+		unregAdded();
+		unregRemoved();
+	};
 }

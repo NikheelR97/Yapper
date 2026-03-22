@@ -50,7 +50,9 @@
 					const ch = chs.find((c) => c.id === chId);
 					if (ch) channelName = ch.name;
 				})
-				.catch(() => {});
+				.catch((err) => {
+					console.warn('[channel] Failed to fetch channel list:', err);
+				});
 
 			await prepareChannel(chId);
 			await loadChannelMessages(chId);
@@ -117,7 +119,7 @@
 	</div>
 
 	{#if showCanvas && serverId}
-		<LiveCanvas {serverId} />
+		<LiveCanvas {serverId} {channelId} />
 	{/if}
 </div>
 

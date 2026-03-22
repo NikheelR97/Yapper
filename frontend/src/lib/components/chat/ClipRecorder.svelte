@@ -8,6 +8,7 @@
 
     // ── Constants ──────────────────────────────────────────────────────────────
     const MAX_DURATION_S = 30;
+    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB (free tier)
     // Prefer VP9 in WebM; fall back to whatever the browser supports.
     const PREFERRED_MIMES = [
         "video/webm;codecs=vp9,opus",
@@ -19,6 +20,7 @@
     // ── State ──────────────────────────────────────────────────────────────────
     let recording = false;
     let uploading = false;
+    let uploadProgress = 0; // 0–100
     let error: string | null = null;
     let elapsed = 0;
 
@@ -89,31 +91,57 @@
         // Keep stream alive for the video element until we clean up
     }
 
+    /** Upload encrypted blob via XHR (supports progress events). */
+    function uploadToR2(url: string, body: ArrayBuffer): Promise<void> {
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open("PUT", url);
+            xhr.setRequestHeader("Content-Type", "application/octet-stream");
+            xhr.upload.onprogress = (e) => {
+                if (e.lengthComputable) {
+                    uploadProgress = Math.round((e.loaded / e.total) * 100);
+                }
+            };
+            xhr.onload = () =>
+                xhr.status >= 200 && xhr.status < 300
+                    ? resolve()
+                    : reject(new Error(`R2 upload failed: ${xhr.status}`));
+            xhr.onerror = () => reject(new Error("Upload network error"));
+            xhr.send(body);
+        });
+    }
+
     async function handleStop(mimeType: string): Promise<void> {
         // Stop preview stream
         stream?.getTracks().forEach((t) => t.stop());
         videoEl.srcObject = null;
 
         uploading = true;
+        uploadProgress = 0;
         error = null;
 
         try {
             const blob = new Blob(chunks, { type: mimeType });
+
+            // Client-side size check before encrypting (10 MB free tier)
+            if (blob.size > MAX_FILE_SIZE) {
+                throw new Error(
+                    `Recording too large (${(blob.size / 1024 / 1024).toFixed(1)} MB). Max ${MAX_FILE_SIZE / 1024 / 1024} MB.`,
+                );
+            }
+
             const { encrypted, key, iv } = await encryptMedia(blob);
 
             const { upload_url, object_key } = await api.post<{
                 upload_url: string;
                 object_key: string;
-            }>(UPLOAD_URL_PATH, { media_type: "clip" });
-
-            const putResp = await fetch(upload_url, {
-                method: "PUT",
-                headers: { "Content-Type": "application/octet-stream" },
-                body: encrypted,
+            }>(UPLOAD_URL_PATH, {
+                media_type: "clip",
+                content_length: encrypted.byteLength,
             });
 
-            if (!putResp.ok)
-                throw new Error(`R2 upload failed: ${putResp.status}`);
+            // Upload with progress
+            await uploadToR2(upload_url, encrypted);
 
             const mediaPayload = JSON.stringify({
                 object_key,
@@ -126,6 +154,7 @@
             error = e instanceof Error ? e.message : "Upload failed";
         } finally {
             uploading = false;
+            uploadProgress = 0;
             chunks = [];
         }
     }
@@ -179,7 +208,13 @@
                 ⏹
             </button>
         {:else}
-            <span class="clip-uploading">Uploading…</span>
+            <span class="clip-uploading">Uploading… {uploadProgress}%</span>
+            <div class="clip-progress-bar">
+                <div
+                    class="clip-progress-fill"
+                    style="width: {uploadProgress}%"
+                ></div>
+            </div>
         {/if}
     </div>
 </div>
@@ -256,6 +291,21 @@
         font-size: 13px;
         color: var(--text-muted, #888);
         font-variant-numeric: tabular-nums;
+    }
+
+    .clip-progress-bar {
+        flex: 1;
+        height: 4px;
+        background: var(--surface-3, #2a2a3e);
+        border-radius: 2px;
+        overflow: hidden;
+    }
+
+    .clip-progress-fill {
+        height: 100%;
+        background: #a78bfa;
+        border-radius: 2px;
+        transition: width 0.2s ease;
     }
 
     .clip-error {

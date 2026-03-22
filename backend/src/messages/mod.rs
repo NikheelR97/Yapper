@@ -196,15 +196,17 @@ async fn list_conversations_for_user(
 
     let items = rows
         .into_iter()
-        .map(|r| ConversationListItem {
-            id: r.try_get("id").unwrap(),
-            peer_id: r.try_get("peer_id").unwrap(),
-            peer_username: r.try_get("peer_username").unwrap(),
-            peer_display_name: r.try_get("peer_display_name").ok().flatten(),
-            peer_avatar_url: r.try_get("peer_avatar_url").ok().flatten(),
-            last_message_at: r.try_get("last_message_at").ok().flatten(),
+        .map(|r| -> Result<ConversationListItem, sqlx::Error> {
+            Ok(ConversationListItem {
+                id: r.try_get("id")?,
+                peer_id: r.try_get("peer_id")?,
+                peer_username: r.try_get("peer_username")?,
+                peer_display_name: r.try_get("peer_display_name").ok().flatten(),
+                peer_avatar_url: r.try_get("peer_avatar_url").ok().flatten(),
+                last_message_at: r.try_get("last_message_at").ok().flatten(),
+            })
         })
-        .collect();
+        .collect::<Result<Vec<_>, _>>()?;
 
     Ok(Json(items))
 }
@@ -370,16 +372,16 @@ async fn list_messages_v2(
 
     let mut messages: Vec<MessageRespV2> = rows
         .into_iter()
-        .map(|r| {
+        .map(|r| -> Result<MessageRespV2, sqlx::Error> {
             let cipher: Vec<u8> = r.try_get("ciphertext").unwrap_or_default();
             let ek: Option<Vec<u8>> = r.try_get("ek_public").ok().flatten();
             let ratchet_pub: Option<Vec<u8>> = r.try_get("ratchet_pub").ok().flatten();
-            MessageRespV2 {
-                id: r.try_get("id").unwrap(),
-                conversation_id: r.try_get("conversation_id").unwrap(),
-                sender_id: r.try_get("sender_id").unwrap(),
-                sender_device_id: r.try_get("sender_device_id").unwrap(),
-                sender_signal_device_id: r.try_get("sender_signal_device_id").unwrap(),
+            Ok(MessageRespV2 {
+                id: r.try_get("id")?,
+                conversation_id: r.try_get("conversation_id")?,
+                sender_id: r.try_get("sender_id")?,
+                sender_device_id: r.try_get("sender_device_id")?,
+                sender_signal_device_id: r.try_get("sender_signal_device_id")?,
                 ciphertext: BASE64.encode(&cipher),
                 ephemeral_key: ek.as_ref().map(|k| BASE64.encode(k)),
                 opk_id: r.try_get("opk_id").ok().flatten(),
@@ -387,10 +389,10 @@ async fn list_messages_v2(
                 ratchet_pub: ratchet_pub.as_ref().map(|key| BASE64.encode(key)),
                 previous_chain_len: r.try_get("previous_chain_len").ok().flatten(),
                 crypto_version: r.try_get("crypto_version").unwrap_or(1),
-                created_at: r.try_get("created_at").unwrap(),
-            }
+                created_at: r.try_get("created_at")?,
+            })
         })
-        .collect();
+        .collect::<Result<Vec<_>, _>>()?;
 
     messages.reverse();
     Ok(Json(messages))
@@ -465,21 +467,21 @@ async fn list_messages_v1_for_user(
 
     let mut messages: Vec<MessageResp> = rows
         .into_iter()
-        .map(|r| {
+        .map(|r| -> Result<MessageResp, sqlx::Error> {
             let cipher: Vec<u8> = r.try_get("ciphertext").unwrap_or_default();
             let ek: Option<Vec<u8>> = r.try_get("ek_public").ok().flatten();
-            MessageResp {
-                id: r.try_get("id").unwrap(),
-                conversation_id: r.try_get("conversation_id").unwrap(),
-                sender_id: r.try_get("sender_id").unwrap(),
+            Ok(MessageResp {
+                id: r.try_get("id")?,
+                conversation_id: r.try_get("conversation_id")?,
+                sender_id: r.try_get("sender_id")?,
                 ciphertext: BASE64.encode(&cipher),
                 ephemeral_key: ek.as_ref().map(|k| BASE64.encode(k)),
                 opk_id: r.try_get("opk_id").ok().flatten(),
                 msg_num: r.try_get("msg_num").unwrap_or(0),
-                created_at: r.try_get("created_at").unwrap(),
-            }
+                created_at: r.try_get("created_at")?,
+            })
         })
-        .collect();
+        .collect::<Result<Vec<_>, _>>()?;
 
     // Return in chronological order
     messages.reverse();
@@ -500,6 +502,33 @@ async fn send_message_v2(
         ));
     }
 
+    validate_dm_participants(conv_id, auth.user_id, &req, &state).await?;
+    validate_dm_recipient_devices(&req, &state).await?;
+
+    let message_id = Uuid::new_v4();
+    let created_at = Utc::now();
+    let delivered = store_dm_envelopes(
+        message_id, conv_id, created_at, &auth, &req, &state,
+    )
+    .await?;
+
+    fanout_dm_v2(message_id, conv_id, created_at, &auth, &req, &delivered, &state);
+
+    Ok(Json(serde_json::json!({
+        "status": "ok",
+        "message_id": message_id,
+        "created_at": created_at,
+    })))
+}
+
+/// Validate the sender is a conversation participant and all envelope
+/// recipients belong to the conversation.
+async fn validate_dm_participants(
+    conv_id: Uuid,
+    sender_id: Uuid,
+    req: &SendMessageReqV2,
+    state: &AppState,
+) -> AppResult<()> {
     let participant_rows = sqlx::query(
         "SELECT user_id FROM dm_participants WHERE conversation_id = $1 ORDER BY user_id ASC",
     )
@@ -512,50 +541,43 @@ async fn send_message_v2(
         .filter_map(|row| row.try_get::<Uuid, _>("user_id").ok())
         .collect();
 
-    if participants.len() != 2 || !participants.contains(&auth.user_id) {
+    if participants.len() != 2 || !participants.contains(&sender_id) {
         return Err(AppError::Forbidden);
     }
 
-    let mut recipient_user_ids = req
+    let all_recipients_valid = req
         .envelopes
         .iter()
-        .map(|envelope| envelope.recipient_user_id)
-        .collect::<Vec<_>>();
-    recipient_user_ids.sort();
-    recipient_user_ids.dedup();
+        .all(|e| participants.contains(&e.recipient_user_id));
 
-    if recipient_user_ids
-        .iter()
-        .any(|user_id| !participants.contains(user_id))
-    {
+    if !all_recipients_valid {
         return Err(AppError::BadRequest(
             "Envelope recipients must belong to the conversation".into(),
         ));
     }
+    Ok(())
+}
 
-    let recipient_device_ids = req
-        .envelopes
-        .iter()
-        .map(|envelope| envelope.recipient_device_id)
-        .collect::<Vec<_>>();
-
-    let device_rows = sqlx::query(
-        r#"
-        SELECT id, user_id, revoked_at, trust_state
-        FROM devices
-        WHERE id = ANY($1)
-        "#,
+/// Validate all recipient devices exist, are trusted, and belong to the
+/// correct user IDs specified in each envelope.
+async fn validate_dm_recipient_devices(
+    req: &SendMessageReqV2,
+    state: &AppState,
+) -> AppResult<()> {
+    let device_ids: Vec<Uuid> = req.envelopes.iter().map(|e| e.recipient_device_id).collect();
+    let rows = sqlx::query(
+        "SELECT id, user_id, revoked_at, trust_state FROM devices WHERE id = ANY($1)",
     )
-    .bind(&recipient_device_ids)
+    .bind(&device_ids)
     .fetch_all(state.db.pool())
     .await?;
 
-    if device_rows.len() != req.envelopes.len() {
+    if rows.len() != req.envelopes.len() {
         return Err(AppError::BadRequest("Unknown recipient device".into()));
     }
 
     let mut device_map = std::collections::HashMap::new();
-    for row in &device_rows {
+    for row in &rows {
         let device_id: Uuid = row.try_get("id")?;
         let user_id: Uuid = row.try_get("user_id")?;
         let revoked_at: Option<DateTime<Utc>> = row.try_get("revoked_at").ok().flatten();
@@ -569,9 +591,7 @@ async fn send_message_v2(
     }
 
     for envelope in &req.envelopes {
-        let owner = device_map
-            .get(&envelope.recipient_device_id)
-            .copied()
+        let owner = device_map.get(&envelope.recipient_device_id).copied()
             .ok_or_else(|| AppError::BadRequest("Unknown recipient device".into()))?;
         if owner != envelope.recipient_user_id {
             return Err(AppError::BadRequest(
@@ -579,118 +599,111 @@ async fn send_message_v2(
             ));
         }
     }
+    Ok(())
+}
 
-    let message_id = Uuid::new_v4();
-    let created_at = Utc::now();
+/// Insert the parent message row + per-device envelopes inside a transaction.
+/// Returns the list of device IDs that are currently online.
+async fn store_dm_envelopes(
+    message_id: Uuid,
+    conv_id: Uuid,
+    created_at: DateTime<Utc>,
+    auth: &AuthDevice,
+    req: &SendMessageReqV2,
+    state: &AppState,
+) -> AppResult<Vec<Uuid>> {
     let mut tx = state.db.pool().begin().await?;
 
     sqlx::query(
-        r#"
-        INSERT INTO messages
-            (id, conversation_id, sender_id, sender_device_id, delivered, created_at)
-        VALUES ($1, $2, $3, $4, TRUE, $5)
-        "#,
+        "INSERT INTO messages (id, conversation_id, sender_id, sender_device_id, delivered, created_at) \
+         VALUES ($1, $2, $3, $4, TRUE, $5)",
     )
-    .bind(message_id)
-    .bind(conv_id)
-    .bind(auth.user_id)
-    .bind(auth.device_id)
-    .bind(created_at)
+    .bind(message_id).bind(conv_id).bind(auth.user_id).bind(auth.device_id).bind(created_at)
     .execute(&mut *tx)
     .await?;
-    let mut delivered_device_ids = Vec::new();
 
+    let mut delivered = Vec::new();
     for envelope in &req.envelopes {
-        let ciphertext = BASE64
-            .decode(&envelope.ciphertext)
-            .map_err(|_| AppError::BadRequest("Invalid ciphertext encoding".into()))?;
-        let ek_public = envelope
-            .ephemeral_key
-            .as_deref()
-            .map(|value| BASE64.decode(value))
-            .transpose()
-            .map_err(|_| AppError::BadRequest("Invalid ephemeral_key encoding".into()))?;
-        let ratchet_pub = envelope
-            .ratchet_pub
-            .as_deref()
-            .map(|value| BASE64.decode(value))
-            .transpose()
-            .map_err(|_| AppError::BadRequest("Invalid ratchet_pub encoding".into()))?;
-        let crypto_version = envelope.crypto_version.unwrap_or(1);
-        if !(1..=2).contains(&crypto_version) {
-            return Err(AppError::BadRequest("Invalid crypto_version".into()));
-        }
-
         let deliver_now = envelope.recipient_device_id == auth.device_id
             || state.hub.is_device_online(&envelope.recipient_device_id);
-
-        sqlx::query(
-            r#"
-            INSERT INTO dm_message_envelopes
-                (message_id, recipient_user_id, recipient_device_id, sender_user_id, sender_device_id,
-                 ciphertext, ek_public, opk_id, msg_num, ratchet_pub, previous_chain_len, crypto_version,
-                 delivered_at, created_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-            "#,
-        )
-        .bind(message_id)
-        .bind(envelope.recipient_user_id)
-        .bind(envelope.recipient_device_id)
-        .bind(auth.user_id)
-        .bind(auth.device_id)
-        .bind(&ciphertext)
-        .bind(&ek_public)
-        .bind(envelope.opk_id)
-        .bind(envelope.msg_num)
-        .bind(&ratchet_pub)
-        .bind(envelope.previous_chain_len)
-        .bind(crypto_version)
-        .bind(if deliver_now { Some(created_at) } else { None })
-        .bind(created_at)
-        .execute(&mut *tx)
-        .await?;
-
+        insert_dm_envelope(message_id, created_at, auth, envelope, deliver_now, &mut tx).await?;
         if deliver_now {
-            delivered_device_ids.push(envelope.recipient_device_id);
+            delivered.push(envelope.recipient_device_id);
         }
     }
 
     tx.commit().await?;
+    Ok(delivered)
+}
 
+/// Insert a single dm_message_envelope row.
+async fn insert_dm_envelope(
+    message_id: Uuid,
+    created_at: DateTime<Utc>,
+    auth: &AuthDevice,
+    e: &SendEnvelopeReqV2,
+    deliver_now: bool,
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+) -> AppResult<()> {
+    let ciphertext = BASE64.decode(&e.ciphertext)
+        .map_err(|_| AppError::BadRequest("Invalid ciphertext encoding".into()))?;
+    let ek_public = e.ephemeral_key.as_deref().map(|v| BASE64.decode(v)).transpose()
+        .map_err(|_| AppError::BadRequest("Invalid ephemeral_key encoding".into()))?;
+    let ratchet_pub = e.ratchet_pub.as_deref().map(|v| BASE64.decode(v)).transpose()
+        .map_err(|_| AppError::BadRequest("Invalid ratchet_pub encoding".into()))?;
+    let crypto_version = e.crypto_version.unwrap_or(1);
+    if !(1..=2).contains(&crypto_version) {
+        return Err(AppError::BadRequest("Invalid crypto_version".into()));
+    }
+
+    sqlx::query(
+        "INSERT INTO dm_message_envelopes \
+         (message_id, recipient_user_id, recipient_device_id, sender_user_id, sender_device_id, \
+          ciphertext, ek_public, opk_id, msg_num, ratchet_pub, previous_chain_len, crypto_version, \
+          delivered_at, created_at) \
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)",
+    )
+    .bind(message_id).bind(e.recipient_user_id).bind(e.recipient_device_id)
+    .bind(auth.user_id).bind(auth.device_id)
+    .bind(&ciphertext).bind(&ek_public).bind(e.opk_id).bind(e.msg_num)
+    .bind(&ratchet_pub).bind(e.previous_chain_len).bind(crypto_version)
+    .bind(if deliver_now { Some(created_at) } else { None })
+    .bind(created_at)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+/// Push WS payloads to online recipient devices.
+fn fanout_dm_v2(
+    message_id: Uuid,
+    conv_id: Uuid,
+    created_at: DateTime<Utc>,
+    auth: &AuthDevice,
+    req: &SendMessageReqV2,
+    delivered: &[Uuid],
+    state: &AppState,
+) {
     for envelope in &req.envelopes {
         if envelope.recipient_device_id == auth.device_id {
             continue;
         }
-        if !delivered_device_ids.contains(&envelope.recipient_device_id) {
+        if !delivered.contains(&envelope.recipient_device_id) {
             continue;
         }
-
         let payload = serde_json::json!({
-            "type": "dm_v2",
-            "id": message_id,
-            "conversation_id": conv_id,
-            "sender_id": auth.user_id,
-            "sender_device_id": auth.device_id,
+            "type": "dm_v2", "id": message_id, "conversation_id": conv_id,
+            "sender_id": auth.user_id, "sender_device_id": auth.device_id,
             "sender_signal_device_id": auth.signal_device_id,
             "recipient_device_id": envelope.recipient_device_id,
-            "ciphertext": envelope.ciphertext,
-            "ephemeral_key": envelope.ephemeral_key,
-            "opk_id": envelope.opk_id,
-            "msg_num": envelope.msg_num,
-            "ratchet_pub": envelope.ratchet_pub,
-            "previous_chain_len": envelope.previous_chain_len,
-            "crypto_version": envelope.crypto_version.unwrap_or(1),
-            "created_at": created_at,
+            "ciphertext": envelope.ciphertext, "ephemeral_key": envelope.ephemeral_key,
+            "opk_id": envelope.opk_id, "msg_num": envelope.msg_num,
+            "ratchet_pub": envelope.ratchet_pub, "previous_chain_len": envelope.previous_chain_len,
+            "crypto_version": envelope.crypto_version.unwrap_or(1), "created_at": created_at,
         });
         state.hub.send_to_device(
             &envelope.recipient_device_id,
             crate::hub::WsOutbound::Message { payload },
         );
     }
-
-    Ok(Json(serde_json::json!({
-        "status": "ok",
-        "message_id": message_id,
-        "created_at": created_at,
-    })))
 }

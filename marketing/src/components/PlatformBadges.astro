@@ -1,33 +1,40 @@
 ---
+const GITHUB_RELEASES = 'https://github.com/NikheelR97/Yapper/releases/latest';
 const platforms = [
   {
     name: 'Web',
     sub: 'Any browser',
+    href: 'https://app.yapperhq.com',
     icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`,
   },
   {
     name: 'iOS',
     sub: 'iPhone & iPad',
+    href: '#', // App Store link — update after submission
     icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>`,
   },
   {
     name: 'Android',
     sub: 'Android 8.0+',
+    href: '#', // Play Store link — update after submission
     icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10h16v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-7z"/><path d="M8 10V6a4 4 0 0 1 8 0v4"/><line x1="9" y1="17" x2="9" y2="17.01"/><line x1="15" y1="17" x2="15" y2="17.01"/><line x1="3" y1="12" x2="1" y2="12"/><line x1="23" y1="12" x2="21" y2="12"/></svg>`,
   },
   {
     name: 'macOS',
     sub: 'Apple Silicon & Intel',
+    href: `${GITHUB_RELEASES}/download/Yapper.dmg`,
     icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>`,
   },
   {
     name: 'Windows',
     sub: 'Windows 10+',
+    href: `${GITHUB_RELEASES}/download/Yapper_x64-setup.exe`,
     icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg>`,
   },
   {
     name: 'Linux',
     sub: 'x86_64 & ARM',
+    href: `${GITHUB_RELEASES}/download/Yapper_amd64.AppImage`,
     icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C8 2 5 6 5 10c0 2.5 1 4.5 2.5 6L6 20h12l-1.5-4C18 14.5 19 12.5 19 10c0-4-3-8-7-8z"/><line x1="9" y1="15" x2="9" y2="17"/><line x1="15" y1="15" x2="15" y2="17"/><path d="M9 10h.01M15 10h.01"/></svg>`,
   },
 ];
@@ -38,13 +45,13 @@ const platforms = [
     <p class="label">Available everywhere</p>
     <div class="badges">
       {platforms.map((p) => (
-        <div class="platform-badge">
+        <a class="platform-badge" href={p.href} target={p.href.startsWith('http') ? '_blank' : undefined} rel={p.href.startsWith('http') ? 'noopener noreferrer' : undefined}>
           <span class="platform-icon" set:html={p.icon} />
           <div>
             <span class="platform-name">{p.name}</span>
             <span class="platform-sub">{p.sub}</span>
           </div>
-        </div>
+        </a>
       ))}
     </div>
   </div>
@@ -80,11 +87,15 @@ const platforms = [
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
     padding: 0.875rem 1.25rem;
-    transition: border-color var(--transition-fast);
+    transition: border-color var(--transition-fast), background var(--transition-fast);
+    text-decoration: none;
+    color: inherit;
+    cursor: pointer;
   }
 
   .platform-badge:hover {
-    border-color: var(--color-border-light);
+    border-color: var(--color-brand-light);
+    background: rgba(124,58,237,0.05);
   }
 
   .platform-icon {

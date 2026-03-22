@@ -132,7 +132,7 @@ async fn import_profile_callback(
         std::env::var("BASE_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
     let redirect_uri = format!("{base_url}{REDIRECT_SUFFIX}");
 
-    let http_client = reqwest::Client::new();
+    let http_client = &state.http_client;
 
     let token_resp: serde_json::Value = http_client
         .post(DISCORD_TOKEN_URL)

@@ -143,6 +143,7 @@ pub(super) struct KeyDistItem {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct PostKeyDistsReq {
     distributions: Vec<KeyDistItem>,
     /// When true, broadcast a `key_dist_request` to all channel members so they

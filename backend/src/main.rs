@@ -1,3 +1,4 @@
+#![deny(warnings)]
 //! Yapper server binary entry point.
 //!
 //! All application logic lives in `lib.rs`. This file is a thin wrapper that
@@ -69,6 +70,8 @@ async fn main() -> anyhow::Result<()> {
     let oauth_states = Arc::new(OAuthStateStore::new());
     let discord_import_states = Arc::new(DiscordImportStateStore::new());
 
+    let http_client = reqwest::Client::new();
+
     let state = AppState {
         db,
         hub,
@@ -78,6 +81,7 @@ async fn main() -> anyhow::Result<()> {
         login_limiter,
         oauth_states,
         discord_import_states,
+        http_client,
     };
 
     let app = build_router(state);

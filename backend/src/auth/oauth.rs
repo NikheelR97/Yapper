@@ -210,7 +210,7 @@ pub async fn discord_callback(
     let redirect_uri = format!("{}/auth/oauth/discord/callback", api_base());
 
     // Exchange code for access token
-    let http = reqwest::Client::new();
+    let http = &state.http_client;
     let token_res = match http
         .post("https://discord.com/api/oauth2/token")
         .form(&[
@@ -353,7 +353,7 @@ pub async fn google_callback(
     let client_secret = std::env::var("GOOGLE_CLIENT_SECRET").unwrap_or_default();
     let redirect_uri = format!("{}/auth/oauth/google/callback", api_base());
 
-    let http = reqwest::Client::new();
+    let http = &state.http_client;
 
     // Exchange code for access token
     let token_res = match http
@@ -780,7 +780,7 @@ pub async fn apple_callback(
         }
     };
 
-    let http = reqwest::Client::new();
+    let http = &state.http_client;
 
     let token_res = match http
         .post(APPLE_TOKEN_URL)

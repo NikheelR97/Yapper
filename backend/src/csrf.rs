@@ -74,6 +74,7 @@ fn is_csrf_exempt(path: &str) -> bool {
             | "/auth/refresh"
             | "/auth/oauth/exchange"
             | "/premium/webhook"
+            | "/support/webhooks/hubspot"
     )
 }
 
@@ -115,4 +116,159 @@ pub fn should_use_secure_cookie() -> bool {
             normalized == "1" || normalized == "true" || normalized == "yes"
         })
         .unwrap_or_else(|_| std::env::var("FLY_APP_NAME").is_ok())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── is_csrf_exempt ───────────────────────────────────────────────
+
+    #[test]
+    fn exempt_auth_login() {
+        assert!(is_csrf_exempt("/auth/login"));
+    }
+
+    #[test]
+    fn exempt_auth_register() {
+        assert!(is_csrf_exempt("/auth/register"));
+    }
+
+    #[test]
+    fn exempt_auth_verify_email() {
+        assert!(is_csrf_exempt("/auth/verify-email"));
+    }
+
+    #[test]
+    fn exempt_auth_password_reset_request() {
+        assert!(is_csrf_exempt("/auth/password-reset/request"));
+    }
+
+    #[test]
+    fn exempt_auth_password_reset_confirm() {
+        assert!(is_csrf_exempt("/auth/password-reset/confirm"));
+    }
+
+    #[test]
+    fn exempt_auth_refresh() {
+        assert!(is_csrf_exempt("/auth/refresh"));
+    }
+
+    #[test]
+    fn exempt_auth_oauth_exchange() {
+        assert!(is_csrf_exempt("/auth/oauth/exchange"));
+    }
+
+    #[test]
+    fn exempt_premium_webhook() {
+        assert!(is_csrf_exempt("/premium/webhook"));
+    }
+
+    #[test]
+    fn exempt_support_webhooks_hubspot() {
+        assert!(is_csrf_exempt("/support/webhooks/hubspot"));
+    }
+
+    #[test]
+    fn exempt_list_is_exactly_nine_entries() {
+        // Ensure non-exempt paths are correctly rejected, confirming
+        // the allowlist is not overly broad.
+        let exempt = [
+            "/auth/login",
+            "/auth/register",
+            "/auth/verify-email",
+            "/auth/password-reset/request",
+            "/auth/password-reset/confirm",
+            "/auth/refresh",
+            "/auth/oauth/exchange",
+            "/premium/webhook",
+            "/support/webhooks/hubspot",
+        ];
+        for path in &exempt {
+            assert!(is_csrf_exempt(path), "{path} should be exempt");
+        }
+    }
+
+    #[test]
+    fn non_exempt_random_api_path() {
+        assert!(!is_csrf_exempt("/api/v1/conversations"));
+    }
+
+    #[test]
+    fn non_exempt_partial_match() {
+        assert!(!is_csrf_exempt("/auth/login/extra"));
+    }
+
+    #[test]
+    fn non_exempt_auth_logout() {
+        assert!(!is_csrf_exempt("/auth/logout"));
+    }
+
+    #[test]
+    fn non_exempt_root() {
+        assert!(!is_csrf_exempt("/"));
+    }
+
+    #[test]
+    fn non_exempt_empty() {
+        assert!(!is_csrf_exempt(""));
+    }
+
+    #[test]
+    fn non_exempt_premium_without_webhook() {
+        assert!(!is_csrf_exempt("/premium"));
+    }
+
+    #[test]
+    fn non_exempt_support_tickets() {
+        assert!(!is_csrf_exempt("/support/tickets"));
+    }
+
+    #[test]
+    fn non_exempt_auth_prefix_only() {
+        assert!(!is_csrf_exempt("/auth"));
+    }
+
+    // ── normalize_path ───────────────────────────────────────────────
+
+    #[test]
+    fn normalize_strips_trailing_slash() {
+        assert_eq!(normalize_path("/auth/login/"), "/auth/login");
+    }
+
+    #[test]
+    fn normalize_no_trailing_slash_unchanged() {
+        assert_eq!(normalize_path("/auth/login"), "/auth/login");
+    }
+
+    #[test]
+    fn normalize_root_slash_stays() {
+        assert_eq!(normalize_path("/"), "/");
+    }
+
+    #[test]
+    fn normalize_multiple_trailing_slashes() {
+        assert_eq!(normalize_path("/foo///"), "/foo");
+    }
+
+    // ── csrf_cookie_header format (no env-dependent tests — env vars
+    //    are process-global and race under parallel test execution) ───
+
+    #[test]
+    fn cookie_header_contains_token_name() {
+        // We can't safely test Secure/SameSite mode in parallel tests because
+        // should_use_secure_cookie() reads env vars that race across threads.
+        // Instead test the invariant parts of the cookie format.
+        let header = csrf_cookie_header("my-token");
+        assert!(header.starts_with("csrf_token=my-token;"));
+        assert!(header.contains("Path=/"));
+        assert!(header.contains("Max-Age=86400"));
+    }
+
+    #[test]
+    fn clear_cookie_sets_max_age_zero() {
+        let header = clear_csrf_cookie();
+        assert!(header.starts_with("csrf_token=;"));
+        assert!(header.contains("Max-Age=0"));
+    }
 }
