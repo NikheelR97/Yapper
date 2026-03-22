@@ -15,8 +15,7 @@ use super::{
     handlers::{
         append_set_cookie_headers, auth_cookies_for_path, clear_auth_cookies_for_path, extract_ip,
         extract_refresh_cookie, send_verification_email, sha256_hex, store_session_with_claims,
-        LoginRequest,
-        RegisterRequest, UserDto, USERNAME_RE,
+        LoginRequest, RegisterRequest, UserDto, USERNAME_RE,
     },
     service::{
         generate_access_token, generate_email_token, generate_refresh_token, hash_password_async,
@@ -326,9 +325,17 @@ async fn refresh(
     )?;
     let refresh_token =
         generate_refresh_token(user.id, claims.family_id, Some(device.id), &state.jwt_keys)?;
-    let exp = (chrono::Utc::now() + chrono::Duration::seconds(super::service::REFRESH_TTL_SECS)).timestamp();
-    store_session_with_claims(state.db.pool(), user.id, &refresh_token, Some(device.id), claims.family_id, exp)
-        .await?;
+    let exp = (chrono::Utc::now() + chrono::Duration::seconds(super::service::REFRESH_TTL_SECS))
+        .timestamp();
+    store_session_with_claims(
+        state.db.pool(),
+        user.id,
+        &refresh_token,
+        Some(device.id),
+        claims.family_id,
+        exp,
+    )
+    .await?;
     devices::touch_device(device.id, &state).await?;
 
     let (cookies, csrf_token) = auth_cookies_for_path(&refresh_token, REFRESH_COOKIE_PATH_V2);
@@ -387,9 +394,17 @@ pub(super) async fn issue_device_session(
     let refresh_token =
         generate_refresh_token(user.id, family_id, Some(device.id), &state.jwt_keys)?;
 
-    let exp = (chrono::Utc::now() + chrono::Duration::seconds(super::service::REFRESH_TTL_SECS)).timestamp();
-    store_session_with_claims(state.db.pool(), user.id, &refresh_token, Some(device.id), family_id, exp)
-        .await?;
+    let exp = (chrono::Utc::now() + chrono::Duration::seconds(super::service::REFRESH_TTL_SECS))
+        .timestamp();
+    store_session_with_claims(
+        state.db.pool(),
+        user.id,
+        &refresh_token,
+        Some(device.id),
+        family_id,
+        exp,
+    )
+    .await?;
     // Note: touch_device is skipped here because register_or_reuse_device
     // already set last_seen_at = NOW() during device creation/update.
 

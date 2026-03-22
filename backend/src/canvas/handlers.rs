@@ -27,7 +27,8 @@ pub async fn patch_music(
     Path(server_id): Path<Uuid>,
     Json(body): Json<MusicInput>,
 ) -> AppResult<impl IntoResponse> {
-    body.validate().map_err(|e| AppError::BadRequest(e.to_string()))?;
+    body.validate()
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
     service::require_member(server_id, auth.user_id, &state).await?;
     service::set_music(server_id, auth.user_id, &body, &state).await?;
     Ok(StatusCode::NO_CONTENT)
@@ -40,7 +41,8 @@ pub async fn enqueue_track(
     Path(server_id): Path<Uuid>,
     Json(body): Json<EnqueueTrackReq>,
 ) -> AppResult<impl IntoResponse> {
-    body.validate().map_err(|e| AppError::BadRequest(e.to_string()))?;
+    body.validate()
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
     service::require_admin_or_dj(server_id, auth.user_id, &state).await?;
     let (id, position) = service::enqueue_track(server_id, auth.user_id, &body, &state).await?;
     Ok((
@@ -67,7 +69,8 @@ pub async fn reorder_queue(
     Path(server_id): Path<Uuid>,
     Json(body): Json<ReorderQueueReq>,
 ) -> AppResult<impl IntoResponse> {
-    body.validate().map_err(|e| AppError::BadRequest(e.to_string()))?;
+    body.validate()
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
     service::require_admin_or_dj(server_id, auth.user_id, &state).await?;
     service::reorder_queue(server_id, &body.track_ids, &state).await?;
     Ok(StatusCode::NO_CONTENT)
@@ -128,7 +131,8 @@ pub async fn update_music_settings(
     Path(server_id): Path<Uuid>,
     Json(body): Json<UpdateMusicSettingsReq>,
 ) -> AppResult<impl IntoResponse> {
-    body.validate().map_err(|e| AppError::BadRequest(e.to_string()))?;
+    body.validate()
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
     service::require_server_admin(server_id, auth.user_id, &state).await?;
     service::update_music_settings(server_id, &body, &state).await?;
     Ok(StatusCode::NO_CONTENT)
@@ -167,7 +171,8 @@ pub async fn create_poll(
     Path(channel_id): Path<Uuid>,
     Json(body): Json<CreatePollReq>,
 ) -> AppResult<impl IntoResponse> {
-    body.validate().map_err(|e| AppError::BadRequest(e.to_string()))?;
+    body.validate()
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
     let server_id = service::require_channel_member(channel_id, auth.user_id, &state).await?;
     let poll_id = service::create_poll(channel_id, server_id, auth.user_id, &body, &state).await?;
     Ok((
@@ -223,7 +228,8 @@ pub async fn add_clip_reaction(
     Path(clip_id): Path<Uuid>,
     Json(body): Json<AddReactionReq>,
 ) -> AppResult<impl IntoResponse> {
-    body.validate().map_err(|e| AppError::BadRequest(e.to_string()))?;
+    body.validate()
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
     service::add_clip_reaction(clip_id, auth.user_id, &body.emoji, &state).await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -235,7 +241,9 @@ pub async fn remove_clip_reaction(
     Path(clip_id): Path<Uuid>,
     Query(query): Query<RemoveReactionQuery>,
 ) -> AppResult<impl IntoResponse> {
-    query.validate().map_err(|e| AppError::BadRequest(e.to_string()))?;
+    query
+        .validate()
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
     service::remove_clip_reaction(clip_id, auth.user_id, &query.emoji, &state).await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -274,7 +282,8 @@ pub async fn create_event(
     Path(server_id): Path<Uuid>,
     Json(body): Json<CreateEventReq>,
 ) -> AppResult<impl IntoResponse> {
-    body.validate().map_err(|e| AppError::BadRequest(e.to_string()))?;
+    body.validate()
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
     service::require_server_admin(server_id, auth.user_id, &state).await?;
     let event = service::create_event(server_id, auth.user_id, &body, &state).await?;
     Ok((StatusCode::CREATED, Json(event)))
@@ -287,7 +296,8 @@ pub async fn update_event(
     Path(event_id): Path<Uuid>,
     Json(body): Json<UpdateEventReq>,
 ) -> AppResult<impl IntoResponse> {
-    body.validate().map_err(|e| AppError::BadRequest(e.to_string()))?;
+    body.validate()
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
     let event = service::update_event(event_id, auth.user_id, &body, &state).await?;
     Ok(Json(event))
 }
@@ -316,10 +326,7 @@ pub async fn get_canvas_state(
     service::require_member(server_id, auth.user_id, &state).await?;
     let result =
         service::get_canvas_state(server_id, query.channel_id, auth.user_id, &state).await?;
-    Ok((
-        [("cache-control", "private, max-age=5")],
-        Json(result),
-    ))
+    Ok(([("cache-control", "private, max-age=5")], Json(result)))
 }
 
 /// GET /canvas/servers/:server_id — legacy canvas state (music + polls).

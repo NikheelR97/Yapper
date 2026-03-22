@@ -23,11 +23,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use governor::{
-    clock::DefaultClock,
-    state::keyed::DefaultKeyedStateStore,
-    RateLimiter,
-};
+use governor::{clock::DefaultClock, state::keyed::DefaultKeyedStateStore, RateLimiter};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use sqlx::Row;
@@ -46,15 +42,14 @@ const HUBSPOT_TICKETS_API: &str = "https://api.hubapi.com/crm/v3/objects/tickets
 const MAX_TICKETS_PER_USER: i64 = 50;
 
 /// Rate limiter: 5 ticket creations per hour per user.
-static TICKET_RATE_LIMITER: Lazy<
-    RateLimiter<Uuid, DefaultKeyedStateStore<Uuid>, DefaultClock>,
-> = Lazy::new(|| {
-    RateLimiter::keyed(
-        governor::Quota::with_period(std::time::Duration::from_secs(60 * 60))
-            .expect("valid ticket quota")
-            .allow_burst(NonZeroU32::new(5).expect("non-zero burst")),
-    )
-});
+static TICKET_RATE_LIMITER: Lazy<RateLimiter<Uuid, DefaultKeyedStateStore<Uuid>, DefaultClock>> =
+    Lazy::new(|| {
+        RateLimiter::keyed(
+            governor::Quota::with_period(std::time::Duration::from_secs(60 * 60))
+                .expect("valid ticket quota")
+                .allow_burst(NonZeroU32::new(5).expect("non-zero burst")),
+        )
+    });
 const MAX_SUBJECT_LEN: usize = 200;
 const MAX_DESCRIPTION_LEN: usize = 2000;
 static EMAIL_RE: Lazy<Regex> = Lazy::new(|| {
@@ -563,7 +558,10 @@ async fn process_hubspot_event(event: &serde_json::Value, state: &AppState) {
             );
         }
         Err(e) => {
-            tracing::error!(hubspot_id = hubspot_id, "Failed to update ticket status: {e}");
+            tracing::error!(
+                hubspot_id = hubspot_id,
+                "Failed to update ticket status: {e}"
+            );
         }
     }
 }
@@ -605,9 +603,20 @@ mod tests {
         mac.update(timestamp.as_bytes());
         let valid_sig = BASE64.encode(mac.finalize().into_bytes());
 
-        assert!(verify_hubspot_signature(secret, method, url, body, timestamp, &valid_sig));
-        assert!(!verify_hubspot_signature(secret, method, url, body, timestamp, "bad-sig"));
-        assert!(!verify_hubspot_signature("wrong-secret", method, url, body, timestamp, &valid_sig));
+        assert!(verify_hubspot_signature(
+            secret, method, url, body, timestamp, &valid_sig
+        ));
+        assert!(!verify_hubspot_signature(
+            secret, method, url, body, timestamp, "bad-sig"
+        ));
+        assert!(!verify_hubspot_signature(
+            "wrong-secret",
+            method,
+            url,
+            body,
+            timestamp,
+            &valid_sig
+        ));
     }
 
     #[test]

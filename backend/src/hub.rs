@@ -405,24 +405,47 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
 
     let auth = match wait_for_auth(&mut receiver, &state).await {
         Some(auth) => auth,
-        None => { send_task.abort(); return; }
+        None => {
+            send_task.abort();
+            return;
+        }
     };
 
-    let handle = ConnectionHandle { tx: tx.clone(), close_tx: close_tx.clone() };
+    let handle = ConnectionHandle {
+        tx: tx.clone(),
+        close_tx: close_tx.clone(),
+    };
     let is_trusted = auth.trust_state != Some(DeviceTrustState::PendingTrust);
-    if !state.hub.register(auth.user_id, auth.device_id, is_trusted, conn_id.clone(), handle) {
+    if !state.hub.register(
+        auth.user_id,
+        auth.device_id,
+        is_trusted,
+        conn_id.clone(),
+        handle,
+    ) {
         send_ws_error(&tx, 4008, "Too many connections");
         send_task.abort();
         return;
     }
 
-    let _ = tx.try_send(WsOutbound::Ready { user_id: auth.user_id });
+    let _ = tx.try_send(WsOutbound::Ready {
+        user_id: auth.user_id,
+    });
     deliver_on_connect(&auth, is_trusted, &state, &tx).await;
 
-    run_receive_loop(&mut receiver, &mut send_task, auth.user_id, auth.device_id, &state, &tx)
-        .await;
+    run_receive_loop(
+        &mut receiver,
+        &mut send_task,
+        auth.user_id,
+        auth.device_id,
+        &state,
+        &tx,
+    )
+    .await;
 
-    state.hub.unregister(&auth.user_id, auth.device_id.as_ref(), &conn_id);
+    state
+        .hub
+        .unregister(&auth.user_id, auth.device_id.as_ref(), &conn_id);
     update_last_seen(auth.user_id, &state);
 
     if is_trusted && !state.hub.is_online(&auth.user_id) {
@@ -667,11 +690,7 @@ async fn deliver_offline_messages(
 }
 
 /// Deliver per-device DM envelopes (v2 multi-device path).
-async fn deliver_offline_envelopes(
-    device_id: &Uuid,
-    state: &AppState,
-    tx: &ConnTx,
-) {
+async fn deliver_offline_envelopes(device_id: &Uuid, state: &AppState, tx: &ConnTx) {
     let rows = sqlx::query(
         r#"
         SELECT e.id AS envelope_id,
@@ -721,8 +740,7 @@ async fn deliver_offline_envelopes(
         let Ok(sender_device_id) = row.try_get::<Uuid, _>("sender_device_id") else {
             continue;
         };
-        let Ok(sender_signal_device_id) = row.try_get::<i32, _>("sender_signal_device_id")
-        else {
+        let Ok(sender_signal_device_id) = row.try_get::<i32, _>("sender_signal_device_id") else {
             continue;
         };
         let Ok(recipient_device_id) = row.try_get::<Uuid, _>("recipient_device_id") else {
@@ -755,12 +773,11 @@ async fn deliver_offline_envelopes(
     }
 
     if !delivered_ids.is_empty() {
-        if let Err(e) = sqlx::query(
-            "UPDATE dm_message_envelopes SET delivered_at = NOW() WHERE id = ANY($1)",
-        )
-        .bind(&delivered_ids)
-        .execute(state.db.pool())
-        .await
+        if let Err(e) =
+            sqlx::query("UPDATE dm_message_envelopes SET delivered_at = NOW() WHERE id = ANY($1)")
+                .bind(&delivered_ids)
+                .execute(state.db.pool())
+                .await
         {
             tracing::warn!("Failed to mark DM envelopes delivered: {e}");
         }
@@ -768,11 +785,7 @@ async fn deliver_offline_envelopes(
 }
 
 /// Deliver legacy DM messages (pre-multi-device path, no device_id).
-async fn deliver_offline_legacy(
-    user_id: &Uuid,
-    state: &AppState,
-    tx: &ConnTx,
-) {
+async fn deliver_offline_legacy(user_id: &Uuid, state: &AppState, tx: &ConnTx) {
     let rows = sqlx::query(
         "SELECT m.id, m.conversation_id, m.sender_id, m.ciphertext, m.ek_public, m.opk_id \
          FROM messages m \
@@ -1200,10 +1213,8 @@ async fn store_and_route_dm(dm: DmContext<'_>, state: &AppState, tx: &ConnTx) {
             let mut meta = std::collections::HashMap::new();
             meta.insert("conversation_id".into(), conversation_id.to_string());
             meta.insert("sender_id".into(), sender_id.to_string());
-            crate::notifications::notify_user_offline_devices(
-                recipient_id, "dm", &meta, &state,
-            )
-            .await;
+            crate::notifications::notify_user_offline_devices(recipient_id, "dm", &meta, &state)
+                .await;
         });
     }
 }
@@ -1239,7 +1250,13 @@ async fn handle_send_channel(
     if is_bot {
         let msg_type = message_type.as_deref().unwrap_or("text");
         store_and_fanout_bot_channel(
-            channel_id, server_id, &ciphertext, msg_type, sender_id, state, tx,
+            channel_id,
+            server_id,
+            &ciphertext,
+            msg_type,
+            sender_id,
+            state,
+            tx,
         )
         .await;
     } else {
@@ -1252,8 +1269,16 @@ async fn handle_send_channel(
         };
         let msg_type = message_type.as_deref().unwrap_or("text");
         store_and_fanout_channel(
-            channel_id, server_id, &cipher_bytes, msg_type, msg_num, &ciphertext,
-            sender_id, sender_device_id, state, tx,
+            channel_id,
+            server_id,
+            &cipher_bytes,
+            msg_type,
+            msg_num,
+            &ciphertext,
+            sender_id,
+            sender_device_id,
+            state,
+            tx,
         )
         .await;
     }

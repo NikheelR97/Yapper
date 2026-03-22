@@ -72,7 +72,10 @@ async fn devices_bootstrap_creates_pending_device() {
     let devices: serde_json::Value = devices_resp.json();
     assert!(devices.is_array(), "devices response should be an array");
     let devices_arr = devices.as_array().unwrap();
-    assert!(!devices_arr.is_empty(), "device list should not be empty after v2 login");
+    assert!(
+        !devices_arr.is_empty(),
+        "device list should not be empty after v2 login"
+    );
 
     // The device's trust_state should be either 'trusted' (first device) or 'pending_trust'
     let trust_state = devices_arr[0]["trust_state"].as_str().unwrap_or("");
@@ -88,7 +91,12 @@ async fn devices_bootstrap_creates_pending_device() {
 async fn health_check_returns_200() {
     let server = spawn_test_server().await;
     let resp = server.get("/health").await;
-    assert_eq!(resp.status_code().as_u16(), 200, "health check failed: {}", resp.text());
+    assert_eq!(
+        resp.status_code().as_u16(),
+        200,
+        "health check failed: {}",
+        resp.text()
+    );
     let body: serde_json::Value = resp.json();
     assert_eq!(body["status"], "ok", "health status not ok");
     assert_eq!(body["db"], true, "health db not true");
@@ -99,18 +107,11 @@ async fn health_check_returns_200() {
 #[serial]
 async fn protected_endpoints_require_auth() {
     let server = spawn_test_server().await;
-    let (_user_id, at, ct) = create_test_user(
-        &server,
-        &Uuid::new_v4().to_string().replace('-', "")[..8],
-    )
-    .await;
+    let (_user_id, at, ct) =
+        create_test_user(&server, &Uuid::new_v4().to_string().replace('-', "")[..8]).await;
     let _ = (at, ct); // suppress unused warning
 
-    let protected = [
-        "/api/v1/users/me",
-        "/api/v1/servers",
-        "/api/v2/devices",
-    ];
+    let protected = ["/api/v1/users/me", "/api/v1/servers", "/api/v2/devices"];
 
     for path in &protected {
         let resp = server.get(path).await;

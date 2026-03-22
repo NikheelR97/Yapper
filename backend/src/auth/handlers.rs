@@ -357,8 +357,15 @@ pub async fn refresh(
         generate_refresh_token(user.id, claims.family_id, claims.device_id, &state.jwt_keys)?;
 
     let exp = (Utc::now() + chrono::Duration::seconds(REFRESH_TTL_SECS)).timestamp();
-    store_session_with_claims(pool, user.id, &new_refresh, claims.device_id, claims.family_id, exp)
-        .await?;
+    store_session_with_claims(
+        pool,
+        user.id,
+        &new_refresh,
+        claims.device_id,
+        claims.family_id,
+        exp,
+    )
+    .await?;
 
     let (cookies, csrf_token) = refresh_cookie(&new_refresh);
     Ok((

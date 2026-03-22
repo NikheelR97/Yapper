@@ -56,28 +56,19 @@ pub fn router() -> Router<AppState> {
             "/canvas/clips/:clip_id/reactions",
             put(add_clip_reaction).delete(remove_clip_reaction),
         )
-        .route(
-            "/canvas/servers/:server_id/pinned-clips",
-            post(pin_clip),
-        )
+        .route("/canvas/servers/:server_id/pinned-clips", post(pin_clip))
         .route(
             "/canvas/servers/:server_id/pinned-clips/:clip_id",
             delete(unpin_clip),
         )
         // ─── Events ─────────────────────────────────────────────────────
-        .route(
-            "/canvas/servers/:server_id/events",
-            post(create_event),
-        )
+        .route("/canvas/servers/:server_id/events", post(create_event))
         .route(
             "/canvas/events/:event_id",
             patch(update_event).delete(delete_event),
         )
         // ─── Hydration ──────────────────────────────────────────────────
-        .route(
-            "/canvas/servers/:server_id/state",
-            get(get_canvas_state),
-        )
+        .route("/canvas/servers/:server_id/state", get(get_canvas_state))
         // ─── Legacy ─────────────────────────────────────────────────────
         .route("/canvas/servers/:server_id", get(get_canvas_legacy))
         .route("/canvas/servers/:server_id/clips", get(get_canvas_legacy))

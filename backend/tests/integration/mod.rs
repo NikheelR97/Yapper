@@ -5,6 +5,7 @@
 //! requests via `axum_test::TestServer`.
 
 use axum_test::TestServer;
+use governor::{Quota, RateLimiter};
 use serde_json::Value;
 use std::{collections::HashSet, num::NonZeroU32, sync::Arc};
 use uuid::Uuid;
@@ -15,7 +16,6 @@ use yapper_server::{
     hub::Hub,
     AppState, DiscordImportStateStore, IpRateLimiter,
 };
-use governor::{RateLimiter, Quota};
 
 /// Build a `TestServer` against a real PostgreSQL test database.
 ///
@@ -27,7 +27,9 @@ pub async fn spawn_test_server() -> TestServer {
         .or_else(|_| std::env::var("DATABASE_URL"))
         .expect("TEST_DATABASE_URL or DATABASE_URL must be set for integration tests");
 
-    let db = Database::connect(&db_url).await.expect("Failed to connect to test database");
+    let db = Database::connect(&db_url)
+        .await
+        .expect("Failed to connect to test database");
     db.run_migrations().await.expect("Failed to run migrations");
 
     let hub = Arc::new(Hub::new());
@@ -39,7 +41,8 @@ pub async fn spawn_test_server() -> TestServer {
     // JWT keys: read from env (JWT_PRIVATE_KEY / JWT_PRIVATE_KEY_PATH).
     // Integration tests require these to be set in the test environment.
     let jwt_keys = Arc::new(
-        JwtKeys::from_env().expect("JWT_PRIVATE_KEY or JWT_PRIVATE_KEY_PATH must be set for integration tests"),
+        JwtKeys::from_env()
+            .expect("JWT_PRIVATE_KEY or JWT_PRIVATE_KEY_PATH must be set for integration tests"),
     );
 
     let state = AppState {
@@ -57,10 +60,7 @@ pub async fn spawn_test_server() -> TestServer {
 }
 
 /// Register a new user and return their (user_id, access_token, csrf_token).
-pub async fn create_test_user(
-    server: &TestServer,
-    suffix: &str,
-) -> (Uuid, String, String) {
+pub async fn create_test_user(server: &TestServer, suffix: &str) -> (Uuid, String, String) {
     let email = format!("test_{suffix}@integration.test");
     let username = format!("test_{suffix}");
     let password = format!("TestPass123!{suffix}");
@@ -107,8 +107,14 @@ pub async fn login_test_user(
     );
 
     let body: Value = resp.json();
-    let access_token = body["access_token"].as_str().expect("missing access_token").to_string();
-    let csrf_token = body["csrf_token"].as_str().expect("missing csrf_token").to_string();
+    let access_token = body["access_token"]
+        .as_str()
+        .expect("missing access_token")
+        .to_string();
+    let csrf_token = body["csrf_token"]
+        .as_str()
+        .expect("missing csrf_token")
+        .to_string();
     let user_id: Uuid = body["user"]["id"]
         .as_str()
         .and_then(|s| s.parse().ok())
@@ -118,5 +124,5 @@ pub async fn login_test_user(
 }
 
 pub mod auth;
-pub mod keys;
 pub mod devices;
+pub mod keys;

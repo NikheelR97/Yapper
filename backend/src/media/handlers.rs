@@ -15,8 +15,7 @@ use crate::{
 };
 
 /// Per-user upload rate limiter: stores recent upload timestamps.
-static UPLOAD_TIMESTAMPS: LazyLock<DashMap<Uuid, Vec<Instant>>> =
-    LazyLock::new(DashMap::new);
+static UPLOAD_TIMESTAMPS: LazyLock<DashMap<Uuid, Vec<Instant>>> = LazyLock::new(DashMap::new);
 
 /// Check if the user has exceeded MAX_UPLOADS_PER_MINUTE. Returns Err if so.
 fn check_upload_rate(user_id: Uuid) -> AppResult<()> {

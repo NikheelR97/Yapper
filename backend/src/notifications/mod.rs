@@ -69,14 +69,12 @@ async fn register_push_token(
         ));
     }
 
-    sqlx::query(
-        "UPDATE devices SET push_token = $1, push_platform = $2 WHERE id = $3",
-    )
-    .bind(&req.token)
-    .bind(&req.platform)
-    .bind(auth.device_id)
-    .execute(state.db.pool())
-    .await?;
+    sqlx::query("UPDATE devices SET push_token = $1, push_platform = $2 WHERE id = $3")
+        .bind(&req.token)
+        .bind(&req.platform)
+        .bind(auth.device_id)
+        .execute(state.db.pool())
+        .await?;
 
     tracing::info!(
         device_id = %auth.device_id,
@@ -136,9 +134,7 @@ fn load_service_account() -> Result<ServiceAccount, String> {
 }
 
 /// Obtain a short-lived OAuth2 access token using the service account JWT.
-async fn get_fcm_access_token(
-    http: &reqwest::Client,
-) -> Result<String, String> {
+async fn get_fcm_access_token(http: &reqwest::Client) -> Result<String, String> {
     // Check cache first
     if let Ok(cache) = FCM_TOKEN_CACHE.read() {
         if let Some(ref cached) = *cache {

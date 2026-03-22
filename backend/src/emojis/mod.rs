@@ -129,8 +129,12 @@ async fn upload_emoji(
         "INSERT INTO server_emojis (id, server_id, name, image_url, image_r2_key, created_by) \
          VALUES ($1, $2, $3, $4, $5, $6)",
     )
-    .bind(emoji_id).bind(server_id).bind(&name).bind(&public_url)
-    .bind(&r2_key).bind(auth.user_id)
+    .bind(emoji_id)
+    .bind(server_id)
+    .bind(&name)
+    .bind(&public_url)
+    .bind(&r2_key)
+    .bind(auth.user_id)
     .execute(state.db.pool())
     .await?;
 
@@ -154,9 +158,7 @@ async fn upload_emoji(
 }
 
 /// Parse name + file from multipart upload.
-async fn parse_emoji_multipart(
-    multipart: &mut Multipart,
-) -> AppResult<(String, Vec<u8>)> {
+async fn parse_emoji_multipart(multipart: &mut Multipart) -> AppResult<(String, Vec<u8>)> {
     let mut name_opt: Option<String> = None;
     let mut file_bytes: Option<Vec<u8>> = None;
 
@@ -167,16 +169,21 @@ async fn parse_emoji_multipart(
     {
         match field.name() {
             Some("name") => {
-                let text = field.text().await
+                let text = field
+                    .text()
+                    .await
                     .map_err(|e| AppError::BadRequest(format!("name field error: {e}")))?;
                 name_opt = Some(text.trim().to_lowercase());
             }
             Some("file") => {
-                let bytes = field.bytes().await
+                let bytes = field
+                    .bytes()
+                    .await
                     .map_err(|e| AppError::BadRequest(format!("file field error: {e}")))?;
                 if bytes.len() > MAX_EMOJI_BYTES {
                     return Err(AppError::BadRequest(format!(
-                        "Image must be at most {} KB", MAX_EMOJI_BYTES / 1024
+                        "Image must be at most {} KB",
+                        MAX_EMOJI_BYTES / 1024
                     )));
                 }
                 file_bytes = Some(bytes.to_vec());
@@ -199,11 +206,10 @@ fn validate_emoji_name(name: &str) -> AppResult<()> {
     Ok(())
 }
 
-async fn check_emoji_name_unique(
-    server_id: Uuid, name: &str, state: &AppState,
-) -> AppResult<()> {
+async fn check_emoji_name_unique(server_id: Uuid, name: &str, state: &AppState) -> AppResult<()> {
     let taken = sqlx::query("SELECT 1 FROM server_emojis WHERE server_id = $1 AND name = $2")
-        .bind(server_id).bind(name)
+        .bind(server_id)
+        .bind(name)
         .fetch_optional(state.db.pool())
         .await?
         .is_some();
@@ -237,7 +243,8 @@ async fn convert_to_webp(raw_bytes: Vec<u8>) -> AppResult<Vec<u8>> {
             .map_err(|e| AppError::BadRequest(format!("Unsupported image format: {e}")))?;
         let resized = img.resize_exact(EMOJI_SIZE, EMOJI_SIZE, FilterType::Lanczos3);
         let mut buf = Cursor::new(Vec::new());
-        resized.write_to(&mut buf, ImageFormat::WebP)
+        resized
+            .write_to(&mut buf, ImageFormat::WebP)
             .map_err(|e| AppError::Internal(anyhow::anyhow!("WebP encode error: {e}")))?;
         Ok(buf.into_inner())
     })

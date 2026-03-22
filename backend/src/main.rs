@@ -8,8 +8,11 @@ use std::{net::SocketAddr, sync::Arc};
 use tokio::net::TcpListener;
 use yapper_server::{
     auth::{JwtKeys, LoginRateLimiter, OAuthStateStore},
-    build_router, db::Database, env_non_zero_u32, hub::Hub, load_trusted_proxy_ips,
-    media, AppState, DiscordImportStateStore, IpRateLimiter,
+    build_router,
+    db::Database,
+    env_non_zero_u32,
+    hub::Hub,
+    load_trusted_proxy_ips, media, AppState, DiscordImportStateStore, IpRateLimiter,
 };
 
 use sentry::integrations::tracing as sentry_tracing;

@@ -248,13 +248,11 @@ pub async fn enqueue_track(
     let track_id: Uuid = row.try_get("id")?;
 
     // If nothing is currently playing, auto-start this track
-    let has_now_playing = sqlx::query(
-        "SELECT 1 FROM canvas_music_state WHERE server_id = $1",
-    )
-    .bind(server_id)
-    .fetch_optional(state.db.pool())
-    .await?
-    .is_some();
+    let has_now_playing = sqlx::query("SELECT 1 FROM canvas_music_state WHERE server_id = $1")
+        .bind(server_id)
+        .fetch_optional(state.db.pool())
+        .await?
+        .is_some();
 
     if !has_now_playing {
         advance_track_inner(server_id, state).await?;
@@ -316,11 +314,7 @@ pub async fn remove_from_queue(
 }
 
 /// Reorder the queue. `track_ids` must be a permutation of all active queue entries.
-pub async fn reorder_queue(
-    server_id: Uuid,
-    track_ids: &[Uuid],
-    state: &AppState,
-) -> AppResult<()> {
+pub async fn reorder_queue(server_id: Uuid, track_ids: &[Uuid], state: &AppState) -> AppResult<()> {
     debug_assert!(server_id != Uuid::nil());
 
     let active_rows = sqlx::query(
@@ -354,7 +348,11 @@ pub async fn reorder_queue(
         ));
     }
 
-    for (i, tid) in track_ids.iter().enumerate().take(MAX_MUSIC_QUEUE_SIZE as usize) {
+    for (i, tid) in track_ids
+        .iter()
+        .enumerate()
+        .take(MAX_MUSIC_QUEUE_SIZE as usize)
+    {
         sqlx::query("UPDATE music_queue SET position = $1 WHERE id = $2")
             .bind(i as i32)
             .bind(tid)
@@ -376,12 +374,10 @@ pub async fn skip_vote(
     debug_assert!(user_id != Uuid::nil());
 
     // Verify something is playing
-    let has_music = sqlx::query(
-        "SELECT 1 FROM canvas_music_state WHERE server_id = $1",
-    )
-    .bind(server_id)
-    .fetch_optional(state.db.pool())
-    .await?;
+    let has_music = sqlx::query("SELECT 1 FROM canvas_music_state WHERE server_id = $1")
+        .bind(server_id)
+        .fetch_optional(state.db.pool())
+        .await?;
 
     if has_music.is_none() {
         return Err(AppError::NotFound("No track currently playing".into()));
@@ -402,30 +398,27 @@ pub async fn skip_vote(
     }
 
     // Count votes
-    let skip_count: i64 = sqlx::query(
-        "SELECT COUNT(*) AS cnt FROM music_skip_votes WHERE server_id = $1",
-    )
-    .bind(server_id)
-    .fetch_one(state.db.pool())
-    .await?
-    .try_get("cnt")?;
+    let skip_count: i64 =
+        sqlx::query("SELECT COUNT(*) AS cnt FROM music_skip_votes WHERE server_id = $1")
+            .bind(server_id)
+            .fetch_one(state.db.pool())
+            .await?
+            .try_get("cnt")?;
 
     // Get online member count
     let member_ids = get_server_member_ids(server_id, state).await;
     let online_count = state.hub.count_online(&member_ids).max(1);
 
     // Get threshold
-    let threshold: i16 = sqlx::query(
-        "SELECT skip_threshold_pct FROM canvas_music_settings WHERE server_id = $1",
-    )
-    .bind(server_id)
-    .fetch_optional(state.db.pool())
-    .await?
-    .and_then(|r| r.try_get("skip_threshold_pct").ok())
-    .unwrap_or(DEFAULT_SKIP_THRESHOLD_PCT);
+    let threshold: i16 =
+        sqlx::query("SELECT skip_threshold_pct FROM canvas_music_settings WHERE server_id = $1")
+            .bind(server_id)
+            .fetch_optional(state.db.pool())
+            .await?
+            .and_then(|r| r.try_get("skip_threshold_pct").ok())
+            .unwrap_or(DEFAULT_SKIP_THRESHOLD_PCT);
 
-    let threshold_met =
-        skip_count * 100 >= (threshold as i64) * (online_count as i64);
+    let threshold_met = skip_count * 100 >= (threshold as i64) * (online_count as i64);
 
     if threshold_met {
         let now_playing = advance_track_inner(server_id, state).await?;
@@ -742,11 +735,7 @@ pub async fn grant_dj(
 }
 
 /// Revoke DJ role from a user.
-pub async fn revoke_dj(
-    server_id: Uuid,
-    target_user_id: Uuid,
-    state: &AppState,
-) -> AppResult<()> {
+pub async fn revoke_dj(server_id: Uuid, target_user_id: Uuid, state: &AppState) -> AppResult<()> {
     debug_assert!(server_id != Uuid::nil());
     debug_assert!(target_user_id != Uuid::nil());
 
@@ -853,7 +842,11 @@ pub async fn create_poll(
                     "Poll must have 2–{MAX_POLL_OPTIONS} options"
                 )));
             }
-            let max_len = if poll_type == "emoji_reaction" { 8 } else { MAX_POLL_OPTION_LEN };
+            let max_len = if poll_type == "emoji_reaction" {
+                8
+            } else {
+                MAX_POLL_OPTION_LEN
+            };
             for opt in labels {
                 if opt.is_empty() || opt.len() > max_len {
                     return Err(AppError::BadRequest(format!(
@@ -894,7 +887,9 @@ pub async fn create_poll(
         }
         let max_end = Utc::now() + Duration::seconds(MAX_POLL_DURATION_SECS);
         if ea > max_end {
-            return Err(AppError::BadRequest("ends_at must be within 24 hours".into()));
+            return Err(AppError::BadRequest(
+                "ends_at must be within 24 hours".into(),
+            ));
         }
     }
 
@@ -962,9 +957,7 @@ pub async fn vote_poll(
         return Err(AppError::BadRequest("Poll is closed".into()));
     }
 
-    if let Ok(Some(ends_at)) =
-        poll_row.try_get::<Option<DateTime<Utc>>, _>("ends_at")
-    {
+    if let Ok(Some(ends_at)) = poll_row.try_get::<Option<DateTime<Utc>>, _>("ends_at") {
         if ends_at < Utc::now() {
             return Err(AppError::BadRequest("Poll has ended".into()));
         }
@@ -1150,10 +1143,7 @@ pub async fn get_poll_results(
 }
 
 /// Fetch vote counts for a poll as a JSON object {"0": 5, "1": 3, ...}.
-async fn fetch_vote_counts(
-    poll_id: Uuid,
-    state: &AppState,
-) -> AppResult<serde_json::Value> {
+async fn fetch_vote_counts(poll_id: Uuid, state: &AppState) -> AppResult<serde_json::Value> {
     let rows = sqlx::query(
         "SELECT option_index, COUNT(*) AS cnt
          FROM poll_votes WHERE poll_id = $1
@@ -1204,12 +1194,11 @@ pub async fn add_clip_reaction(
     require_member(server_id, user_id, state).await?;
 
     // Check reaction cap
-    let count: i64 =
-        sqlx::query("SELECT COUNT(*) AS cnt FROM clip_reactions WHERE clip_id = $1")
-            .bind(clip_id)
-            .fetch_one(state.db.pool())
-            .await?
-            .try_get("cnt")?;
+    let count: i64 = sqlx::query("SELECT COUNT(*) AS cnt FROM clip_reactions WHERE clip_id = $1")
+        .bind(clip_id)
+        .fetch_one(state.db.pool())
+        .await?
+        .try_get("cnt")?;
 
     if count >= MAX_REACTIONS_PER_CLIP {
         return Err(AppError::Conflict("Reaction limit reached".into()));
@@ -1350,12 +1339,11 @@ pub async fn pin_clip(
     }
 
     // Check pin cap
-    let count: i64 =
-        sqlx::query("SELECT COUNT(*) AS cnt FROM pinned_clips WHERE server_id = $1")
-            .bind(server_id)
-            .fetch_one(state.db.pool())
-            .await?
-            .try_get("cnt")?;
+    let count: i64 = sqlx::query("SELECT COUNT(*) AS cnt FROM pinned_clips WHERE server_id = $1")
+        .bind(server_id)
+        .fetch_one(state.db.pool())
+        .await?
+        .try_get("cnt")?;
 
     if count >= MAX_PINNED_CLIPS {
         return Err(AppError::Conflict(format!(
@@ -1437,22 +1425,25 @@ pub async fn create_event(
         .map_err(|_| AppError::BadRequest("Invalid event_at timestamp".into()))?;
 
     if event_at <= Utc::now() {
-        return Err(AppError::BadRequest("event_at must be in the future".into()));
+        return Err(AppError::BadRequest(
+            "event_at must be in the future".into(),
+        ));
     }
     let max_future = Utc::now() + Duration::seconds(MAX_EVENT_FUTURE_SECS);
     if event_at > max_future {
-        return Err(AppError::BadRequest("event_at must be within 7 days".into()));
+        return Err(AppError::BadRequest(
+            "event_at must be within 7 days".into(),
+        ));
     }
 
     // One active event per server
     let live_window = Utc::now() - Duration::seconds(EVENT_LIVE_WINDOW_SECS);
-    let has_active = sqlx::query(
-        "SELECT 1 FROM canvas_events WHERE server_id = $1 AND event_at > $2",
-    )
-    .bind(server_id)
-    .bind(live_window)
-    .fetch_optional(state.db.pool())
-    .await?;
+    let has_active =
+        sqlx::query("SELECT 1 FROM canvas_events WHERE server_id = $1 AND event_at > $2")
+            .bind(server_id)
+            .bind(live_window)
+            .fetch_optional(state.db.pool())
+            .await?;
 
     if has_active.is_some() {
         return Err(AppError::Conflict(
@@ -1533,11 +1524,15 @@ pub async fn update_event(
             .parse()
             .map_err(|_| AppError::BadRequest("Invalid event_at".into()))?;
         if parsed <= Utc::now() {
-            return Err(AppError::BadRequest("event_at must be in the future".into()));
+            return Err(AppError::BadRequest(
+                "event_at must be in the future".into(),
+            ));
         }
         let max_future = Utc::now() + Duration::seconds(MAX_EVENT_FUTURE_SECS);
         if parsed > max_future {
-            return Err(AppError::BadRequest("event_at must be within 7 days".into()));
+            return Err(AppError::BadRequest(
+                "event_at must be within 7 days".into(),
+            ));
         }
         Some(parsed)
     } else {
@@ -1590,11 +1585,7 @@ pub async fn update_event(
 }
 
 /// Delete a canvas event.
-pub async fn delete_event(
-    event_id: Uuid,
-    user_id: Uuid,
-    state: &AppState,
-) -> AppResult<()> {
+pub async fn delete_event(event_id: Uuid, user_id: Uuid, state: &AppState) -> AppResult<()> {
     debug_assert!(event_id != Uuid::nil());
     debug_assert!(user_id != Uuid::nil());
 
@@ -1648,22 +1639,20 @@ pub async fn get_canvas_state(
     let queue = fetch_active_queue(server_id, state).await;
 
     // 3. Skip votes + settings
-    let skip_votes: i64 = sqlx::query(
-        "SELECT COUNT(*) AS cnt FROM music_skip_votes WHERE server_id = $1",
-    )
-    .bind(server_id)
-    .fetch_one(state.db.pool())
-    .await?
-    .try_get("cnt")?;
+    let skip_votes: i64 =
+        sqlx::query("SELECT COUNT(*) AS cnt FROM music_skip_votes WHERE server_id = $1")
+            .bind(server_id)
+            .fetch_one(state.db.pool())
+            .await?
+            .try_get("cnt")?;
 
-    let threshold: i16 = sqlx::query(
-        "SELECT skip_threshold_pct FROM canvas_music_settings WHERE server_id = $1",
-    )
-    .bind(server_id)
-    .fetch_optional(state.db.pool())
-    .await?
-    .and_then(|r| r.try_get("skip_threshold_pct").ok())
-    .unwrap_or(DEFAULT_SKIP_THRESHOLD_PCT);
+    let threshold: i16 =
+        sqlx::query("SELECT skip_threshold_pct FROM canvas_music_settings WHERE server_id = $1")
+            .bind(server_id)
+            .fetch_optional(state.db.pool())
+            .await?
+            .and_then(|r| r.try_get("skip_threshold_pct").ok())
+            .unwrap_or(DEFAULT_SKIP_THRESHOLD_PCT);
 
     let member_ids = get_server_member_ids(server_id, state).await;
     let online_count = state.hub.count_online(&member_ids).max(1);

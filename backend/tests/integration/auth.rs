@@ -25,7 +25,11 @@ async fn auth_register_login_me_logout() {
         .add_header("Authorization", format!("Bearer {access_token}"))
         .add_header("X-CSRF-Token", &csrf_token)
         .await;
-    assert!(me.status_code().is_success(), "GET /users/me failed: {}", me.text());
+    assert!(
+        me.status_code().is_success(),
+        "GET /users/me failed: {}",
+        me.text()
+    );
     let me_body: serde_json::Value = me.json();
     assert!(me_body["id"].is_string(), "users/me missing id");
 
@@ -96,7 +100,11 @@ async fn auth_duplicate_email_rejected() {
             "password": "TestPass123!",
         }))
         .await;
-    assert!(reg1.status_code().is_success(), "first register failed: {}", reg1.text());
+    assert!(
+        reg1.status_code().is_success(),
+        "first register failed: {}",
+        reg1.text()
+    );
 
     let reg2 = server
         .post("/api/v1/auth/register")
@@ -137,6 +145,9 @@ async fn auth_refresh_returns_new_token() {
     );
     if status == 200 {
         let body: serde_json::Value = refresh.json();
-        assert!(body["access_token"].is_string(), "refresh missing access_token");
+        assert!(
+            body["access_token"].is_string(),
+            "refresh missing access_token"
+        );
     }
 }

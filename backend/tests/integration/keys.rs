@@ -91,8 +91,14 @@ async fn keys_upload_and_fetch_bundle() {
     );
 
     let body: serde_json::Value = bundle.json();
-    assert!(body["identity_key"].is_string(), "bundle missing identity_key");
-    assert!(body["signed_prekey"].is_object(), "bundle missing signed_prekey");
+    assert!(
+        body["identity_key"].is_string(),
+        "bundle missing identity_key"
+    );
+    assert!(
+        body["signed_prekey"].is_object(),
+        "bundle missing signed_prekey"
+    );
     // OPK is optional (may be null if exhausted), but should be present after upload
     assert!(
         body.get("one_time_prekey").is_some(),

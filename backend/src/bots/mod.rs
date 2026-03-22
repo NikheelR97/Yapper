@@ -102,9 +102,13 @@ async fn import_discord_bot(
     check_not_already_imported(&profile.discord_bot_id, &state).await?;
 
     let bot_user_id = create_bot_user_stub(&profile, &state).await?;
-    let (app_id, raw_token) =
-        create_bot_app_and_token(auth.user_id, &profile.bot_name, &profile.discord_bot_id, &state)
-            .await?;
+    let (app_id, raw_token) = create_bot_app_and_token(
+        auth.user_id,
+        &profile.bot_name,
+        &profile.discord_bot_id,
+        &state,
+    )
+    .await?;
 
     tracing::info!(
         developer_id = %auth.user_id, app_id = %app_id,
@@ -144,10 +148,7 @@ async fn enforce_bot_limit(user_id: Uuid, state: &AppState) -> AppResult<()> {
     Ok(())
 }
 
-async fn verify_discord_bot_token(
-    token: &str,
-    state: &AppState,
-) -> AppResult<DiscordBotProfile> {
+async fn verify_discord_bot_token(token: &str, state: &AppState) -> AppResult<DiscordBotProfile> {
     let token = token.trim();
     let auth_header = if token.starts_with("Bot ") {
         token.to_string()
@@ -155,7 +156,8 @@ async fn verify_discord_bot_token(
         format!("Bot {token}")
     };
 
-    let resp = state.http_client
+    let resp = state
+        .http_client
         .get(DISCORD_BOT_API)
         .header("Authorization", &auth_header)
         .send()
@@ -168,16 +170,26 @@ async fn verify_discord_bot_token(
         ));
     }
 
-    let profile: serde_json::Value = resp.json().await
+    let profile: serde_json::Value = resp
+        .json()
+        .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("Discord profile parse failed: {e}")))?;
 
-    let discord_bot_id = profile["id"].as_str()
+    let discord_bot_id = profile["id"]
+        .as_str()
         .ok_or_else(|| AppError::Internal(anyhow::anyhow!("No id in Discord bot profile")))?
         .to_string();
-    let bot_username = profile["username"].as_str().unwrap_or("imported_bot").to_string();
+    let bot_username = profile["username"]
+        .as_str()
+        .unwrap_or("imported_bot")
+        .to_string();
     let bot_name = format!("{bot_username} (Discord)");
 
-    Ok(DiscordBotProfile { discord_bot_id, bot_username, bot_name })
+    Ok(DiscordBotProfile {
+        discord_bot_id,
+        bot_username,
+        bot_name,
+    })
 }
 
 async fn check_not_already_imported(discord_bot_id: &str, state: &AppState) -> AppResult<()> {
@@ -187,7 +199,9 @@ async fn check_not_already_imported(discord_bot_id: &str, state: &AppState) -> A
         .await?
         .is_some();
     if exists {
-        return Err(AppError::Conflict("This Discord bot has already been imported".into()));
+        return Err(AppError::Conflict(
+            "This Discord bot has already been imported".into(),
+        ));
     }
     Ok(())
 }
@@ -196,15 +210,25 @@ async fn create_bot_user_stub(profile: &DiscordBotProfile, state: &AppState) -> 
     let bot_user_id = Uuid::new_v4();
     let bot_email = format!("bot-{bot_user_id}@bots.yapper.internal");
     let safe_username: String = format!(
-        "bot_{}", profile.bot_username.to_lowercase().replace(['-', '.', ' '], "_")
-    ).chars().take(32).collect();
+        "bot_{}",
+        profile
+            .bot_username
+            .to_lowercase()
+            .replace(['-', '.', ' '], "_")
+    )
+    .chars()
+    .take(32)
+    .collect();
 
     sqlx::query(
         "INSERT INTO users (id, email, username, display_name, account_type, discord_id) \
          VALUES ($1, $2, $3, $4, 'bot', $5)",
     )
-    .bind(bot_user_id).bind(&bot_email).bind(&safe_username)
-    .bind(&profile.bot_username).bind(&profile.discord_bot_id)
+    .bind(bot_user_id)
+    .bind(&bot_email)
+    .bind(&safe_username)
+    .bind(&profile.bot_username)
+    .bind(&profile.discord_bot_id)
     .execute(state.db.pool())
     .await
     .map_err(|e| {
@@ -228,21 +252,29 @@ async fn create_bot_app_and_token(
         "INSERT INTO bot_applications (id, developer_user_id, name, discord_bot_id) \
          VALUES ($1, $2, $3, $4)",
     )
-    .bind(app_id).bind(developer_id).bind(bot_name).bind(discord_bot_id)
+    .bind(app_id)
+    .bind(developer_id)
+    .bind(bot_name)
+    .bind(discord_bot_id)
     .execute(state.db.pool())
     .await?;
 
     let mut raw_bytes = [0u8; TOKEN_BYTES];
     getrandom::getrandom(&mut raw_bytes)
         .map_err(|e| AppError::Internal(anyhow::anyhow!("RNG error: {e}")))?;
-    let raw_token: String = raw_bytes.iter().fold(
-        String::with_capacity(TOKEN_BYTES * 2),
-        |mut s, b| { use std::fmt::Write; write!(s, "{b:02x}").unwrap(); s },
-    );
+    let raw_token: String =
+        raw_bytes
+            .iter()
+            .fold(String::with_capacity(TOKEN_BYTES * 2), |mut s, b| {
+                use std::fmt::Write;
+                write!(s, "{b:02x}").unwrap();
+                s
+            });
     let token_hash = format!("{:x}", Sha256::digest(raw_token.as_bytes()));
 
     sqlx::query("INSERT INTO bot_tokens (bot_app_id, token_hash) VALUES ($1, $2)")
-        .bind(app_id).bind(&token_hash)
+        .bind(app_id)
+        .bind(&token_hash)
         .execute(state.db.pool())
         .await?;
 

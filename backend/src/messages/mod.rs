@@ -507,12 +507,12 @@ async fn send_message_v2(
 
     let message_id = Uuid::new_v4();
     let created_at = Utc::now();
-    let delivered = store_dm_envelopes(
-        message_id, conv_id, created_at, &auth, &req, &state,
-    )
-    .await?;
+    let delivered =
+        store_dm_envelopes(message_id, conv_id, created_at, &auth, &req, &state).await?;
 
-    fanout_dm_v2(message_id, conv_id, created_at, &auth, &req, &delivered, &state);
+    fanout_dm_v2(
+        message_id, conv_id, created_at, &auth, &req, &delivered, &state,
+    );
 
     Ok(Json(serde_json::json!({
         "status": "ok",
@@ -560,17 +560,17 @@ async fn validate_dm_participants(
 
 /// Validate all recipient devices exist, are trusted, and belong to the
 /// correct user IDs specified in each envelope.
-async fn validate_dm_recipient_devices(
-    req: &SendMessageReqV2,
-    state: &AppState,
-) -> AppResult<()> {
-    let device_ids: Vec<Uuid> = req.envelopes.iter().map(|e| e.recipient_device_id).collect();
-    let rows = sqlx::query(
-        "SELECT id, user_id, revoked_at, trust_state FROM devices WHERE id = ANY($1)",
-    )
-    .bind(&device_ids)
-    .fetch_all(state.db.pool())
-    .await?;
+async fn validate_dm_recipient_devices(req: &SendMessageReqV2, state: &AppState) -> AppResult<()> {
+    let device_ids: Vec<Uuid> = req
+        .envelopes
+        .iter()
+        .map(|e| e.recipient_device_id)
+        .collect();
+    let rows =
+        sqlx::query("SELECT id, user_id, revoked_at, trust_state FROM devices WHERE id = ANY($1)")
+            .bind(&device_ids)
+            .fetch_all(state.db.pool())
+            .await?;
 
     if rows.len() != req.envelopes.len() {
         return Err(AppError::BadRequest("Unknown recipient device".into()));
@@ -591,7 +591,9 @@ async fn validate_dm_recipient_devices(
     }
 
     for envelope in &req.envelopes {
-        let owner = device_map.get(&envelope.recipient_device_id).copied()
+        let owner = device_map
+            .get(&envelope.recipient_device_id)
+            .copied()
             .ok_or_else(|| AppError::BadRequest("Unknown recipient device".into()))?;
         if owner != envelope.recipient_user_id {
             return Err(AppError::BadRequest(
@@ -645,11 +647,20 @@ async fn insert_dm_envelope(
     deliver_now: bool,
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
 ) -> AppResult<()> {
-    let ciphertext = BASE64.decode(&e.ciphertext)
+    let ciphertext = BASE64
+        .decode(&e.ciphertext)
         .map_err(|_| AppError::BadRequest("Invalid ciphertext encoding".into()))?;
-    let ek_public = e.ephemeral_key.as_deref().map(|v| BASE64.decode(v)).transpose()
+    let ek_public = e
+        .ephemeral_key
+        .as_deref()
+        .map(|v| BASE64.decode(v))
+        .transpose()
         .map_err(|_| AppError::BadRequest("Invalid ephemeral_key encoding".into()))?;
-    let ratchet_pub = e.ratchet_pub.as_deref().map(|v| BASE64.decode(v)).transpose()
+    let ratchet_pub = e
+        .ratchet_pub
+        .as_deref()
+        .map(|v| BASE64.decode(v))
+        .transpose()
         .map_err(|_| AppError::BadRequest("Invalid ratchet_pub encoding".into()))?;
     let crypto_version = e.crypto_version.unwrap_or(1);
     if !(1..=2).contains(&crypto_version) {
@@ -663,10 +674,18 @@ async fn insert_dm_envelope(
           delivered_at, created_at) \
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)",
     )
-    .bind(message_id).bind(e.recipient_user_id).bind(e.recipient_device_id)
-    .bind(auth.user_id).bind(auth.device_id)
-    .bind(&ciphertext).bind(&ek_public).bind(e.opk_id).bind(e.msg_num)
-    .bind(&ratchet_pub).bind(e.previous_chain_len).bind(crypto_version)
+    .bind(message_id)
+    .bind(e.recipient_user_id)
+    .bind(e.recipient_device_id)
+    .bind(auth.user_id)
+    .bind(auth.device_id)
+    .bind(&ciphertext)
+    .bind(&ek_public)
+    .bind(e.opk_id)
+    .bind(e.msg_num)
+    .bind(&ratchet_pub)
+    .bind(e.previous_chain_len)
+    .bind(crypto_version)
     .bind(if deliver_now { Some(created_at) } else { None })
     .bind(created_at)
     .execute(&mut **tx)
