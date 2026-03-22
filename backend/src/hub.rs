@@ -77,8 +77,8 @@ pub struct Hub {
     away_users: DashMap<Uuid, ()>,
 }
 
-impl Hub {
-    pub fn new() -> Self {
+impl Default for Hub {
+    fn default() -> Self {
         Self {
             connections: DashMap::new(),
             device_connections: DashMap::new(),
@@ -88,6 +88,12 @@ impl Hub {
             away_timers: DashMap::new(),
             away_users: DashMap::new(),
         }
+    }
+}
+
+impl Hub {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Returns true if the user is within their message rate limit (5/sec, burst 20).
@@ -1206,9 +1212,6 @@ async fn store_and_route_dm(dm: DmContext<'_>, state: &AppState, tx: &ConnTx) {
     // Push notification to offline devices (best-effort, fire-and-forget)
     if !recipient_online {
         let state = state.clone();
-        let recipient_id = recipient_id;
-        let conversation_id = conversation_id;
-        let sender_id = sender_id;
         tokio::spawn(async move {
             let mut meta = std::collections::HashMap::new();
             meta.insert("conversation_id".into(), conversation_id.to_string());

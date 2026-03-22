@@ -818,7 +818,7 @@ pub async fn apple_callback(
         None => return oauth_error_redirect("no_id_token"),
     };
 
-    let claims = match verify_apple_id_token(&http, &id_token_str, &client_id).await {
+    let claims = match verify_apple_id_token(http, &id_token_str, &client_id).await {
         Ok(c) => c,
         Err(e) => {
             tracing::warn!("Apple ID token verification failed: {e}");

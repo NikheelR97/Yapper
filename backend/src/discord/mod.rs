@@ -194,7 +194,7 @@ async fn import_profile_callback(
         let cdn_url = format!(
             "https://cdn.discordapp.com/avatars/{discord_id_str}/{avatar_hash}.png?size=256"
         );
-        match download_and_reupload_avatar(&http_client, &cdn_url, user_id).await {
+        match download_and_reupload_avatar(http_client, &cdn_url, user_id).await {
             Ok(url) => Some(url),
             Err(e) => {
                 tracing::warn!(user_id = %user_id, "Failed to re-upload Discord avatar: {e}");
