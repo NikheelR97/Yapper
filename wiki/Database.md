@@ -34,6 +34,10 @@ All migrations live in `backend/migrations/` and are applied automatically on se
 | 024 | `20260309000022_auth_security_hardening.sql` | Login attempt tracking |
 | 025 | `20260309000023_dm_double_ratchet.sql` | Double ratchet chain state columns |
 | 026 | `20260315000026_support_tickets.sql` | User support tickets + HubSpot ID |
+| 027 | `20260316000027_device_sync_events.sql` | Device sync events for multi-device trust |
+| 028 | `20260321000028_push_tokens.sql` | FCM push token registration |
+| 029 | `20260321000029_canvas_expansion.sql` | Canvas music queue, enhanced polls, clip reactions, events |
+| 030 | `20260322000030_media_uploads.sql` | Media upload tracking + per-user quota |
 
 ## Key tables
 

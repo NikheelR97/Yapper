@@ -476,3 +476,123 @@ Connect, then immediately send an `Auth` frame.
 
 - WS message rate: 5 messages/second per user, burst of 20
 - Exceeding the limit returns `{ "type": "error", "message": "Rate limit exceeded" }` and the message is dropped (connection stays open)
+
+---
+
+## Canvas (Expanded) — `/api/v1/canvas/:server_id/*`
+
+### Music
+
+### `GET /api/v1/canvas/:server_id/music/queue`
+Get the current music queue for the server.
+
+### `POST /api/v1/canvas/:server_id/music/queue`
+Add a track to the queue.
+
+### `DELETE /api/v1/canvas/:server_id/music/queue/:track_id`
+Remove a track from the queue.
+
+### `POST /api/v1/canvas/:server_id/music/queue/reorder`
+Reorder the queue.
+```json
+{ "track_ids": ["uuid1", "uuid2", "uuid3"] }
+```
+
+### `POST /api/v1/canvas/:server_id/music/skip`
+Skip the current track.
+
+### `POST /api/v1/canvas/:server_id/music/dj/request`
+Request the DJ role.
+
+### `DELETE /api/v1/canvas/:server_id/music/dj`
+Release the DJ role.
+
+### `GET /api/v1/canvas/:server_id/music/history`
+Get play history.
+
+### `GET /api/v1/canvas/:server_id/music/settings`
+Get music settings.
+
+### `PATCH /api/v1/canvas/:server_id/music/settings`
+Update music settings (admin only).
+
+### Polls
+
+### `POST /api/v1/canvas/:server_id/polls`
+Create a poll (types: `binary`, `emoji`, `multiple_choice`).
+
+### `POST /api/v1/canvas/:server_id/polls/:id/vote`
+Cast a vote.
+
+### `POST /api/v1/canvas/:server_id/polls/:id/close`
+Close a poll (admin only).
+
+### `GET /api/v1/canvas/:server_id/polls/:id/results`
+Get poll results.
+
+### Clips
+
+### `POST /api/v1/canvas/:server_id/clips/:id/reactions`
+Add a reaction to a clip.
+
+### `DELETE /api/v1/canvas/:server_id/clips/:id/reactions/:emoji`
+Remove a reaction.
+
+### `POST /api/v1/canvas/:server_id/clips/:id/pin`
+Pin a clip (admin only).
+
+### `DELETE /api/v1/canvas/:server_id/clips/:id/pin`
+Unpin a clip.
+
+### Events
+
+### `POST /api/v1/canvas/:server_id/events`
+Create a countdown event.
+
+### `GET /api/v1/canvas/:server_id/events`
+List events.
+
+### `PATCH /api/v1/canvas/:server_id/events/:id`
+Update an event.
+
+### `DELETE /api/v1/canvas/:server_id/events/:id`
+Delete an event.
+
+### State
+
+### `GET /api/v1/canvas/:server_id/state`
+Full canvas state hydration (music + polls + clips + events).
+
+---
+
+## Media (Upload) — `/api/v1/media/*`
+
+### `POST /api/v1/media/upload-url`
+Get an R2 presigned upload URL.
+```json
+// Request
+{ "media_type": "yap", "content_length": 102400 }   // media_type: yap | clip
+
+// Response
+{ "upload_url": "https://...", "media_id": "uuid", "expires_in": 300 }
+```
+
+---
+
+## Support — `/api/v1/support/*`
+
+### `POST /api/v1/support/tickets`
+Create a support ticket.
+```json
+// Request
+{ "ticket_type": "bug", "subject": "...", "description": "...", "priority": "medium" }
+
+// Response 201
+{ "id": "uuid", "status": "open", "created_at": "2026-..." }
+```
+
+### `GET /api/v1/support/tickets`
+List own tickets.
+```json
+{ "tickets": [{ "id": "...", "ticket_type": "bug", "subject": "...", "status": "open", "created_at": "..." }] }
+```

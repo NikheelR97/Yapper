@@ -66,6 +66,9 @@ All modules live under `backend/src/`. Each is a Rust module with its own `mod.r
 | `screentime` | `/api/v1/screentime/*` | Screen time report ingestion + aggregation |
 | `bots` | `/api/v1/bots/*` | Bot application management |
 | `discord` | `/api/v1/discord/*` | Discord profile import + bot migration |
+| `support` | `/api/v1/support/*` | Support tickets with HubSpot CRM integration |
+| `devices` | `/api/v1/devices/*` | Multi-device management, trust states, sync events |
+| `constants` | — | Centralized limits (`MAX_UPLOAD_SIZE`, `MAX_UPLOADS_PER_MINUTE`, etc.) |
 | `hub` | — | In-memory WebSocket hub, rate limiting, typing timers, away detection |
 | `csrf` | — | Double-submit CSRF middleware |
 | `error` | — | Unified `AppError` → HTTP status mapping |
@@ -79,11 +82,13 @@ The hub (`src/hub.rs`) is the real-time core. It holds:
 
 ```rust
 pub struct Hub {
-    connections:  DashMap<Uuid, DashMap<ConnectionId, ConnTx>>,
-    msg_limiters: DashMap<Uuid, MsgRateLimiter>,   // 5 msg/sec, burst 20
-    typing_timers: DashMap<(Uuid, Uuid), JoinHandle<()>>, // auto-stop after 5s
-    away_timers:  DashMap<Uuid, JoinHandle<()>>,   // 5 min inactivity → away
-    away_users:   DashMap<Uuid, ()>,               // currently-away set
+    connections:      DashMap<Uuid, DashMap<ConnectionId, ConnTx>>,
+    device_connections: DashMap<Uuid, DashMap<Uuid, ConnectionId>>, // user → device → conn
+    connection_meta:  DashMap<ConnectionId, ConnectionMeta>,        // conn → metadata
+    msg_limiters:     DashMap<Uuid, MsgRateLimiter>,   // 5 msg/sec, burst 20
+    typing_timers:    DashMap<(Uuid, Uuid), JoinHandle<()>>, // auto-stop after 5s
+    away_timers:      DashMap<Uuid, JoinHandle<()>>,   // 5 min inactivity → away
+    away_users:       DashMap<Uuid, ()>,               // currently-away set
 }
 ```
 

@@ -31,7 +31,7 @@ Yapper is an open-source, end-to-end encrypted real-time chat platform. It suppo
 yapper/
 ├── backend/          # Rust + Axum API server
 │   ├── src/          # Application source
-│   ├── migrations/   # sqlx SQL migrations (26 total)
+│   ├── migrations/   # sqlx SQL migrations (30 total)
 │   └── Dockerfile    # cargo-chef multi-stage build
 ├── frontend/         # SvelteKit web + Tauri desktop + Capacitor mobile
 │   ├── src/          # SvelteKit app

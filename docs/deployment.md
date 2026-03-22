@@ -47,15 +47,18 @@ flyctl secrets set \
   R2_ENDPOINT="https://....r2.cloudflarestorage.com" \
   R2_PUBLIC_URL="https://media.yapperhq.com" \
   FCM_SERVICE_ACCOUNT_JSON="$(cat secrets/firebase-service-account.json)" \
-  CORS_ORIGINS="https://app.yapperhq.com,tauri://localhost,capacitor://localhost" \
+  CORS_ORIGINS="https://app.yapperhq.com,http://tauri.localhost,capacitor://localhost" \
   APP_ENV="production"
 flyctl deploy
 ```
 
 ### Subsequent deploys
 
+CI runs `flyctl deploy` directly in the `deploy-backend` job — no separate Docker push step is needed. Fly.io handles the remote build from the Dockerfile.
+
 ```bash
-make deploy-backend   # cd backend && fly deploy
+# Manual deploy (same as what CI does):
+make deploy-backend   # cd backend && flyctl deploy
 ```
 
 ### Environment variables (production vs local)
@@ -248,6 +251,10 @@ GitHub Actions workflows live in `.github/workflows/`.
 Triggers:
 - **Push to `main`:** Run `cargo check`, `cargo clippy`, frontend type check, deploy if all pass
 - **Pull request:** Run checks only, no deploy
+
+The `deploy-backend` job runs `flyctl deploy` directly (no `docker/build-push-action` or manual push to `registry.fly.io`). Fly.io performs the remote Docker build from the committed Dockerfile and deploys the image in one step.
+
+> **Note:** `CORS_ORIGINS` must include `http://tauri.localhost` for Tauri v2 desktop. Tauri v2 sends `Origin: http://tauri.localhost` (not `tauri://localhost` from v1).
 
 Secrets needed in GitHub repository settings:
 - `FLY_API_TOKEN` — from `flyctl tokens create deploy`
