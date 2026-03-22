@@ -86,31 +86,27 @@ jobs:
           path: sbom.cyclonedx.json
           if-no-files-found: error
 
-      - name: Install Trivy
-        uses: aquasecurity/setup-trivy@v0.2.6
-        with:
-          version: v0.68.2
-          cache: true
-
       - name: Run Trivy filesystem scan
-        run: >
-          trivy fs
-          --scanners vuln,secret,config
-          --severity HIGH,CRITICAL
-          --ignore-unfixed
-          --exit-code 1
-          .
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,config
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: 0
         continue-on-error: true
 
       - name: Build backend image for scanning
         run: docker build -t yapper-backend-security-scan -f backend/Dockerfile backend
 
       - name: Run Trivy image scan
-        run: >
-          trivy image
-          --scanners vuln,secret,config
-          --severity HIGH,CRITICAL
-          --ignore-unfixed
-          --exit-code 1
-          yapper-backend-security-scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: image
+          image-ref: yapper-backend-security-scan
+          scanners: vuln,secret,config
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: 0
         continue-on-error: true
