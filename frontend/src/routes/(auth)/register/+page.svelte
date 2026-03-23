@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { api, ApiError } from '$api/client.js';
-	import { setAuth } from '$stores/auth.js';
+	import { setAuth, storeRefreshToken } from '$stores/auth.js';
 	import type { User } from '$stores/auth.js';
 	import { getDeviceBootstrap, normalizeServerDevice } from '$lib/device/bootstrap.js';
 	import { API_URL } from '$lib/env.js';
@@ -61,6 +61,7 @@
 					device: await getDeviceBootstrap(),
 				}
 			);
+			if (res.refresh_token) storeRefreshToken(res.refresh_token);
 			setAuth(res.user, res.access_token, res.csrf_token, normalizeServerDevice(res.device));
 			await goto('/onboarding');
 		} catch (e) {

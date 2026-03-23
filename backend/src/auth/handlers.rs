@@ -588,11 +588,23 @@ pub(crate) fn clear_auth_cookies_for_path(refresh_cookie_path: &str) -> [String;
 }
 
 pub(crate) fn extract_refresh_cookie(headers: &HeaderMap) -> Option<String> {
-    let cookie_header = headers.get(header::COOKIE)?.to_str().ok()?;
-    cookie_header
-        .split(';')
-        .find(|s| s.trim().starts_with("refresh_token="))
-        .map(|s| s.trim().trim_start_matches("refresh_token=").to_string())
+    // First try the cookie (web browsers)
+    if let Some(token) = headers
+        .get(header::COOKIE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|raw| {
+            raw.split(';')
+                .find(|s| s.trim().starts_with("refresh_token="))
+                .map(|s| s.trim().trim_start_matches("refresh_token=").to_string())
+        })
+    {
+        return Some(token);
+    }
+    // Fallback: X-Refresh-Token header (Tauri/Capacitor where cookies are blocked)
+    headers
+        .get("x-refresh-token")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string())
 }
 
 pub(crate) fn refresh_cookie_header_for_path(

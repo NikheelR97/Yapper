@@ -2,7 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { get } from 'svelte/store';
-	import { authStore, setAuth } from '$stores/auth.js';
+	import { authStore, setAuth, storeRefreshToken } from '$stores/auth.js';
 	import {
 		parentalStore,
 		loadChildren,
@@ -37,6 +37,7 @@
 					revoked_at: string | null;
 				};
 			}>('/api/v2/auth/refresh');
+			if (res.refresh_token) storeRefreshToken(res.refresh_token);
 			setAuth(res.user, res.access_token, res.csrf_token, normalizeServerDevice(res.device));
 			return true;
 		} catch {

@@ -196,6 +196,7 @@ pub(crate) fn cors_layer() -> CorsLayer {
             AUTHORIZATION,
             ACCEPT,
             HeaderName::from_static("x-csrf-token"),
+            HeaderName::from_static("x-refresh-token"),
         ])
         .allow_credentials(true)
 }

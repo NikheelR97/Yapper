@@ -13,6 +13,8 @@
     authStore,
     clearAuth,
     setAuth,
+    storeRefreshToken,
+    getStoredRefreshToken,
     type AuthDevice,
   } from "$stores/auth.js";
   import { ApiError, api } from "$api/client.js";
@@ -522,8 +524,11 @@
     deviceId: string,
     importedSnapshot: boolean,
   ): Promise<boolean> {
-    const restored = await refreshSessionV2();
-    if (!restored || !currentDeviceTrusted()) {
+    // Try to refresh the session for a fresh access token, but don't block
+    // activation if it fails — the caller may have already confirmed trusted
+    // state via /api/v2/devices and updated the auth store.
+    await refreshSessionV2();
+    if (!currentDeviceTrusted()) {
       return false;
     }
 
@@ -686,6 +691,7 @@
       const res = await api.post<{
         access_token: string;
         csrf_token: string;
+        refresh_token?: string;
         user: User;
         device: {
           id: string;
@@ -700,6 +706,7 @@
           revoked_at: string | null;
         };
       }>("/api/v2/auth/refresh");
+      if (res.refresh_token) storeRefreshToken(res.refresh_token);
       setAuth(
         res.user,
         res.access_token,
@@ -1064,7 +1071,7 @@
   <UpdateBanner />
   <TopNav />
 
-  {#if ready && currentDeviceTrusted() && !$wsStore.connected}
+  {#if ready && $authStore.device?.trustState === "trusted" && !$wsStore.connected}
     <div class="reconnecting-banner">Reconnecting...</div>
   {/if}
 
@@ -1093,7 +1100,7 @@
           </button>
         </div>
       </div>
-    {:else if currentDeviceTrusted()}
+    {:else if $authStore.device?.trustState === "trusted"}
       <div class="app-shell">
         <AppSidebar />
         <main class="main-content">

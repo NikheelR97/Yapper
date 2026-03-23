@@ -64,6 +64,30 @@ export function clearAuth() {
 		csrfToken: null,
 		loading: false,
 	});
+	clearStoredRefreshToken();
+}
+
+const REFRESH_TOKEN_KEY = 'yapper_refresh_token';
+
+/** Store refresh token for native apps where cookies are blocked */
+export function storeRefreshToken(token: string): void {
+	try {
+		localStorage.setItem(REFRESH_TOKEN_KEY, token);
+	} catch { /* quota exceeded or unavailable */ }
+}
+
+export function getStoredRefreshToken(): string | null {
+	try {
+		return localStorage.getItem(REFRESH_TOKEN_KEY);
+	} catch {
+		return null;
+	}
+}
+
+export function clearStoredRefreshToken(): void {
+	try {
+		localStorage.removeItem(REFRESH_TOKEN_KEY);
+	} catch { /* ignore */ }
 }
 
 export function setPremiumStatus(isPremium: boolean) {

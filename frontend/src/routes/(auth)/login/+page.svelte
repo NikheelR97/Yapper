@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { api, ApiError } from '$api/client.js';
-	import { setAuth } from '$stores/auth.js';
+	import { setAuth, storeRefreshToken } from '$stores/auth.js';
 	import type { User } from '$stores/auth.js';
 	import { getDeviceBootstrap, normalizeServerDevice } from '$lib/device/bootstrap.js';
 	import { isTauri as _isTauri } from '$lib/plugins/tauri-compat.js';
@@ -51,6 +51,7 @@
 				'/api/v2/auth/login',
 				{ email, password, device: await getDeviceBootstrap() }
 			);
+			if (res.refresh_token) storeRefreshToken(res.refresh_token);
 			setAuth(res.user, res.access_token, res.csrf_token, normalizeServerDevice(res.device));
 			await goto('/explore');
 		} catch (e) {

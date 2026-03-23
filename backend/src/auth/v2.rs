@@ -35,6 +35,8 @@ const REFRESH_COOKIE_PATH_V2: &str = "/api/v2/auth/refresh";
 struct AuthResponseV2 {
     access_token: String,
     csrf_token: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    refresh_token: Option<String>,
     user: UserDto,
     device: DeviceSummary,
 }
@@ -344,6 +346,7 @@ async fn refresh(
         Json(AuthResponseV2 {
             access_token,
             csrf_token,
+            refresh_token: Some(refresh_token),
             user,
             device: device.to_summary(),
         }),
@@ -414,6 +417,7 @@ pub(super) async fn issue_device_session(
         Json(AuthResponseV2 {
             access_token,
             csrf_token,
+            refresh_token: Some(refresh_token),
             user,
             device: device.to_summary(),
         }),

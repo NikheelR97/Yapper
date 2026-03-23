@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { authStore } from '$stores/auth.js';
+import { authStore, getStoredRefreshToken } from '$stores/auth.js';
 import { API_URL } from '$lib/env.js';
 
 const BASE_URL = API_URL;
@@ -38,6 +38,13 @@ async function request<T>(
 	if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
 		const csrf = getCsrfToken();
 		if (csrf) headers['X-CSRF-Token'] = csrf;
+	}
+
+	// Fallback for Tauri/Capacitor where cross-origin cookies are blocked:
+	// send the stored refresh token as a header so the backend can use it.
+	if (path.includes('/auth/refresh')) {
+		const rt = getStoredRefreshToken();
+		if (rt) headers['X-Refresh-Token'] = rt;
 	}
 
 	const response = await fetch(`${BASE_URL}${path}`, {

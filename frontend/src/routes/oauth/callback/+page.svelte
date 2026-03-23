@@ -3,7 +3,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { get } from 'svelte/store';
-	import { setAuth } from '$stores/auth.js';
+	import { setAuth, storeRefreshToken } from '$stores/auth.js';
 	import type { User } from '$stores/auth.js';
 	import { getDeviceBootstrap, normalizeServerDevice } from '$lib/device/bootstrap.js';
 	import { API_URL } from '$lib/env.js';
@@ -47,6 +47,7 @@
 
 			const attached = await exchangeRes.json();
 			const user: User = attached.user;
+			if (attached.refresh_token) storeRefreshToken(attached.refresh_token);
 			setAuth(
 				user,
 				attached.access_token,
