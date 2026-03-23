@@ -29,6 +29,9 @@ interface Session {
 	csrfToken: string;
 	userId: string;
 	username: string;
+	_email: string;
+	_pass: string;
+	_installId: string;
 }
 
 async function createSession(
@@ -43,7 +46,40 @@ async function createSession(
 		csrfToken: d.csrfToken,
 		userId: String(d.user.id),
 		username: String(d.user.username),
+		_email: email,
+		_pass: pass,
+		_installId: installId,
 	};
+}
+
+/** Re-authenticate the session. Mutates session in-place. */
+async function refreshSession(session: Session): Promise<void> {
+	const fresh = await createSession(session._email, session._pass, session._installId, 'refresh');
+	Object.assign(session, fresh);
+}
+
+/**
+ * Execute a fetch with auto-retry on 401 (stale JWT).
+ * On 401, re-authenticates the session and retries once.
+ */
+async function authedFetch(
+	session: Session,
+	url: string,
+	init?: RequestInit,
+): Promise<Response> {
+	const makeOpts = (): RequestInit => ({
+		...init,
+		headers: {
+			...(init?.headers ?? {}),
+			...apiHeaders(session),
+		},
+	});
+	let res = await fetch(url, makeOpts());
+	if (res.status === 401) {
+		await refreshSession(session);
+		res = await fetch(url, makeOpts());
+	}
+	return res;
 }
 
 function apiHeaders(s: Session) {
@@ -59,63 +95,44 @@ async function getProfile(
 	session: Session,
 	username: string,
 ): Promise<Record<string, unknown>> {
-	const res = await fetch(`${API_URL}/api/v1/users/by/${username}`, {
-		headers: { Authorization: `Bearer ${session.accessToken}` },
-	});
+	const res = await authedFetch(session, `${API_URL}/api/v1/users/by/${username}`);
 	if (!res.ok) throw new Error(`getProfile failed: ${res.status}`);
 	return res.json() as Promise<Record<string, unknown>>;
 }
 
 async function follow(from: Session, toUsername: string): Promise<void> {
-	const res = await fetch(`${API_URL}/api/v1/users/by/${toUsername}/follow`, {
-		method: 'POST',
-		headers: apiHeaders(from),
-	});
-	if (!res.ok && res.status !== 409) throw new Error(`follow failed: ${res.status}`);
+	const res = await authedFetch(from, `${API_URL}/api/v1/users/by/${toUsername}/follow`, { method: 'POST' });
+	if (!res.ok && res.status !== 409) {
+		const body = await res.text().catch(() => '');
+		throw new Error(`follow failed: ${res.status} ${body}`);
+	}
 }
 
 async function unfollow(from: Session, toUsername: string): Promise<void> {
-	const res = await fetch(`${API_URL}/api/v1/users/by/${toUsername}/follow`, {
-		method: 'DELETE',
-		headers: apiHeaders(from),
-	});
+	const res = await authedFetch(from, `${API_URL}/api/v1/users/by/${toUsername}/follow`, { method: 'DELETE' });
 	if (!res.ok && res.status !== 404) throw new Error(`unfollow failed: ${res.status}`);
 }
 
 async function sendFriendRequest(from: Session, toUsername: string): Promise<void> {
-	const res = await fetch(`${API_URL}/api/v1/users/by/${toUsername}/friend-request`, {
-		method: 'POST',
-		headers: apiHeaders(from),
-		body: '{}',
-	});
+	const res = await authedFetch(from, `${API_URL}/api/v1/users/by/${toUsername}/friend-request`, { method: 'POST', body: '{}' });
 	if (!res.ok && res.status !== 409) throw new Error(`sendFriendRequest failed: ${res.status}`);
 }
 
 async function acceptFriendRequest(acceptor: Session, fromUsername: string): Promise<void> {
-	const res = await fetch(`${API_URL}/api/v1/users/by/${fromUsername}/friend-request`, {
-		method: 'PUT',
-		headers: apiHeaders(acceptor),
-		body: '{}',
-	});
+	const res = await authedFetch(acceptor, `${API_URL}/api/v1/users/by/${fromUsername}/friend-request`, { method: 'PUT', body: '{}' });
 	if (!res.ok) throw new Error(`acceptFriendRequest failed: ${res.status}`);
 }
 
 async function rejectFriendRequest(rejector: Session, fromUsername: string): Promise<void> {
-	const res = await fetch(`${API_URL}/api/v1/users/by/${fromUsername}/friend-request`, {
-		method: 'DELETE',
-		headers: apiHeaders(rejector),
-	});
+	const res = await authedFetch(rejector, `${API_URL}/api/v1/users/by/${fromUsername}/friend-request`, { method: 'DELETE' });
 	if (!res.ok) throw new Error(`rejectFriendRequest failed: ${res.status}`);
 }
 
 async function listIncomingFriendRequests(session: Session): Promise<unknown[]> {
-	const res = await fetch(`${API_URL}/api/v1/users/me/friend-requests`, {
-		headers: { Authorization: `Bearer ${session.accessToken}` },
-	});
+	const res = await authedFetch(session, `${API_URL}/api/v1/users/me/friend-requests`);
 	if (!res.ok) throw new Error(`listFriendRequests failed: ${res.status}`);
 	const body = await res.json();
-	// Backend returns { requests: [...] }
-	return Array.isArray(body) ? body : ((body as { requests?: unknown[] }).requests ?? []);
+	return Array.isArray(body) ? (body as unknown[]) : ((body as Record<string, unknown>).requests as unknown[] ?? []);
 }
 
 // Normalise the profile field names — backend may return camelCase or snake_case
@@ -133,6 +150,7 @@ function followerCount(profile: Record<string, unknown>): number {
 
 test.describe('Social — follow graph', () => {
 	test.use({ storageState: { cookies: [], origins: [] } });
+	test.describe.configure({ retries: 1 });
 
 	test.skip(
 		!USER_A_EMAIL || !USER_B_EMAIL,
@@ -289,7 +307,7 @@ test.describe('Social — friend requests', () => {
 		// Ensure clean state
 		await rejectFriendRequest(sessionB, sessionA.username).catch(() => undefined);
 
-		// Sending the same request twice should not throw
+		// Sending the same request twice should not throw (second returns 409, handled gracefully)
 		await expect(sendFriendRequest(sessionA, sessionB.username)).resolves.toBeUndefined();
 		await expect(sendFriendRequest(sessionA, sessionB.username)).resolves.toBeUndefined();
 

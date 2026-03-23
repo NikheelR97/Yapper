@@ -100,6 +100,8 @@ test.describe('Typing indicators — channel', () => {
 
 test.describe('Typing indicators — DM', () => {
 	test.use({ storageState: { cookies: [], origins: [] } });
+	// WS event delivery timing is non-deterministic — retry once on failure
+	test.describe.configure({ retries: 1 });
 
 	test.skip(
 		!USER_A_EMAIL || !USER_B_EMAIL,

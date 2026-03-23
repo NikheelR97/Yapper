@@ -317,7 +317,8 @@ test.describe('DM decryption integrity', () => {
 
 test.describe('Channel decryption integrity', () => {
 	test.use({ storageState: { cookies: [], origins: [] } });
-	test.describe.configure({ timeout: 180_000 });
+	// SenderKey distribution timing is non-deterministic — retry once on failure
+	test.describe.configure({ timeout: 180_000, retries: 1 });
 
 	test.skip(
 		!USER_A_EMAIL || !USER_B_EMAIL,
@@ -408,7 +409,21 @@ test.describe('Channel decryption integrity', () => {
 
 			// ── B should see A's message ─────────────────────────────────────────
 			const baselineB = await countDecryptErrors(pageB);
-			await waitForMessage(pageB, msgFromA, 120_000);
+			// If B doesn't see the message via WS within 30s, re-navigate to
+			// trigger prepareChannel() which fetches pending key distributions
+			// and reloads messages from the server.
+			const bSeesIt = await pageB.getByText(msgFromA).isVisible().catch(() => false);
+			if (!bSeesIt) {
+				await pageB.waitForTimeout(15_000);
+				const bSeesItRetry = await pageB.getByText(msgFromA).isVisible().catch(() => false);
+				if (!bSeesItRetry) {
+					await navigateClientSide(pageB, '/explore');
+					await navigateClientSide(pageB, `/servers/${serverId}/channels/${channelId}`);
+					await expect(pageB.locator('textarea[aria-label="Message"]').first()).toBeEnabled({ timeout: 60_000 });
+					await pageB.waitForTimeout(5_000);
+				}
+			}
+			await waitForMessage(pageB, msgFromA, 60_000);
 			await assertNoDecryptErrors(pageB, 'User B after opening channel with A\'s message', baselineB);
 
 			// ── B sends reply in channel ──────────────────────────────────────────

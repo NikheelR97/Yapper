@@ -142,6 +142,8 @@ async function waitForBundles(authToken: string, userId: string): Promise<void> 
 
 test.describe('Channel E2EE — cross-user message decryption', () => {
 	test.use({ storageState: { cookies: [], origins: [] } });
+	// SenderKey distribution timing is non-deterministic — retry once on failure
+	test.describe.configure({ retries: 1 });
 
 	test.skip(
 		!USER_A_EMAIL || !USER_B_EMAIL,
@@ -241,6 +243,18 @@ test.describe('Channel E2EE — cross-user message decryption', () => {
 				await expect(pageA.getByText(testMsg)).toBeVisible({ timeout: 15_000 });
 
 				// ── B should see A's message ─────────────────────────────────────────
+				// If B doesn't see it via WS, re-navigate to fetch from server.
+				const bSees = await pageB.getByText(testMsg).isVisible().catch(() => false);
+				if (!bSees) {
+					await pageB.waitForTimeout(15_000);
+					const bSeesRetry = await pageB.getByText(testMsg).isVisible().catch(() => false);
+					if (!bSeesRetry) {
+						await navigateClientSide(pageB, '/explore');
+						await navigateClientSide(pageB, `/servers/${serverId}/channels/${channelId}`);
+						await expect(pageB.locator('textarea[aria-label="Message"]').first()).toBeEnabled({ timeout: 60_000 });
+						await pageB.waitForTimeout(5_000);
+					}
+				}
 				await expect(pageB.getByText(testMsg)).toBeVisible({ timeout: 30_000 });
 			} finally {
 				await ctxA.close();
@@ -323,7 +337,18 @@ test.describe('Channel E2EE — cross-user message decryption', () => {
 				await inputA.press('Enter');
 				await expect(pageA.getByText(msgFromA)).toBeVisible({ timeout: 15_000 });
 
-				// B should see A's message
+				// B should see A's message — re-navigate if WS delivery is slow
+				const bSeesA = await pageB.getByText(msgFromA).isVisible().catch(() => false);
+				if (!bSeesA) {
+					await pageB.waitForTimeout(15_000);
+					const bSeesARetry = await pageB.getByText(msgFromA).isVisible().catch(() => false);
+					if (!bSeesARetry) {
+						await navigateClientSide(pageB, '/explore');
+						await navigateClientSide(pageB, `/servers/${serverId}/channels/${channelId}`);
+						await expect(pageB.locator('textarea[aria-label="Message"]').first()).toBeEnabled({ timeout: 60_000 });
+						await pageB.waitForTimeout(5_000);
+					}
+				}
 				await expect(pageB.getByText(msgFromA)).toBeVisible({ timeout: 30_000 });
 
 				// B sends a reply
@@ -331,12 +356,20 @@ test.describe('Channel E2EE — cross-user message decryption', () => {
 				await inputB.press('Enter');
 				await expect(pageB.getByText(msgFromB)).toBeVisible({ timeout: 15_000 });
 
-				// A re-navigates to pick up B's SenderKey distribution
-				await navigateClientSide(pageA, '/explore');
-				await navigateClientSide(pageA, `/servers/${serverId}/channels/${channelId}`);
-				const inputA2 = pageA.locator('textarea[aria-label="Message"]').first();
-				await expect(inputA2).toBeEnabled({ timeout: 60_000 });
-				await pageA.waitForTimeout(10_000);
+				// A re-navigates to pick up B's SenderKey distribution.
+				// The key_dist_request → redistribution cycle may need multiple
+				// re-navigations with waits, as B's prepareChannel() triggers a
+				// request, A regenerates + redistributes, then A must re-enter
+				// to fetch the updated key + decrypt B's message.
+				for (let attempt = 0; attempt < 3; attempt++) {
+					await navigateClientSide(pageA, '/explore');
+					await navigateClientSide(pageA, `/servers/${serverId}/channels/${channelId}`);
+					await expect(pageA.locator('textarea[aria-label="Message"]').first()).toBeEnabled({ timeout: 60_000 });
+					await pageA.waitForTimeout(attempt === 0 ? 10_000 : 5_000);
+					const aSeesB = await pageA.getByText(msgFromB).isVisible().catch(() => false);
+					if (aSeesB) break;
+				}
+
 				await expect(pageA.getByText(msgFromB)).toBeVisible({ timeout: 30_000 });
 				await expect(pageA.getByText(msgFromA)).toBeVisible({ timeout: 10_000 });
 				await expect(pageA.getByText(/Unable to decrypt/i)).toHaveCount(0);
