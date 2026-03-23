@@ -25,6 +25,7 @@
     setupKeys,
     replenishPreKeysIfNeeded,
     restoreKeys,
+    clearPreparedChannelCache,
   } from "$signal/index.js";
   import {
     clearCurrentSignalStore,
@@ -192,6 +193,7 @@
     stopDevicePolling();
     stopAppServices();
     resetSignalStoreScope();
+    clearPreparedChannelCache();
     secureStoreError = formatSecureStoreError(error);
     ready = true;
     bootSequenceStarted = false;
@@ -208,6 +210,7 @@
     stopDevicePolling();
     stopAppServices();
     resetSignalStoreScope();
+    clearPreparedChannelCache();
     secureStoreError = null;
     clearAuth();
     await goto("/login");
@@ -1054,6 +1057,7 @@
     unregisterWsErrorHandler = null;
     stopAppServices();
     resetSignalStoreScope();
+    clearPreparedChannelCache();
   });
 
   function handleGlobalKeydown(e: KeyboardEvent) {

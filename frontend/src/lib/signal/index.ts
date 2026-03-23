@@ -939,13 +939,31 @@ async function fetchAndStorePendingDists(
  * - Fetches any pending SenderKey distributions from other members regardless.
  * Safe to call on every channel open — will not regenerate if key already exists.
  */
+/** Channels we've already prepared in this session — skip redundant IDB + API calls. */
+const _preparedChannels = new Set<string>();
+
+export function isChannelPrepared(channelId: string): boolean {
+  return _preparedChannels.has(channelId);
+}
+
+export function clearPreparedChannelCache(): void {
+  _preparedChannels.clear();
+}
+
 export async function prepareChannel(channelId: string): Promise<void> {
+  // Fast path: already prepared this session, fetch pending dists in background
+  if (_preparedChannels.has(channelId)) {
+    void fetchPendingKeyDists(channelId).catch(() => {});
+    return;
+  }
+
   const existing = await ks.loadSenderKey(channelId);
   if (!existing) {
     await joinChannel(channelId);
   } else {
     await fetchPendingKeyDists(channelId);
   }
+  _preparedChannels.add(channelId);
 }
 
 // ─── Safety Numbers ───────────────────────────────────────────────────────────

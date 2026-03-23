@@ -10,7 +10,7 @@
 		serversStore,
 	} from "$stores/servers.js";
 	import type { Channel } from "$stores/servers.js";
-	import { prepareChannel } from "$signal/index.js";
+	import { prepareChannel, isChannelPrepared } from "$signal/index.js";
 
 	import MessageList from "$lib/components/chat/MessageList.svelte";
 	import MessageInput from "$lib/components/chat/MessageInput.svelte";
@@ -41,8 +41,11 @@
 	}
 
 	async function prepareAndLoad(chId: string) {
-		preparing = true;
 		loadError = false;
+		// If channel was already prepared this session, skip the loading state
+		// and show cached messages immediately while refreshing in the background.
+		const alreadyPrepared = isChannelPrepared(chId);
+		preparing = !alreadyPrepared;
 		try {
 			// Resolve channel name from cache (fire-and-forget, best-effort)
 			fetchChannels(serverId)
@@ -54,8 +57,14 @@
 					console.warn('[channel] Failed to fetch channel list:', err);
 				});
 
-			await prepareChannel(chId);
-			await loadChannelMessages(chId);
+			if (alreadyPrepared) {
+				// Load messages first (instant), prepare in background
+				await loadChannelMessages(chId);
+				void prepareChannel(chId);
+			} else {
+				await prepareChannel(chId);
+				await loadChannelMessages(chId);
+			}
 		} catch {
 			loadError = true;
 		} finally {
