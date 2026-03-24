@@ -9,11 +9,24 @@
  */
 
 import { get, writable } from 'svelte/store';
-import { authStore } from '$stores/auth.js';
-import { receiveSenderKeyDist, handleKeyDistRequest } from '$lib/signal/index.js';
+import { authStore, refreshAccessToken } from '$stores/auth.js';
 import { WS_URL } from '$lib/env.js';
 
 type MessageHandler = (payload: unknown) => void;
+
+type KeyDistPayload = {
+	channel_id: string;
+	from_user: string;
+	from_device_id?: string | null;
+	ciphertext: string;
+	ek_public: string;
+};
+
+type KeyDistRequestPayload = {
+	channel_id: string;
+	requester_user_id: string;
+	requester_device_id: string;
+};
 
 interface WsState {
 	connected: boolean;
@@ -25,44 +38,42 @@ export const wsStore = writable<WsState>({ connected: false, error: null });
 let socket: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let pingTimer: ReturnType<typeof setInterval> | null = null;
+let proactiveReauthTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectDelay = 1000;
 let stopped = false;
 
+/** JWT lifetime is 15 min. Proactively re-auth at 12 min to avoid the
+ *  server's 60-second re_auth_required degradation window. */
+const PROACTIVE_REAUTH_MS = 12 * 60 * 1000;
+
 const handlers = new Map<string, Set<MessageHandler>>();
 
+// Bounded queue for messages sent while the WS is reconnecting.
+// Flushed on next successful 'ready' event.
+const MAX_PENDING = 50;
+const pendingQueue: Record<string, unknown>[] = [];
+// Idempotent message types where only the latest per-type matters.
+const DEDUP_TYPES = new Set(['typing_start', 'read']);
+
 // Always-on handler: decrypt and store incoming SenderKey distributions.
+// Lazy-imported to keep @noble/curves (~150KB) and @noble/hashes (~50KB)
+// out of the main entry chunk.
 onWsMessage('key_dist', (payload) => {
-	receiveSenderKeyDist(
-		payload as {
-			channel_id: string;
-			from_user: string;
-			from_device_id?: string | null;
-			ciphertext: string;
-			ek_public: string;
-		}
+	import('$lib/signal/index.js').then(({ receiveSenderKeyDist }) =>
+		receiveSenderKeyDist(payload as KeyDistPayload)
 	).catch((err) => console.error('[signal] Failed to process key_dist:', err));
 });
 
 onWsMessage('key_dist_v2', (payload) => {
-	receiveSenderKeyDist(
-		payload as {
-			channel_id: string;
-			from_user: string;
-			from_device_id?: string | null;
-			ciphertext: string;
-			ek_public: string;
-		}
+	import('$lib/signal/index.js').then(({ receiveSenderKeyDist }) =>
+		receiveSenderKeyDist(payload as KeyDistPayload)
 	).catch((err) => console.error('[signal] Failed to process key_dist_v2:', err));
 });
 
 // When a new device joins a channel, redistribute our sender key to it.
 onWsMessage('key_dist_request', (payload) => {
-	handleKeyDistRequest(
-		payload as {
-			channel_id: string;
-			requester_user_id: string;
-			requester_device_id: string;
-		}
+	import('$lib/signal/index.js').then(({ handleKeyDistRequest }) =>
+		handleKeyDistRequest(payload as KeyDistRequestPayload)
 	).catch((err) => console.error('[signal] Failed to handle key_dist_request:', err));
 });
 
@@ -73,11 +84,27 @@ export function onWsMessage(type: string, handler: MessageHandler): () => void {
 	return () => handlers.get(type)?.delete(handler);
 }
 
-/** Send a raw JSON frame over the WebSocket (fire-and-forget). */
+/** Send a raw JSON frame over the WebSocket.
+ *  If the socket is not open, queues the message (up to MAX_PENDING) for
+ *  delivery on the next successful reconnect. */
 export function wsSend(msg: Record<string, unknown>): boolean {
 	if (socket?.readyState === WebSocket.OPEN) {
 		socket.send(JSON.stringify(msg));
 		return true;
+	}
+	// Queue for delivery after reconnect.
+	// For idempotent types (typing, read receipts), replace any existing
+	// queued message of the same type — only the latest matters.
+	const msgType = msg.type as string | undefined;
+	if (msgType && DEDUP_TYPES.has(msgType)) {
+		const idx = pendingQueue.findIndex((m) => m.type === msgType);
+		if (idx !== -1) {
+			pendingQueue[idx] = msg;
+		} else if (pendingQueue.length < MAX_PENDING) {
+			pendingQueue.push(msg);
+		}
+	} else if (pendingQueue.length < MAX_PENDING) {
+		pendingQueue.push(msg);
 	}
 	return false;
 }
@@ -161,6 +188,12 @@ function doConnect(): void {
 				wsStore.set({ connected: true, error: null });
 				reconnectDelay = 1000;
 				startPing(ws);
+				scheduleProactiveReauth(ws);
+				// Flush any messages queued during reconnection
+				while (pendingQueue.length > 0) {
+					const queued = pendingQueue.shift()!;
+					ws.send(JSON.stringify(queued));
+				}
 				// Notify reconnect listeners so stale stores can refresh
 				handlers.get('_reconnected')?.forEach((h) => h({}));
 				break;
@@ -174,9 +207,12 @@ function doConnect(): void {
 			}
 
 			case 're_auth_required': {
-				// Re-send token before it expires
-				const token = get(authStore).accessToken;
-				if (token) ws.send(JSON.stringify({ type: 'reauth', token }));
+				// Server is about to expire our session — refresh and re-send
+				refreshAccessToken().then((freshToken) => {
+					if (freshToken && ws.readyState === WebSocket.OPEN) {
+						ws.send(JSON.stringify({ type: 'reauth', token: freshToken }));
+					}
+				});
 				break;
 			}
 
@@ -216,6 +252,7 @@ function doConnect(): void {
 
 	ws.onclose = (event) => {
 		clearInterval(pingTimer ?? undefined);
+		clearTimeout(proactiveReauthTimer ?? undefined);
 		wsStore.set({ connected: false, error: event.code !== 1000 ? 'disconnected' : null });
 		socket = null;
 
@@ -246,4 +283,16 @@ function startPing(ws: WebSocket): void {
 			ws.send(JSON.stringify({ type: 'ping' }));
 		}
 	}, 30_000);
+}
+
+/** Refresh the JWT and re-auth proactively at 12 min to avoid the server's
+ *  60-second re_auth_required degradation window (JWT lifetime = 15 min). */
+function scheduleProactiveReauth(ws: WebSocket): void {
+	clearTimeout(proactiveReauthTimer ?? undefined);
+	proactiveReauthTimer = setTimeout(async () => {
+		const freshToken = await refreshAccessToken();
+		if (freshToken && ws.readyState === WebSocket.OPEN) {
+			ws.send(JSON.stringify({ type: 'reauth', token: freshToken }));
+		}
+	}, PROACTIVE_REAUTH_MS);
 }

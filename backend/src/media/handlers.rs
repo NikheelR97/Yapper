@@ -33,7 +33,16 @@ fn check_upload_rate(user_id: Uuid) -> AppResult<()> {
         ));
     }
 
-    entry.push(now);
+    if entry.is_empty() {
+        // All timestamps expired — clean up the entry entirely
+        // to prevent unbounded growth of empty Vec entries over time.
+        drop(entry);
+        UPLOAD_TIMESTAMPS.remove(&user_id);
+        // Re-insert with the new timestamp
+        UPLOAD_TIMESTAMPS.entry(user_id).or_default().push(now);
+    } else {
+        entry.push(now);
+    }
     Ok(())
 }
 

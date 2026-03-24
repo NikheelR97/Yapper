@@ -149,16 +149,17 @@
 				);
 			}
 
-			const { encrypted, key, iv } = await encryptMedia(blob);
+			// AES-256-GCM adds a 16-byte auth tag; pre-compute encrypted size
+			// so we can fetch the presigned URL in parallel with encryption.
+			const encryptedSize = blob.size + 16;
 
-			// Request a pre-signed R2 PUT URL
-			const { upload_url, object_key } = await api.post<{
-				upload_url: string;
-				object_key: string;
-			}>(UPLOAD_URL_PATH, {
-				media_type: "yap",
-				content_length: encrypted.byteLength,
-			});
+			const [{ encrypted, key, iv }, { upload_url, object_key }] = await Promise.all([
+				encryptMedia(blob),
+				api.post<{ upload_url: string; object_key: string }>(UPLOAD_URL_PATH, {
+					media_type: "yap",
+					content_length: encryptedSize,
+				}),
+			]);
 
 			// Upload encrypted blob directly to R2 with progress
 			await uploadToR2(upload_url, encrypted);

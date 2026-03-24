@@ -51,6 +51,7 @@ async fn main() -> anyhow::Result<()> {
 
     let db = Database::connect(&database_url).await?;
     db.run_migrations().await?;
+    db.start_keepalive();
 
     // Initialise Cloudflare R2 client (reads R2_* env vars).
     // Panics at startup if vars are missing — intentional fail-fast.
@@ -67,6 +68,25 @@ async fn main() -> anyhow::Result<()> {
     let quota = governor::Quota::per_minute(env_non_zero_u32("API_RATE_LIMIT_PER_MINUTE", 100))
         .allow_burst(env_non_zero_u32("API_RATE_LIMIT_BURST", 20));
     let rate_limiter: IpRateLimiter = Arc::new(governor::RateLimiter::keyed(quota));
+
+    // GC task: shrink all keyed rate limiters and hub caches every 5 minutes
+    // to prevent unbounded memory growth on the 256MB VM.
+    {
+        let rl = Arc::clone(&rate_limiter);
+        let hub_gc = Arc::clone(&hub);
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(300));
+            interval.tick().await; // skip immediate first tick
+            loop {
+                interval.tick().await;
+                rl.retain_recent();
+                yapper_server::auth::handlers::gc_auth_rate_limiters();
+                hub_gc.gc_caches();
+                tracing::debug!("GC: retained recent rate limiter + hub cache entries");
+            }
+        });
+    }
+
     let trusted_proxy_ips = Arc::new(load_trusted_proxy_ips());
     let jwt_keys = Arc::new(JwtKeys::from_env()?);
     let login_limiter = Arc::new(LoginRateLimiter::new());

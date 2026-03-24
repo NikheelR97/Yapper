@@ -419,21 +419,22 @@ async fn list_messages_v1_for_user(
 
     let limit = q.limit.unwrap_or(50).min(100);
 
+    // V1 legacy path: compute msg_num via ROW_NUMBER() in a CTE over ALL
+    // conversation messages, then paginate the numbered result.  This gives
+    // a global sequence number (matching the old scalar subquery semantics)
+    // while staying O(n) instead of O(n^2).
     let rows = if let Some(before_id) = q.before {
-        // Cursor-based pagination: messages older than `before`
         sqlx::query(
             r#"
-            SELECT id, conversation_id, sender_id, ciphertext, ek_public, opk_id,
-                   COALESCE(
-                       (SELECT COUNT(*) FROM messages m2
-                        WHERE m2.conversation_id = $1 AND m2.created_at < m.created_at),
-                       0
-                   ) AS msg_num,
-                   created_at
-            FROM messages m
-            WHERE conversation_id = $1
-              AND deleted_at IS NULL
-              AND created_at < (SELECT created_at FROM messages WHERE id = $2)
+            WITH numbered AS (
+                SELECT id, conversation_id, sender_id, ciphertext, ek_public, opk_id,
+                       (ROW_NUMBER() OVER (ORDER BY created_at) - 1) AS msg_num,
+                       created_at
+                FROM messages
+                WHERE conversation_id = $1 AND deleted_at IS NULL
+            )
+            SELECT * FROM numbered
+            WHERE created_at < (SELECT created_at FROM messages WHERE id = $2)
             ORDER BY created_at DESC
             LIMIT $3
             "#,
@@ -446,15 +447,14 @@ async fn list_messages_v1_for_user(
     } else {
         sqlx::query(
             r#"
-            SELECT id, conversation_id, sender_id, ciphertext, ek_public, opk_id,
-                   COALESCE(
-                       (SELECT COUNT(*) FROM messages m2
-                        WHERE m2.conversation_id = $1 AND m2.created_at < m.created_at),
-                       0
-                   ) AS msg_num,
-                   created_at
-            FROM messages m
-            WHERE conversation_id = $1 AND deleted_at IS NULL
+            WITH numbered AS (
+                SELECT id, conversation_id, sender_id, ciphertext, ek_public, opk_id,
+                       (ROW_NUMBER() OVER (ORDER BY created_at) - 1) AS msg_num,
+                       created_at
+                FROM messages
+                WHERE conversation_id = $1 AND deleted_at IS NULL
+            )
+            SELECT * FROM numbered
             ORDER BY created_at DESC
             LIMIT $2
             "#,
