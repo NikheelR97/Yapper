@@ -14,6 +14,15 @@ permissions:
   contents: read
 
 jobs:
+  docs-sync:
+    name: Docs Sync
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Verify security docs match implementation
+        run: bash .github/scripts/check-doc-sync.sh
   # ─── Backend ─────────────────────────────────────────────────────────────────
   backend:
     name: Backend (Rust)

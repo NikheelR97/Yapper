@@ -7,9 +7,16 @@ use jsonwebtoken::{
     decode, encode, Algorithm, DecodingKey, EncodingKey, Header, TokenData, Validation,
 };
 use serde::{Deserialize, Serialize};
+use tokio::sync::Semaphore;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
+
+/// HIGH-001: Limit concurrent Argon2 operations to prevent OOM on 256MB VM.
+/// Each Argon2id hash requires 64MB (m=65536). With 2 permits, peak memory
+/// usage is 128MB — safe headroom on a 256MB Fly.io VM.
+static ARGON2_SEMAPHORE: once_cell::sync::Lazy<Semaphore> =
+    once_cell::sync::Lazy::new(|| Semaphore::new(2));
 
 // ─── JWT Claims ───────────────────────────────────────────────────────────────
 
@@ -128,14 +135,28 @@ pub fn verify_password(password: &str, hash: &str) -> AppResult<bool> {
 
 /// Async wrapper that runs Argon2 verification on the blocking thread pool,
 /// preventing it from stalling the Tokio runtime (~200-500ms per call).
+///
+/// HIGH-001: Acquires a semaphore permit before hashing to limit concurrent
+/// Argon2 operations (64MB each) and prevent OOM on constrained VMs.
 pub async fn verify_password_async(password: String, hash: String) -> AppResult<bool> {
+    let _permit = ARGON2_SEMAPHORE
+        .acquire()
+        .await
+        .map_err(|_| AppError::Internal(anyhow::anyhow!("Argon2 semaphore closed")))?;
     tokio::task::spawn_blocking(move || verify_password(&password, &hash))
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("spawn_blocking join: {e}")))?
 }
 
 /// Async wrapper for password hashing on the blocking thread pool.
+///
+/// HIGH-001: Acquires a semaphore permit before hashing to limit concurrent
+/// Argon2 operations (64MB each) and prevent OOM on constrained VMs.
 pub async fn hash_password_async(password: String) -> AppResult<String> {
+    let _permit = ARGON2_SEMAPHORE
+        .acquire()
+        .await
+        .map_err(|_| AppError::Internal(anyhow::anyhow!("Argon2 semaphore closed")))?;
     tokio::task::spawn_blocking(move || hash_password(&password))
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("spawn_blocking join: {e}")))?

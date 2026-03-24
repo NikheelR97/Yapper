@@ -81,6 +81,7 @@ async fn main() -> anyhow::Result<()> {
                 interval.tick().await;
                 rl.retain_recent();
                 yapper_server::auth::handlers::gc_auth_rate_limiters();
+                yapper_server::hub::gc_ws_rate_limiter();
                 hub_gc.gc_caches();
                 tracing::debug!("GC: retained recent rate limiter + hub cache entries");
             }
@@ -106,6 +107,20 @@ async fn main() -> anyhow::Result<()> {
         discord_import_states,
         http_client,
     };
+
+    {
+        let retention_state = state.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(6 * 60 * 60));
+            interval.tick().await;
+            loop {
+                interval.tick().await;
+                if let Err(error) = yapper_server::retention::run_cleanup(&retention_state).await {
+                    tracing::warn!("Retention cleanup failed: {error}");
+                }
+            }
+        });
+    }
 
     let app = build_router(state);
 

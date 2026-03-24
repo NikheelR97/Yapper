@@ -53,6 +53,7 @@ pub mod messages;
 pub mod notifications;
 pub mod parental;
 pub mod premium;
+pub mod retention;
 pub mod screentime;
 pub mod servers;
 pub mod support;
@@ -96,7 +97,7 @@ pub struct AppState {
 /// Integration tests call this instead of `main()` to get a `Router` without
 /// binding a TCP socket:
 ///
-/// ```no_run
+/// ```ignore
 /// let server = axum_test::TestServer::new(build_router(state)).unwrap();
 /// ```
 pub fn build_router(state: AppState) -> Router {

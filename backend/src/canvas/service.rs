@@ -968,6 +968,8 @@ pub async fn vote_poll(
     if option_index < 0 || option_index >= option_count {
         return Err(AppError::BadRequest("Invalid option_index".into()));
     }
+    let server_id: Uuid = poll_row.try_get("server_id")?;
+    require_member(server_id, user_id, state).await?;
 
     let result =
         sqlx::query("INSERT INTO poll_votes (poll_id, user_id, option_index) VALUES ($1, $2, $3)")
@@ -985,7 +987,6 @@ pub async fn vote_poll(
     result?;
 
     let vote_counts = fetch_vote_counts(poll_id, state).await?;
-    let server_id: Uuid = poll_row.try_get("server_id")?;
 
     broadcast_canvas(
         server_id,
@@ -1257,6 +1258,7 @@ pub async fn remove_clip_reaction(
     .ok_or_else(|| AppError::NotFound("Clip not found".into()))?;
 
     let server_id: Uuid = clip_row.try_get("server_id")?;
+    require_member(server_id, user_id, state).await?;
 
     let result = sqlx::query(
         "DELETE FROM clip_reactions WHERE clip_id = $1 AND user_id = $2 AND emoji = $3",

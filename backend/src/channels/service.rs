@@ -5,6 +5,7 @@ use uuid::Uuid;
 
 use super::handlers::ChannelResp;
 use crate::{
+    constants,
     error::{AppError, AppResult},
     AppState,
 };
@@ -518,6 +519,9 @@ pub async fn send_message(
     let ciphertext = BASE64
         .decode(&ciphertext_b64)
         .map_err(|_| AppError::BadRequest("Invalid ciphertext encoding".into()))?;
+    if ciphertext.is_empty() || ciphertext.len() > constants::MAX_MESSAGE_LENGTH {
+        return Err(AppError::BadRequest("Ciphertext exceeds size limit".into()));
+    }
 
     let ek_bytes = ephemeral_key_b64
         .as_deref()

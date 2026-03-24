@@ -18,7 +18,7 @@ use crate::{
         DeviceTrustState,
     },
     error::{AppError, AppResult},
-    AppState,
+    users, AppState,
 };
 
 pub fn router() -> Router<AppState> {
@@ -322,10 +322,12 @@ struct KeyBundle {
 }
 
 async fn get_key_bundle(
-    _auth: AuthUser,
+    auth: AuthUser,
     State(state): State<AppState>,
     Path(user_id): Path<Uuid>,
 ) -> AppResult<Json<KeyBundle>> {
+    users::require_key_bundle_access(auth.user_id, user_id, &state).await?;
+
     // Identity key
     let identity_row = sqlx::query(
         r#"
@@ -443,6 +445,7 @@ struct BackupQueryV2 {
 #[serde(deny_unknown_fields)]
 struct RestoreBackupReqV2 {
     source_device_id: Uuid,
+    source_device_signature: String,
     #[serde(default)]
     replace_source_device: bool,
 }
@@ -612,6 +615,7 @@ async fn get_key_bundles_v2(
     Query(query): Query<GetKeyBundlesQuery>,
 ) -> AppResult<Json<Vec<KeyBundleV2>>> {
     auth.require_trusted()?;
+    users::require_key_bundle_access(auth.user_id, user_id, &state).await?;
     let consume_opk = query.consume_opk.unwrap_or(false);
     let device_ids = parse_device_ids_filter(query.device_ids.as_deref())?;
 
@@ -791,6 +795,52 @@ fn parse_device_ids_filter(value: Option<&str>) -> AppResult<Option<Vec<Uuid>>> 
     Ok(Some(parsed))
 }
 
+fn backup_restore_message(current_device_id: Uuid, source_device_id: Uuid) -> Vec<u8> {
+    format!("yapper-backup-restore:v1:{current_device_id}:{source_device_id}").into_bytes()
+}
+
+async fn verify_backup_restore_signature(
+    state: &AppState,
+    user_id: Uuid,
+    current_device_id: Uuid,
+    source_device_id: Uuid,
+    source_signal_device_id: i32,
+    signature_b64: &str,
+) -> AppResult<()> {
+    let signature_bytes = BASE64
+        .decode(signature_b64)
+        .map_err(|_| AppError::BadRequest("Invalid source_device_signature encoding".into()))?;
+    let signature_bytes: [u8; 64] = signature_bytes
+        .try_into()
+        .map_err(|_| AppError::BadRequest("source_device_signature must be 64 bytes".into()))?;
+
+    let row = sqlx::query(
+        r#"
+        SELECT signing_key
+        FROM identity_keys
+        WHERE user_id = $1 AND device_id = $2
+        "#,
+    )
+    .bind(user_id)
+    .bind(source_signal_device_id)
+    .fetch_optional(state.db.pool())
+    .await?
+    .ok_or_else(|| AppError::Conflict("Backup source device is missing identity keys".into()))?;
+
+    let signing_key: Vec<u8> = row.try_get("signing_key")?;
+    let signing_key_bytes: [u8; 32] = signing_key
+        .try_into()
+        .map_err(|_| AppError::Conflict("Backup source device signing key is invalid".into()))?;
+
+    let verifying_key = VerifyingKey::from_bytes(&signing_key_bytes)
+        .map_err(|_| AppError::Conflict("Backup source device signing key is invalid".into()))?;
+    let signature = Signature::from_bytes(&signature_bytes);
+    let message = backup_restore_message(current_device_id, source_device_id);
+    verifying_key
+        .verify(&message, &signature)
+        .map_err(|_| AppError::Forbidden)
+}
+
 async fn put_backup_v2(
     auth: AuthDevice,
     State(state): State<AppState>,
@@ -919,6 +969,15 @@ async fn restore_backup_v2(
             "Backup source device is not trusted".into(),
         ));
     }
+    verify_backup_restore_signature(
+        &state,
+        auth.user_id,
+        auth.device_id,
+        req.source_device_id,
+        source_device.signal_device_id,
+        &req.source_device_signature,
+    )
+    .await?;
 
     let backup_exists = sqlx::query_scalar::<_, i64>(
         r#"
@@ -1091,10 +1150,12 @@ mod tests {
         let source_device_id = Uuid::new_v4();
         let req: RestoreBackupReqV2 = serde_json::from_value(serde_json::json!({
             "source_device_id": source_device_id,
+            "source_device_signature": BASE64.encode([9u8; 64]),
         }))
         .expect("request should deserialize");
 
         assert_eq!(req.source_device_id, source_device_id);
+        assert!(!req.source_device_signature.is_empty());
         assert!(!req.replace_source_device);
     }
 
@@ -1102,6 +1163,7 @@ mod tests {
     fn restore_backup_request_allows_explicit_source_replacement() {
         let req: RestoreBackupReqV2 = serde_json::from_value(serde_json::json!({
             "source_device_id": Uuid::new_v4(),
+            "source_device_signature": BASE64.encode([9u8; 64]),
             "replace_source_device": true,
         }))
         .expect("request should deserialize");

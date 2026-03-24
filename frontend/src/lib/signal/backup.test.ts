@@ -11,10 +11,11 @@ vi.mock("$lib/api/client.js", () => ({
 vi.mock("./keystore.js", () => ({
   exportSignalSnapshot: vi.fn(),
   importSignalSnapshot: vi.fn(),
+  loadIdentityKeyPair: vi.fn(),
 }));
 
 import { api } from "$lib/api/client.js";
-import { importSignalSnapshot } from "./keystore.js";
+import { importSignalSnapshot, loadIdentityKeyPair } from "./keystore.js";
 import { backupKeys, restoreKeys } from "./backup.js";
 
 const PBKDF2_ITERS = 1_200_000;
@@ -79,6 +80,12 @@ async function encryptBackupBlob(
 describe("signal backup restore", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(loadIdentityKeyPair).mockResolvedValue({
+      dhPublicKey: new Uint8Array(32),
+      dhPrivateKey: new Uint8Array(32).fill(1),
+      sigPublicKey: new Uint8Array(32).fill(2),
+      sigPrivateKey: new Uint8Array(32).fill(7),
+    });
   });
 
   it("restores a backup without replacing the source device by default", async () => {
@@ -88,7 +95,9 @@ describe("signal backup restore", () => {
     });
     vi.mocked(api.post).mockResolvedValue({});
 
-    const restored = await restoreKeys("AlphaPass2468", "source-device-1");
+    const restored = await restoreKeys("AlphaPass2468", "source-device-1", {
+      currentDeviceId: "pending-device-1",
+    });
 
     expect(restored).toBe(true);
     expect(api.get).toHaveBeenCalledWith(
@@ -97,10 +106,15 @@ describe("signal backup restore", () => {
     expect(importSignalSnapshot).toHaveBeenCalledWith({
       bootstrapComplete: true,
     });
-    expect(api.post).toHaveBeenCalledWith("/api/v2/keys/backup/restore", {
-      source_device_id: "source-device-1",
-      replace_source_device: false,
-    });
+    expect(api.post).toHaveBeenCalledTimes(1);
+    expect(api.post).toHaveBeenCalledWith(
+      "/api/v2/keys/backup/restore",
+      expect.objectContaining({
+        source_device_id: "source-device-1",
+        source_device_signature: expect.any(String),
+        replace_source_device: false,
+      }),
+    );
   });
 
   it("can explicitly request source-device replacement", async () => {
@@ -112,19 +126,26 @@ describe("signal backup restore", () => {
 
     const restored = await restoreKeys("AlphaPass2468", "source-device-1", {
       replaceSourceDevice: true,
+      currentDeviceId: "pending-device-1",
     });
 
     expect(restored).toBe(true);
-    expect(api.post).toHaveBeenCalledWith("/api/v2/keys/backup/restore", {
-      source_device_id: "source-device-1",
-      replace_source_device: true,
-    });
+    expect(api.post).toHaveBeenCalledWith(
+      "/api/v2/keys/backup/restore",
+      expect.objectContaining({
+        source_device_id: "source-device-1",
+        source_device_signature: expect.any(String),
+        replace_source_device: true,
+      }),
+    );
   });
 
   it("returns false when no backup exists for the selected source device", async () => {
     vi.mocked(api.get).mockRejectedValue({ status: 404 });
 
-    const restored = await restoreKeys("AlphaPass2468", "missing-device");
+    const restored = await restoreKeys("AlphaPass2468", "missing-device", {
+      currentDeviceId: "pending-device-1",
+    });
 
     expect(restored).toBe(false);
     expect(api.post).not.toHaveBeenCalled();

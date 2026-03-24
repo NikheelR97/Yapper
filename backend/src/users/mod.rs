@@ -29,6 +29,7 @@ use axum::{
     routing::{delete, get, patch, post, put},
     Json, Router,
 };
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use chrono::Utc;
 use image::{imageops::FilterType, GenericImageView, ImageFormat};
 use once_cell::sync::Lazy;
@@ -195,13 +196,16 @@ async fn unlink_connection(
     }
 
     // Verify the provider is actually linked before clearing it
-    let row = sqlx::query("SELECT discord_id FROM users WHERE id = $1 AND deleted_at IS NULL")
-        .bind(auth.user_id)
-        .fetch_optional(state.db.pool())
-        .await?
-        .ok_or_else(|| AppError::NotFound("User not found".into()))?;
+    let row = sqlx::query(
+        "SELECT discord_id, password_hash FROM users WHERE id = $1 AND deleted_at IS NULL",
+    )
+    .bind(auth.user_id)
+    .fetch_optional(state.db.pool())
+    .await?
+    .ok_or_else(|| AppError::NotFound("User not found".into()))?;
 
     let discord_id_raw: Option<String> = row.try_get("discord_id").ok().flatten();
+    let password_hash: Option<String> = row.try_get("password_hash").ok().flatten();
     let is_linked = match provider.as_str() {
         "discord" => discord_id_raw
             .as_deref()
@@ -218,6 +222,12 @@ async fn unlink_connection(
         return Err(AppError::BadRequest(format!(
             "{provider} is not linked to this account"
         )));
+    }
+
+    if password_hash.is_none() {
+        return Err(AppError::Conflict(
+            "Set a password before unlinking your only sign-in provider".into(),
+        ));
     }
 
     sqlx::query("UPDATE users SET discord_id = NULL WHERE id = $1 AND deleted_at IS NULL")
@@ -449,6 +459,228 @@ async fn follow_user(
     .bind(target)
     .execute(state.db.pool())
     .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn purge_account_r2_objects(user_id: Uuid, media_object_keys: &[String]) {
+    let mut keys = Vec::with_capacity(media_object_keys.len() + 2);
+    keys.push(format!("profiles/avatars/{user_id}.webp"));
+    keys.push(format!("profiles/banners/{user_id}.webp"));
+    keys.extend(media_object_keys.iter().cloned());
+
+    for r2_key in keys {
+        if let Err(error) = crate::media::r2::delete_object(&r2_key).await {
+            tracing::warn!(user_id = %user_id, r2_key = %r2_key, "Failed to delete account object from R2: {error}");
+        }
+    }
+}
+
+async fn delete_account(
+    auth: AuthUser,
+    State(state): State<AppState>,
+) -> AppResult<impl IntoResponse> {
+    // Preserve only an anonymized shell during the retention hold. The
+    // background cleanup job hard-deletes eligible deleted users later once no
+    // non-cascading historical references remain.
+    let anon_suffix = &auth.user_id.to_string()[..8];
+    let anon_username = format!("[deleted_{anon_suffix}]");
+    let anon_email = format!("deleted+{anon_suffix}@yapperhq.com");
+    let deleted_display_name = "[deleted user]";
+
+    let mut tx = state.db.pool().begin().await?;
+
+    let media_rows =
+        sqlx::query("DELETE FROM media_uploads WHERE user_id = $1 RETURNING object_key")
+            .bind(auth.user_id)
+            .fetch_all(&mut *tx)
+            .await?;
+    let media_object_keys: Vec<String> = media_rows
+        .iter()
+        .filter_map(|row| row.try_get::<String, _>("object_key").ok())
+        .collect();
+
+    sqlx::query("DELETE FROM support_tickets WHERE user_id = $1")
+        .bind(auth.user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM bot_applications WHERE developer_user_id = $1")
+        .bind(auth.user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM parent_notifications WHERE parent_user_id = $1 OR child_user_id = $1")
+        .bind(auth.user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query(
+        "DELETE FROM parental_action_audit WHERE parent_user_id = $1 OR child_user_id = $1",
+    )
+    .bind(auth.user_id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "DELETE FROM pending_friend_requests WHERE child_user_id = $1 OR requester_id = $1",
+    )
+    .bind(auth.user_id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("DELETE FROM pending_server_joins WHERE child_user_id = $1")
+        .bind(auth.user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query(
+        "DELETE FROM parent_child_relationships WHERE parent_user_id = $1 OR child_user_id = $1",
+    )
+    .bind(auth.user_id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("DELETE FROM screen_time_daily_summaries WHERE user_id = $1")
+        .bind(auth.user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM screen_time_records WHERE user_id = $1")
+        .bind(auth.user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM screen_time_settings WHERE child_user_id = $1")
+        .bind(auth.user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM followers WHERE follower_id = $1 OR following_id = $1")
+        .bind(auth.user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM friendships WHERE user_id_1 = $1 OR user_id_2 = $1")
+        .bind(auth.user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM server_memberships WHERE user_id = $1")
+        .bind(auth.user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM canvas_dj_users WHERE user_id = $1")
+        .bind(auth.user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM music_skip_votes WHERE user_id = $1")
+        .bind(auth.user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM clip_reactions WHERE user_id = $1")
+        .bind(auth.user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM poll_votes WHERE user_id = $1")
+        .bind(auth.user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM pinned_clips WHERE pinned_by = $1")
+        .bind(auth.user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM hype_moments WHERE user_id = $1")
+        .bind(auth.user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM message_read_receipts WHERE user_id = $1")
+        .bind(auth.user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM sender_key_distributions WHERE from_user = $1 OR to_user = $1")
+        .bind(auth.user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM user_privacy_settings WHERE user_id = $1")
+        .bind(auth.user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM user_notification_settings WHERE user_id = $1")
+        .bind(auth.user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM user_appearance_settings WHERE user_id = $1")
+        .bind(auth.user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM key_backups WHERE user_id = $1")
+        .bind(auth.user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM one_time_prekeys WHERE user_id = $1")
+        .bind(auth.user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM signed_prekeys WHERE user_id = $1")
+        .bind(auth.user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM identity_keys WHERE user_id = $1")
+        .bind(auth.user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM sessions WHERE user_id = $1")
+        .bind(auth.user_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM devices WHERE user_id = $1")
+        .bind(auth.user_id)
+        .execute(&mut *tx)
+        .await?;
+
+    let result = sqlx::query(
+        "UPDATE users SET \
+            deleted_at = NOW(), \
+            deletion_hold_until = NOW() + ($5::int * INTERVAL '1 day'), \
+            deletion_retention_basis = $6, \
+            username = $2, \
+            email = $3, \
+            email_verified = FALSE, \
+            email_verify_token = NULL, \
+            email_verify_expires_at = NULL, \
+            password_reset_token = NULL, \
+            password_reset_expires_at = NULL, \
+            display_name = $4, \
+            avatar_url = NULL, \
+            banner_url = NULL, \
+            password_hash = NULL, \
+            account_type = 'standard', \
+            parental_controls_enabled = FALSE, \
+            date_of_birth = NULL, \
+            coppa_consent_verified_at = NULL, \
+            gdpr_consent_at = NULL, \
+            profile_theme_color = NULL, \
+            about_me = NULL, \
+            location = NULL, \
+            is_premium = FALSE, \
+            premium_since = NULL, \
+            discord_id = NULL, \
+            last_seen_at = NULL, \
+            username_changed_at = NULL \
+         WHERE id = $1 AND deleted_at IS NULL",
+    )
+    .bind(auth.user_id)
+    .bind(&anon_username)
+    .bind(&anon_email)
+    .bind(deleted_display_name)
+    .bind(crate::retention::DELETED_ACCOUNT_HOLD_DAYS)
+    .bind(crate::retention::DELETED_ACCOUNT_BASIS_PENDING)
+    .execute(&mut *tx)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound(
+            "Account not found or already deleted".into(),
+        ));
+    }
+
+    tx.commit().await?;
+
+    purge_account_r2_objects(auth.user_id, &media_object_keys).await;
+
+    tracing::info!(
+        user_id = %auth.user_id,
+        deleted_media_objects = media_object_keys.len(),
+        "Account soft-deleted and linked account data purged"
+    );
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -1260,18 +1492,16 @@ async fn update_notifications(
 
 // ─── Account: GDPR export ─────────────────────────────────────────────────────
 
-/// GET /api/v1/account/data-export
-///
-/// Returns a ZIP containing a JSON document with the user's non-encrypted account data.
-/// Message *ciphertext* is intentionally excluded — it is client-side only.
 async fn gdpr_export(
     auth: AuthUser,
     State(state): State<AppState>,
 ) -> AppResult<impl IntoResponse> {
-    // Profile
     let profile_row = sqlx::query(
-        "SELECT username, display_name, email, about_me, location,
-                profile_theme_color, account_type, created_at
+        "SELECT username, display_name, email, email_verified, avatar_url, banner_url,
+                about_me, location, profile_theme_color, account_type,
+                parental_controls_enabled, is_premium, date_of_birth,
+                coppa_consent_verified_at, gdpr_consent_at, discord_id,
+                last_seen_at, created_at
          FROM users WHERE id = $1 AND deleted_at IS NULL",
     )
     .bind(auth.user_id)
@@ -1279,9 +1509,45 @@ async fn gdpr_export(
     .await?
     .ok_or(AppError::Unauthorized)?;
 
-    // Friendships
+    let privacy_row = sqlx::query(
+        "SELECT dm_permission, friend_request_permission, search_visible, show_last_seen, updated_at
+         FROM user_privacy_settings WHERE user_id = $1",
+    )
+    .bind(auth.user_id)
+    .fetch_optional(state.db.pool())
+    .await?;
+
+    let appearance_row = sqlx::query(
+        "SELECT theme, font_size, density, reduce_motion, updated_at
+         FROM user_appearance_settings WHERE user_id = $1",
+    )
+    .bind(auth.user_id)
+    .fetch_optional(state.db.pool())
+    .await?;
+
+    let notification_row = sqlx::query(
+        "SELECT push_enabled, notify_dms, notify_mentions, notify_friend_requests,
+                notify_server_activity, notify_yap_recordings, dnd_enabled,
+                dnd_start::text AS dnd_start, dnd_end::text AS dnd_end, updated_at
+         FROM user_notification_settings WHERE user_id = $1",
+    )
+    .bind(auth.user_id)
+    .fetch_optional(state.db.pool())
+    .await?;
+
+    let device_rows = sqlx::query(
+        "SELECT id, signal_device_id, installation_id, platform, label, trust_state,
+                created_at, last_seen_at, approved_at, revoked_at, push_platform, push_token
+         FROM devices
+         WHERE user_id = $1
+         ORDER BY created_at ASC",
+    )
+    .bind(auth.user_id)
+    .fetch_all(state.db.pool())
+    .await?;
+
     let friend_rows = sqlx::query(
-        "SELECT u.username, u.display_name, f.status, f.created_at
+        "SELECT u.id, u.username, u.display_name, f.created_at
          FROM friendships f
          JOIN users u ON u.id = CASE WHEN f.user_id_1 = $1 THEN f.user_id_2 ELSE f.user_id_1 END
          WHERE (f.user_id_1 = $1 OR f.user_id_2 = $1) AND f.status = 'accepted'
@@ -1291,9 +1557,28 @@ async fn gdpr_export(
     .fetch_all(state.db.pool())
     .await?;
 
-    // Server memberships
+    let follower_rows = sqlx::query(
+        "SELECT u.id, u.username, u.display_name, f.created_at
+         FROM followers f
+         JOIN users u ON u.id = f.follower_id
+         WHERE f.following_id = $1 AND u.deleted_at IS NULL",
+    )
+    .bind(auth.user_id)
+    .fetch_all(state.db.pool())
+    .await?;
+
+    let following_rows = sqlx::query(
+        "SELECT u.id, u.username, u.display_name, f.created_at
+         FROM followers f
+         JOIN users u ON u.id = f.following_id
+         WHERE f.follower_id = $1 AND u.deleted_at IS NULL",
+    )
+    .bind(auth.user_id)
+    .fetch_all(state.db.pool())
+    .await?;
+
     let server_rows = sqlx::query(
-        "SELECT s.name, s.slug, sm.role, sm.joined_at
+        "SELECT s.id, s.name, s.slug, sm.role, sm.joined_at
          FROM server_memberships sm
          JOIN servers s ON s.id = sm.server_id
          WHERE sm.user_id = $1",
@@ -1302,7 +1587,127 @@ async fn gdpr_export(
     .fetch_all(state.db.pool())
     .await?;
 
-    // Message metadata only — NO ciphertext
+    let support_ticket_rows = sqlx::query(
+        "SELECT id, ticket_type, subject, description, priority, status,
+                hubspot_ticket_id, created_at, updated_at
+         FROM support_tickets
+         WHERE user_id = $1
+         ORDER BY created_at DESC",
+    )
+    .bind(auth.user_id)
+    .fetch_all(state.db.pool())
+    .await?;
+
+    let legacy_backup_row = sqlx::query(
+        "SELECT encrypted_blob, updated_at
+         FROM key_backups
+         WHERE user_id = $1",
+    )
+    .bind(auth.user_id)
+    .fetch_optional(state.db.pool())
+    .await?;
+
+    let device_backup_rows = sqlx::query(
+        "SELECT device_id, source_device_id, encrypted_blob, version, created_at, updated_at, revoked_at
+         FROM device_key_backups
+         WHERE user_id = $1
+         ORDER BY updated_at DESC",
+    )
+    .bind(auth.user_id)
+    .fetch_all(state.db.pool())
+    .await?;
+
+    let parent_relationship_rows = sqlx::query(
+        "SELECT parent_user_id, child_user_id, created_at
+         FROM parent_child_relationships
+         WHERE parent_user_id = $1 OR child_user_id = $1
+         ORDER BY created_at DESC",
+    )
+    .bind(auth.user_id)
+    .fetch_all(state.db.pool())
+    .await?;
+
+    let pending_friend_rows = sqlx::query(
+        "SELECT id, child_user_id, requester_id, requester_name, status, reviewed_at, created_at
+         FROM pending_friend_requests
+         WHERE child_user_id = $1 OR requester_id = $1
+         ORDER BY created_at DESC",
+    )
+    .bind(auth.user_id)
+    .fetch_all(state.db.pool())
+    .await?;
+
+    let pending_server_join_rows = sqlx::query(
+        "SELECT id, child_user_id, server_id, server_name, invite_code, status, reviewed_at, created_at
+         FROM pending_server_joins
+         WHERE child_user_id = $1
+         ORDER BY created_at DESC",
+    )
+    .bind(auth.user_id)
+    .fetch_all(state.db.pool())
+    .await?;
+
+    let parent_notification_rows = sqlx::query(
+        "SELECT id, parent_user_id, child_user_id, type, reference_id, read, created_at
+         FROM parent_notifications
+         WHERE parent_user_id = $1 OR child_user_id = $1
+         ORDER BY created_at DESC",
+    )
+    .bind(auth.user_id)
+    .fetch_all(state.db.pool())
+    .await?;
+
+    let parental_audit_rows = sqlx::query(
+        "SELECT id, parent_user_id, child_user_id, action, reference_id,
+                ip_address::text AS ip_address, created_at
+         FROM parental_action_audit
+         WHERE parent_user_id = $1 OR child_user_id = $1
+         ORDER BY created_at DESC",
+    )
+    .bind(auth.user_id)
+    .fetch_all(state.db.pool())
+    .await?;
+
+    let screen_time_settings_row = sqlx::query(
+        "SELECT daily_limit_minutes, bedtime_start::text AS bedtime_start,
+                bedtime_end::text AS bedtime_end, updated_at
+         FROM screen_time_settings
+         WHERE child_user_id = $1",
+    )
+    .bind(auth.user_id)
+    .fetch_optional(state.db.pool())
+    .await?;
+
+    let screen_time_record_rows = sqlx::query(
+        "SELECT app_name, duration_seconds, platform, recorded_date, created_at
+         FROM screen_time_records
+         WHERE user_id = $1
+         ORDER BY recorded_date DESC, created_at DESC",
+    )
+    .bind(auth.user_id)
+    .fetch_all(state.db.pool())
+    .await?;
+
+    let screen_time_summary_rows = sqlx::query(
+        "SELECT summary_date, total_seconds, yapper_seconds, other_seconds, updated_at
+         FROM screen_time_daily_summaries
+         WHERE user_id = $1
+         ORDER BY summary_date DESC",
+    )
+    .bind(auth.user_id)
+    .fetch_all(state.db.pool())
+    .await?;
+
+    let media_upload_rows = sqlx::query(
+        "SELECT id, object_key, media_type, size_bytes, created_at, expires_at
+         FROM media_uploads
+         WHERE user_id = $1
+         ORDER BY created_at DESC",
+    )
+    .bind(auth.user_id)
+    .fetch_all(state.db.pool())
+    .await?;
+
     let message_meta_rows = sqlx::query(
         "SELECT id, channel_id, conversation_id, message_type, created_at
          FROM messages
@@ -1314,40 +1719,260 @@ async fn gdpr_export(
     .fetch_all(state.db.pool())
     .await?;
 
+    let bot_app_rows = sqlx::query(
+        "SELECT id, name, description, avatar_url, discord_bot_id, created_at
+         FROM bot_applications
+         WHERE developer_user_id = $1
+         ORDER BY created_at DESC",
+    )
+    .bind(auth.user_id)
+    .fetch_all(state.db.pool())
+    .await?;
+
     let export = serde_json::json!({
         "exported_at": Utc::now().to_rfc3339(),
-        "note": "Message content is end-to-end encrypted and not held by Yapper servers.",
+        "note": "Message content and media plaintext are end-to-end encrypted and not held by Yapper servers.",
         "profile": {
-            "username":           profile_row.try_get::<String, _>("username").unwrap_or_default(),
-            "display_name":       profile_row.try_get::<String, _>("display_name").unwrap_or_default(),
-            "email":              profile_row.try_get::<String, _>("email").unwrap_or_default(),
-            "about_me":           profile_row.try_get::<Option<String>, _>("about_me").ok().flatten(),
-            "location":           profile_row.try_get::<Option<String>, _>("location").ok().flatten(),
-            "profile_theme_color":profile_row.try_get::<Option<String>, _>("profile_theme_color").ok().flatten(),
-            "account_type":       profile_row.try_get::<String, _>("account_type").unwrap_or_default(),
-            "created_at":         profile_row.try_get::<chrono::DateTime<Utc>, _>("created_at")
-                                    .ok().map(|t| t.to_rfc3339()),
+            "user_id": auth.user_id,
+            "username": profile_row.try_get::<String, _>("username").unwrap_or_default(),
+            "display_name": profile_row.try_get::<String, _>("display_name").unwrap_or_default(),
+            "email": profile_row.try_get::<String, _>("email").unwrap_or_default(),
+            "email_verified": profile_row.try_get::<bool, _>("email_verified").unwrap_or(false),
+            "avatar_url": profile_row.try_get::<Option<String>, _>("avatar_url").ok().flatten(),
+            "banner_url": profile_row.try_get::<Option<String>, _>("banner_url").ok().flatten(),
+            "about_me": profile_row.try_get::<Option<String>, _>("about_me").ok().flatten(),
+            "location": profile_row.try_get::<Option<String>, _>("location").ok().flatten(),
+            "profile_theme_color": profile_row.try_get::<Option<String>, _>("profile_theme_color").ok().flatten(),
+            "account_type": profile_row.try_get::<String, _>("account_type").unwrap_or_default(),
+            "parental_controls_enabled": profile_row.try_get::<bool, _>("parental_controls_enabled").unwrap_or(false),
+            "is_premium": profile_row.try_get::<bool, _>("is_premium").unwrap_or(false),
+            "date_of_birth": profile_row.try_get::<Option<chrono::NaiveDate>, _>("date_of_birth").ok().flatten().map(|d| d.to_string()),
+            "coppa_consent_verified_at": profile_row.try_get::<Option<chrono::DateTime<Utc>>, _>("coppa_consent_verified_at").ok().flatten().map(|t| t.to_rfc3339()),
+            "gdpr_consent_at": profile_row.try_get::<Option<chrono::DateTime<Utc>>, _>("gdpr_consent_at").ok().flatten().map(|t| t.to_rfc3339()),
+            "oauth_connection": profile_row.try_get::<Option<String>, _>("discord_id").ok().flatten(),
+            "last_seen_at": profile_row.try_get::<Option<chrono::DateTime<Utc>>, _>("last_seen_at").ok().flatten().map(|t| t.to_rfc3339()),
+            "created_at": profile_row.try_get::<chrono::DateTime<Utc>, _>("created_at").ok().map(|t| t.to_rfc3339()),
         },
+        "privacy_settings": match privacy_row {
+            Some(ref row) => serde_json::json!({
+                "dm_permission": row.try_get::<String, _>("dm_permission").unwrap_or_else(|_| "everyone".into()),
+                "friend_request_permission": row.try_get::<String, _>("friend_request_permission").unwrap_or_else(|_| "everyone".into()),
+                "search_visible": row.try_get::<bool, _>("search_visible").unwrap_or(true),
+                "show_last_seen": row.try_get::<bool, _>("show_last_seen").unwrap_or(true),
+                "updated_at": row.try_get::<chrono::DateTime<Utc>, _>("updated_at").ok().map(|t| t.to_rfc3339()),
+            }),
+            None => serde_json::json!({
+                "dm_permission": "everyone",
+                "friend_request_permission": "everyone",
+                "search_visible": true,
+                "show_last_seen": true,
+                "updated_at": null,
+            }),
+        },
+        "appearance_settings": match appearance_row {
+            Some(ref row) => serde_json::json!({
+                "theme": row.try_get::<String, _>("theme").unwrap_or_else(|_| "dark".into()),
+                "font_size": row.try_get::<i32, _>("font_size").unwrap_or(14),
+                "density": row.try_get::<String, _>("density").unwrap_or_else(|_| "comfortable".into()),
+                "reduce_motion": row.try_get::<bool, _>("reduce_motion").unwrap_or(false),
+                "updated_at": row.try_get::<chrono::DateTime<Utc>, _>("updated_at").ok().map(|t| t.to_rfc3339()),
+            }),
+            None => serde_json::json!({
+                "theme": "dark",
+                "font_size": 14,
+                "density": "comfortable",
+                "reduce_motion": false,
+                "updated_at": null,
+            }),
+        },
+        "notification_settings": match notification_row {
+            Some(ref row) => serde_json::json!({
+                "push_enabled": row.try_get::<bool, _>("push_enabled").unwrap_or(true),
+                "notify_dms": row.try_get::<bool, _>("notify_dms").unwrap_or(true),
+                "notify_mentions": row.try_get::<bool, _>("notify_mentions").unwrap_or(true),
+                "notify_friend_requests": row.try_get::<bool, _>("notify_friend_requests").unwrap_or(true),
+                "notify_server_activity": row.try_get::<bool, _>("notify_server_activity").unwrap_or(false),
+                "notify_yap_recordings": row.try_get::<bool, _>("notify_yap_recordings").unwrap_or(true),
+                "dnd_enabled": row.try_get::<bool, _>("dnd_enabled").unwrap_or(false),
+                "dnd_start": row.try_get::<Option<String>, _>("dnd_start").ok().flatten(),
+                "dnd_end": row.try_get::<Option<String>, _>("dnd_end").ok().flatten(),
+                "updated_at": row.try_get::<chrono::DateTime<Utc>, _>("updated_at").ok().map(|t| t.to_rfc3339()),
+            }),
+            None => serde_json::json!({
+                "push_enabled": true,
+                "notify_dms": true,
+                "notify_mentions": true,
+                "notify_friend_requests": true,
+                "notify_server_activity": false,
+                "notify_yap_recordings": true,
+                "dnd_enabled": false,
+                "dnd_start": null,
+                "dnd_end": null,
+                "updated_at": null,
+            }),
+        },
+        "devices": device_rows.iter().map(|r| serde_json::json!({
+            "id": r.try_get::<Uuid, _>("id").ok(),
+            "signal_device_id": r.try_get::<i32, _>("signal_device_id").unwrap_or_default(),
+            "installation_id": r.try_get::<Option<Uuid>, _>("installation_id").ok().flatten(),
+            "platform": r.try_get::<String, _>("platform").unwrap_or_default(),
+            "label": r.try_get::<String, _>("label").unwrap_or_default(),
+            "trust_state": r.try_get::<String, _>("trust_state").unwrap_or_default(),
+            "push_platform": r.try_get::<Option<String>, _>("push_platform").ok().flatten(),
+            "push_token": r.try_get::<Option<String>, _>("push_token").ok().flatten(),
+            "created_at": r.try_get::<chrono::DateTime<Utc>, _>("created_at").ok().map(|t| t.to_rfc3339()),
+            "last_seen_at": r.try_get::<Option<chrono::DateTime<Utc>>, _>("last_seen_at").ok().flatten().map(|t| t.to_rfc3339()),
+            "approved_at": r.try_get::<Option<chrono::DateTime<Utc>>, _>("approved_at").ok().flatten().map(|t| t.to_rfc3339()),
+            "revoked_at": r.try_get::<Option<chrono::DateTime<Utc>>, _>("revoked_at").ok().flatten().map(|t| t.to_rfc3339()),
+        })).collect::<Vec<_>>(),
         "friends": friend_rows.iter().map(|r| serde_json::json!({
-            "username":     r.try_get::<String, _>("username").unwrap_or_default(),
+            "user_id": r.try_get::<Uuid, _>("id").ok(),
+            "username": r.try_get::<String, _>("username").unwrap_or_default(),
             "display_name": r.try_get::<String, _>("display_name").unwrap_or_default(),
-            "since":        r.try_get::<chrono::DateTime<Utc>, _>("created_at")
-                              .ok().map(|t| t.to_rfc3339()),
+            "since": r.try_get::<chrono::DateTime<Utc>, _>("created_at").ok().map(|t| t.to_rfc3339()),
+        })).collect::<Vec<_>>(),
+        "followers": follower_rows.iter().map(|r| serde_json::json!({
+            "user_id": r.try_get::<Uuid, _>("id").ok(),
+            "username": r.try_get::<String, _>("username").unwrap_or_default(),
+            "display_name": r.try_get::<String, _>("display_name").unwrap_or_default(),
+            "followed_at": r.try_get::<chrono::DateTime<Utc>, _>("created_at").ok().map(|t| t.to_rfc3339()),
+        })).collect::<Vec<_>>(),
+        "following": following_rows.iter().map(|r| serde_json::json!({
+            "user_id": r.try_get::<Uuid, _>("id").ok(),
+            "username": r.try_get::<String, _>("username").unwrap_or_default(),
+            "display_name": r.try_get::<String, _>("display_name").unwrap_or_default(),
+            "followed_at": r.try_get::<chrono::DateTime<Utc>, _>("created_at").ok().map(|t| t.to_rfc3339()),
         })).collect::<Vec<_>>(),
         "servers": server_rows.iter().map(|r| serde_json::json!({
-            "name":      r.try_get::<String, _>("name").unwrap_or_default(),
-            "slug":      r.try_get::<String, _>("slug").unwrap_or_default(),
-            "role":      r.try_get::<String, _>("role").unwrap_or_default(),
-            "joined_at": r.try_get::<chrono::DateTime<Utc>, _>("joined_at")
-                           .ok().map(|t| t.to_rfc3339()),
+            "id": r.try_get::<Uuid, _>("id").ok(),
+            "name": r.try_get::<String, _>("name").unwrap_or_default(),
+            "slug": r.try_get::<String, _>("slug").unwrap_or_default(),
+            "role": r.try_get::<String, _>("role").unwrap_or_default(),
+            "joined_at": r.try_get::<chrono::DateTime<Utc>, _>("joined_at").ok().map(|t| t.to_rfc3339()),
+        })).collect::<Vec<_>>(),
+        "support_tickets": support_ticket_rows.iter().map(|r| serde_json::json!({
+            "id": r.try_get::<Uuid, _>("id").ok(),
+            "ticket_type": r.try_get::<String, _>("ticket_type").unwrap_or_default(),
+            "subject": r.try_get::<String, _>("subject").unwrap_or_default(),
+            "description": r.try_get::<String, _>("description").unwrap_or_default(),
+            "priority": r.try_get::<String, _>("priority").unwrap_or_default(),
+            "status": r.try_get::<String, _>("status").unwrap_or_default(),
+            "hubspot_ticket_id": r.try_get::<Option<String>, _>("hubspot_ticket_id").ok().flatten(),
+            "created_at": r.try_get::<chrono::DateTime<Utc>, _>("created_at").ok().map(|t| t.to_rfc3339()),
+            "updated_at": r.try_get::<chrono::DateTime<Utc>, _>("updated_at").ok().map(|t| t.to_rfc3339()),
+        })).collect::<Vec<_>>(),
+        "signal_key_backups": {
+            "legacy_backup": legacy_backup_row.as_ref().map(|r| serde_json::json!({
+                "encrypted_blob_b64": r.try_get::<Vec<u8>, _>("encrypted_blob").ok().map(|blob| BASE64.encode(blob)),
+                "updated_at": r.try_get::<chrono::DateTime<Utc>, _>("updated_at").ok().map(|t| t.to_rfc3339()),
+            })),
+            "device_backups": device_backup_rows.iter().map(|r| serde_json::json!({
+                "device_id": r.try_get::<Uuid, _>("device_id").ok(),
+                "source_device_id": r.try_get::<Option<Uuid>, _>("source_device_id").ok().flatten(),
+                "version": r.try_get::<i32, _>("version").unwrap_or(1),
+                "encrypted_blob_b64": r.try_get::<Vec<u8>, _>("encrypted_blob").ok().map(|blob| BASE64.encode(blob)),
+                "created_at": r.try_get::<chrono::DateTime<Utc>, _>("created_at").ok().map(|t| t.to_rfc3339()),
+                "updated_at": r.try_get::<chrono::DateTime<Utc>, _>("updated_at").ok().map(|t| t.to_rfc3339()),
+                "revoked_at": r.try_get::<Option<chrono::DateTime<Utc>>, _>("revoked_at").ok().flatten().map(|t| t.to_rfc3339()),
+            })).collect::<Vec<_>>(),
+        },
+        "parental_data": {
+            "relationships": parent_relationship_rows.iter().map(|r| {
+                let parent_user_id = r.try_get::<Uuid, _>("parent_user_id").ok();
+                let relationship_role = if parent_user_id == Some(auth.user_id) {
+                    "parent"
+                } else {
+                    "child"
+                };
+                serde_json::json!({
+                    "relationship_role": relationship_role,
+                    "parent_user_id": parent_user_id,
+                    "child_user_id": r.try_get::<Uuid, _>("child_user_id").ok(),
+                    "created_at": r.try_get::<chrono::DateTime<Utc>, _>("created_at").ok().map(|t| t.to_rfc3339()),
+                })
+            }).collect::<Vec<_>>(),
+            "pending_friend_requests": pending_friend_rows.iter().map(|r| serde_json::json!({
+                "id": r.try_get::<Uuid, _>("id").ok(),
+                "child_user_id": r.try_get::<Uuid, _>("child_user_id").ok(),
+                "requester_id": r.try_get::<Uuid, _>("requester_id").ok(),
+                "requester_name": r.try_get::<String, _>("requester_name").unwrap_or_default(),
+                "status": r.try_get::<String, _>("status").unwrap_or_default(),
+                "reviewed_at": r.try_get::<Option<chrono::DateTime<Utc>>, _>("reviewed_at").ok().flatten().map(|t| t.to_rfc3339()),
+                "created_at": r.try_get::<chrono::DateTime<Utc>, _>("created_at").ok().map(|t| t.to_rfc3339()),
+            })).collect::<Vec<_>>(),
+            "pending_server_joins": pending_server_join_rows.iter().map(|r| serde_json::json!({
+                "id": r.try_get::<Uuid, _>("id").ok(),
+                "child_user_id": r.try_get::<Uuid, _>("child_user_id").ok(),
+                "server_id": r.try_get::<Uuid, _>("server_id").ok(),
+                "server_name": r.try_get::<String, _>("server_name").unwrap_or_default(),
+                "invite_code": r.try_get::<Option<String>, _>("invite_code").ok().flatten(),
+                "status": r.try_get::<String, _>("status").unwrap_or_default(),
+                "reviewed_at": r.try_get::<Option<chrono::DateTime<Utc>>, _>("reviewed_at").ok().flatten().map(|t| t.to_rfc3339()),
+                "created_at": r.try_get::<chrono::DateTime<Utc>, _>("created_at").ok().map(|t| t.to_rfc3339()),
+            })).collect::<Vec<_>>(),
+            "notifications": parent_notification_rows.iter().map(|r| serde_json::json!({
+                "id": r.try_get::<Uuid, _>("id").ok(),
+                "parent_user_id": r.try_get::<Uuid, _>("parent_user_id").ok(),
+                "child_user_id": r.try_get::<Uuid, _>("child_user_id").ok(),
+                "type": r.try_get::<String, _>("type").unwrap_or_default(),
+                "reference_id": r.try_get::<Option<Uuid>, _>("reference_id").ok().flatten(),
+                "read": r.try_get::<bool, _>("read").unwrap_or(false),
+                "created_at": r.try_get::<chrono::DateTime<Utc>, _>("created_at").ok().map(|t| t.to_rfc3339()),
+            })).collect::<Vec<_>>(),
+            "audit": parental_audit_rows.iter().map(|r| serde_json::json!({
+                "id": r.try_get::<Uuid, _>("id").ok(),
+                "parent_user_id": r.try_get::<Uuid, _>("parent_user_id").ok(),
+                "child_user_id": r.try_get::<Uuid, _>("child_user_id").ok(),
+                "action": r.try_get::<String, _>("action").unwrap_or_default(),
+                "reference_id": r.try_get::<Option<Uuid>, _>("reference_id").ok().flatten(),
+                "ip_address": r.try_get::<Option<String>, _>("ip_address").ok().flatten(),
+                "created_at": r.try_get::<chrono::DateTime<Utc>, _>("created_at").ok().map(|t| t.to_rfc3339()),
+            })).collect::<Vec<_>>(),
+        },
+        "screen_time": {
+            "settings": screen_time_settings_row.as_ref().map(|r| serde_json::json!({
+                "daily_limit_minutes": r.try_get::<i32, _>("daily_limit_minutes").unwrap_or_default(),
+                "bedtime_start": r.try_get::<Option<String>, _>("bedtime_start").ok().flatten(),
+                "bedtime_end": r.try_get::<Option<String>, _>("bedtime_end").ok().flatten(),
+                "updated_at": r.try_get::<chrono::DateTime<Utc>, _>("updated_at").ok().map(|t| t.to_rfc3339()),
+            })),
+            "records": screen_time_record_rows.iter().map(|r| serde_json::json!({
+                "app_name": r.try_get::<String, _>("app_name").unwrap_or_default(),
+                "duration_seconds": r.try_get::<i32, _>("duration_seconds").unwrap_or_default(),
+                "platform": r.try_get::<String, _>("platform").unwrap_or_default(),
+                "recorded_date": r.try_get::<chrono::NaiveDate, _>("recorded_date").ok().map(|d| d.to_string()),
+                "created_at": r.try_get::<chrono::DateTime<Utc>, _>("created_at").ok().map(|t| t.to_rfc3339()),
+            })).collect::<Vec<_>>(),
+            "daily_summaries": screen_time_summary_rows.iter().map(|r| serde_json::json!({
+                "summary_date": r.try_get::<chrono::NaiveDate, _>("summary_date").ok().map(|d| d.to_string()),
+                "total_seconds": r.try_get::<i32, _>("total_seconds").unwrap_or_default(),
+                "yapper_seconds": r.try_get::<i32, _>("yapper_seconds").unwrap_or_default(),
+                "other_seconds": r.try_get::<i32, _>("other_seconds").unwrap_or_default(),
+                "updated_at": r.try_get::<chrono::DateTime<Utc>, _>("updated_at").ok().map(|t| t.to_rfc3339()),
+            })).collect::<Vec<_>>(),
+        },
+        "bot_applications": bot_app_rows.iter().map(|r| serde_json::json!({
+            "id": r.try_get::<Uuid, _>("id").ok(),
+            "name": r.try_get::<String, _>("name").unwrap_or_default(),
+            "description": r.try_get::<Option<String>, _>("description").ok().flatten(),
+            "avatar_url": r.try_get::<Option<String>, _>("avatar_url").ok().flatten(),
+            "discord_bot_id": r.try_get::<Option<String>, _>("discord_bot_id").ok().flatten(),
+            "created_at": r.try_get::<chrono::DateTime<Utc>, _>("created_at").ok().map(|t| t.to_rfc3339()),
+        })).collect::<Vec<_>>(),
+        "media_uploads": media_upload_rows.iter().map(|r| serde_json::json!({
+            "id": r.try_get::<Uuid, _>("id").ok(),
+            "object_key": r.try_get::<String, _>("object_key").unwrap_or_default(),
+            "media_type": r.try_get::<String, _>("media_type").unwrap_or_default(),
+            "size_bytes": r.try_get::<i64, _>("size_bytes").unwrap_or_default(),
+            "created_at": r.try_get::<chrono::DateTime<Utc>, _>("created_at").ok().map(|t| t.to_rfc3339()),
+            "expires_at": r.try_get::<Option<chrono::DateTime<Utc>>, _>("expires_at").ok().flatten().map(|t| t.to_rfc3339()),
         })).collect::<Vec<_>>(),
         "message_metadata": message_meta_rows.iter().map(|r| serde_json::json!({
-            "id":              r.try_get::<Uuid, _>("id").ok(),
-            "channel_id":      r.try_get::<Option<Uuid>, _>("channel_id").ok().flatten(),
+            "id": r.try_get::<Uuid, _>("id").ok(),
+            "channel_id": r.try_get::<Option<Uuid>, _>("channel_id").ok().flatten(),
             "conversation_id": r.try_get::<Option<Uuid>, _>("conversation_id").ok().flatten(),
-            "type":            r.try_get::<String, _>("message_type").unwrap_or_default(),
-            "sent_at":         r.try_get::<chrono::DateTime<Utc>, _>("created_at")
-                                 .ok().map(|t| t.to_rfc3339()),
+            "type": r.try_get::<String, _>("message_type").unwrap_or_default(),
+            "sent_at": r.try_get::<chrono::DateTime<Utc>, _>("created_at").ok().map(|t| t.to_rfc3339()),
         })).collect::<Vec<_>>(),
     });
 
@@ -1390,56 +2015,119 @@ fn build_data_export_zip(json_bytes: &[u8]) -> AppResult<Vec<u8>> {
 
 /// DELETE /api/v1/account
 ///
-/// Soft-deletes the account and immediately anonymizes PII.
-/// The user cannot log in after this. Username and email are replaced
-/// with non-identifying placeholders to satisfy GDPR data minimization.
-async fn delete_account(
-    auth: AuthUser,
-    State(state): State<AppState>,
-) -> AppResult<impl IntoResponse> {
-    let anon_suffix = &auth.user_id.to_string()[..8];
-    let anon_username = format!("[deleted_{anon_suffix}]");
-    let anon_email = format!("deleted+{anon_suffix}@yapperhq.com");
+// ─── Shared helpers ───────────────────────────────────────────────────────────
 
-    // Soft-delete + anonymize PII in one atomic UPDATE
-    let result = sqlx::query(
-        "UPDATE users SET \
-            deleted_at = NOW(), \
-            username = $2, \
-            email = $3, \
-            display_name = NULL, \
-            avatar_url = NULL, \
-            banner_url = NULL, \
-            about_me = NULL \
-         WHERE id = $1 AND deleted_at IS NULL",
-    )
-    .bind(auth.user_id)
-    .bind(&anon_username)
-    .bind(&anon_email)
-    .execute(state.db.pool())
-    .await?;
-
-    if result.rows_affected() == 0 {
-        return Err(AppError::NotFound(
-            "Account not found or already deleted".into(),
-        ));
-    }
-
-    // Invalidate all sessions immediately
-    sqlx::query("DELETE FROM sessions WHERE user_id = $1")
-        .bind(auth.user_id)
-        .execute(state.db.pool())
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to purge sessions on account delete: {e}");
-            e
-        })?;
-
-    tracing::info!(user_id = %auth.user_id, "Account soft-deleted and PII anonymized");
-    Ok(StatusCode::NO_CONTENT)
+#[derive(Debug)]
+struct DmAccessContext {
+    account_type: String,
+    parental_controls_enabled: bool,
+    dm_permission: String,
 }
 
-// ─── Shared helpers ───────────────────────────────────────────────────────────
+async fn load_dm_access_context(user_id: Uuid, state: &AppState) -> AppResult<DmAccessContext> {
+    let row = sqlx::query(
+        r#"
+        SELECT u.account_type,
+               u.parental_controls_enabled,
+               COALESCE(ups.dm_permission, 'everyone') AS dm_permission
+        FROM users u
+        LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
+        WHERE u.id = $1 AND u.deleted_at IS NULL
+        "#,
+    )
+    .bind(user_id)
+    .fetch_optional(state.db.pool())
+    .await?
+    .ok_or_else(|| AppError::NotFound("User not found".into()))?;
+
+    Ok(DmAccessContext {
+        account_type: row.try_get("account_type")?,
+        parental_controls_enabled: row.try_get("parental_controls_enabled").unwrap_or(false),
+        dm_permission: row
+            .try_get::<String, _>("dm_permission")
+            .unwrap_or_else(|_| "everyone".into()),
+    })
+}
+
+pub async fn users_are_friends(user_a: Uuid, user_b: Uuid, state: &AppState) -> AppResult<bool> {
+    let (uid1, uid2) = if user_a < user_b {
+        (user_a, user_b)
+    } else {
+        (user_b, user_a)
+    };
+
+    sqlx::query(
+        "SELECT 1 FROM friendships WHERE user_id_1 = $1 AND user_id_2 = $2 AND status = 'accepted'",
+    )
+    .bind(uid1)
+    .bind(uid2)
+    .fetch_optional(state.db.pool())
+    .await
+    .map(|row| row.is_some())
+    .map_err(AppError::from)
+}
+
+pub async fn users_share_server(user_a: Uuid, user_b: Uuid, state: &AppState) -> AppResult<bool> {
+    sqlx::query(
+        r#"
+        SELECT 1
+        FROM server_memberships sm_a
+        JOIN server_memberships sm_b ON sm_b.server_id = sm_a.server_id
+        WHERE sm_a.user_id = $1 AND sm_b.user_id = $2
+        LIMIT 1
+        "#,
+    )
+    .bind(user_a)
+    .bind(user_b)
+    .fetch_optional(state.db.pool())
+    .await
+    .map(|row| row.is_some())
+    .map_err(AppError::from)
+}
+
+pub async fn require_dm_access(
+    requester_id: Uuid,
+    target_id: Uuid,
+    state: &AppState,
+) -> AppResult<()> {
+    let requester = load_dm_access_context(requester_id, state).await?;
+    let target = load_dm_access_context(target_id, state).await?;
+    let is_friend = users_are_friends(requester_id, target_id, state).await?;
+
+    if target.dm_permission == "nobody" {
+        return Err(AppError::Forbidden);
+    }
+
+    let requester_requires_approved_contact =
+        requester.parental_controls_enabled || requester.account_type == "child";
+    let target_requires_approved_contact =
+        target.parental_controls_enabled || target.account_type == "child";
+    if (requester_requires_approved_contact || target_requires_approved_contact) && !is_friend {
+        return Err(AppError::Forbidden);
+    }
+
+    if target.dm_permission == "friends" && !is_friend {
+        return Err(AppError::Forbidden);
+    }
+
+    Ok(())
+}
+
+pub async fn require_key_bundle_access(
+    requester_id: Uuid,
+    target_id: Uuid,
+    state: &AppState,
+) -> AppResult<()> {
+    if requester_id == target_id {
+        return Ok(());
+    }
+
+    if users_share_server(requester_id, target_id, state).await? {
+        return Ok(());
+    }
+
+    require_dm_access(requester_id, target_id, state).await
+}
 
 async fn resolve_user(username: &str, state: &AppState) -> AppResult<Uuid> {
     sqlx::query("SELECT id FROM users WHERE username = $1 AND deleted_at IS NULL")

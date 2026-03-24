@@ -17,7 +17,12 @@
  */
 
 import { api } from "$lib/api/client.js";
-import { exportSignalSnapshot, importSignalSnapshot } from "./keystore.js";
+import { ed25519 } from "@noble/curves/ed25519.js";
+import {
+  exportSignalSnapshot,
+  importSignalSnapshot,
+  loadIdentityKeyPair,
+} from "./keystore.js";
 
 const PBKDF2_ITERS = 1_200_000;
 const BACKUP_BLOB_VERSION = 1;
@@ -50,14 +55,10 @@ function jsonReviver(_key: string, value: unknown): unknown {
 
 function validateRecoveryPassphrase(passphrase: string): void {
   if (passphrase.length < 12) {
-    throw new Error(
-      "Recovery passphrase must be at least 12 characters",
-    );
+    throw new Error("Recovery passphrase must be at least 12 characters");
   }
   if (passphrase.length > 1024) {
-    throw new Error(
-      "Recovery passphrase must be at most 1024 characters",
-    );
+    throw new Error("Recovery passphrase must be at most 1024 characters");
   }
   if (!/[A-Za-z]/.test(passphrase) || !/\d/.test(passphrase)) {
     throw new Error(
@@ -110,6 +111,34 @@ async function importKeystore(snapshot: string): Promise<void> {
   await importSignalSnapshot(data);
 }
 
+function backupRestoreMessage(
+  currentDeviceId: string,
+  sourceDeviceId: string,
+): Uint8Array {
+  return new TextEncoder().encode(
+    `yapper-backup-restore:v1:${currentDeviceId}:${sourceDeviceId}`,
+  );
+}
+
+async function signBackupRestoreRequest(
+  currentDeviceId: string,
+  sourceDeviceId: string,
+): Promise<string> {
+  const identity = await loadIdentityKeyPair();
+  if (!identity) {
+    throw new Error(
+      "Restored backup is missing the trusted device identity key",
+    );
+  }
+
+  return u8ToB64(
+    ed25519.sign(
+      backupRestoreMessage(currentDeviceId, sourceDeviceId),
+      identity.sigPrivateKey,
+    ),
+  );
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
@@ -152,7 +181,7 @@ export async function backupKeys(passphrase: string): Promise<void> {
 export async function restoreKeys(
   passphrase: string,
   sourceDeviceId?: string,
-  options?: { replaceSourceDevice?: boolean },
+  options?: { replaceSourceDevice?: boolean; currentDeviceId?: string },
 ): Promise<boolean> {
   validateRecoveryPassphrase(passphrase);
   let resp: { encrypted_blob: string };
@@ -178,7 +207,7 @@ export async function restoreKeys(
   if (blob.length < 45) throw new Error("Backup blob is too short");
 
   const version =
-    blob[0] === BACKUP_BLOB_VERSION && blob.length >= 46 ? blob[0] : 0;
+    blob[0] === BACKUP_BLOB_VERSION && blob.length >= 45 ? blob[0] : 0;
   const offset = version === BACKUP_BLOB_VERSION ? 1 : 0;
   const salt = blob.slice(offset, offset + 16);
   const iv = blob.slice(offset + 16, offset + 28);
@@ -200,8 +229,16 @@ export async function restoreKeys(
   const snapshot = new TextDecoder().decode(plaintextBuf);
   await importKeystore(snapshot);
   if (sourceDeviceId) {
+    if (!options?.currentDeviceId) {
+      throw new Error("Current device ID is required for trusted restore");
+    }
+
     await api.post("/api/v2/keys/backup/restore", {
       source_device_id: sourceDeviceId,
+      source_device_signature: await signBackupRestoreRequest(
+        options.currentDeviceId,
+        sourceDeviceId,
+      ),
       replace_source_device: options?.replaceSourceDevice === true,
     });
   }

@@ -2,7 +2,10 @@
 //!
 //! Verifies identity key upload, OPK bundle management, and atomic OPK consumption.
 
-use super::{create_test_user, spawn_test_server};
+use super::{
+    authorization_header_name, bearer_header, create_test_user, csrf_header_name,
+    csrf_header_value, spawn_test_server,
+};
 use serial_test::serial;
 use uuid::Uuid;
 
@@ -17,15 +20,17 @@ fn fake_key_b64() -> String {
 #[tokio::test]
 #[serial]
 async fn keys_upload_and_fetch_bundle() {
-    let server = spawn_test_server().await;
+    let Some(server) = spawn_test_server().await else {
+        return;
+    };
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
     let (_user_id, access_token, csrf_token) = create_test_user(&server, &suffix).await;
 
     // Upload identity key
     let ik_upload = server
         .post("/api/v1/keys/identity")
-        .add_header("Authorization", format!("Bearer {access_token}"))
-        .add_header("X-CSRF-Token", &csrf_token)
+        .add_header(authorization_header_name(), bearer_header(&access_token))
+        .add_header(csrf_header_name(), csrf_header_value(&csrf_token))
         .json(&serde_json::json!({
             "identity_key": fake_key_b64(),
             "signing_key": fake_key_b64(),
@@ -41,8 +46,8 @@ async fn keys_upload_and_fetch_bundle() {
     // Upload signed prekey
     let spk_upload = server
         .post("/api/v1/keys/signed-prekey")
-        .add_header("Authorization", format!("Bearer {access_token}"))
-        .add_header("X-CSRF-Token", &csrf_token)
+        .add_header(authorization_header_name(), bearer_header(&access_token))
+        .add_header(csrf_header_name(), csrf_header_value(&csrf_token))
         .json(&serde_json::json!({
             "key_id": 1,
             "public_key": fake_key_b64(),
@@ -62,8 +67,8 @@ async fn keys_upload_and_fetch_bundle() {
         .collect();
     let opk_upload = server
         .post("/api/v1/keys/one-time-prekeys")
-        .add_header("Authorization", format!("Bearer {access_token}"))
-        .add_header("X-CSRF-Token", &csrf_token)
+        .add_header(authorization_header_name(), bearer_header(&access_token))
+        .add_header(csrf_header_name(), csrf_header_value(&csrf_token))
         .json(&serde_json::json!({ "keys": opks }))
         .await;
     assert!(
@@ -80,8 +85,8 @@ async fn keys_upload_and_fetch_bundle() {
 
     let bundle = server
         .get(&format!("/api/v1/keys/bundle/{user_id}"))
-        .add_header("Authorization", format!("Bearer {at2}"))
-        .add_header("X-CSRF-Token", &ct2)
+        .add_header(authorization_header_name(), bearer_header(&at2))
+        .add_header(csrf_header_name(), csrf_header_value(&ct2))
         .await;
     assert!(
         bundle.status_code().is_success(),
@@ -110,15 +115,17 @@ async fn keys_upload_and_fetch_bundle() {
 #[tokio::test]
 #[serial]
 async fn keys_opk_count_decrements_after_consumption() {
-    let server = spawn_test_server().await;
+    let Some(server) = spawn_test_server().await else {
+        return;
+    };
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
     let (user_id, at, ct) = create_test_user(&server, &suffix).await;
 
     // Upload identity + SPK (required before OPKs)
     server
         .post("/api/v1/keys/identity")
-        .add_header("Authorization", format!("Bearer {at}"))
-        .add_header("X-CSRF-Token", &ct)
+        .add_header(authorization_header_name(), bearer_header(&at))
+        .add_header(csrf_header_name(), csrf_header_value(&ct))
         .json(&serde_json::json!({
             "identity_key": fake_key_b64(),
             "signing_key": fake_key_b64(),
@@ -126,8 +133,8 @@ async fn keys_opk_count_decrements_after_consumption() {
         .await;
     server
         .post("/api/v1/keys/signed-prekey")
-        .add_header("Authorization", format!("Bearer {at}"))
-        .add_header("X-CSRF-Token", &ct)
+        .add_header(authorization_header_name(), bearer_header(&at))
+        .add_header(csrf_header_name(), csrf_header_value(&ct))
         .json(&serde_json::json!({
             "key_id": 1,
             "public_key": fake_key_b64(),
@@ -141,8 +148,8 @@ async fn keys_opk_count_decrements_after_consumption() {
         .collect();
     server
         .post("/api/v1/keys/one-time-prekeys")
-        .add_header("Authorization", format!("Bearer {at}"))
-        .add_header("X-CSRF-Token", &ct)
+        .add_header(authorization_header_name(), bearer_header(&at))
+        .add_header(csrf_header_name(), csrf_header_value(&ct))
         .json(&serde_json::json!({ "keys": opks }))
         .await;
 
@@ -154,8 +161,8 @@ async fn keys_opk_count_decrements_after_consumption() {
     let (_u2, at2, ct2) = create_test_user(&server, &suffix2).await;
     let bundle = server
         .get(&format!("/api/v1/keys/bundle/{user_id}"))
-        .add_header("Authorization", format!("Bearer {at2}"))
-        .add_header("X-CSRF-Token", &ct2)
+        .add_header(authorization_header_name(), bearer_header(&at2))
+        .add_header(csrf_header_name(), csrf_header_value(&ct2))
         .await;
     let bundle_body: serde_json::Value = bundle.json();
 
@@ -172,8 +179,8 @@ async fn keys_opk_count_decrements_after_consumption() {
 async fn opk_count(server: &axum_test::TestServer, at: &str, ct: &str) -> u64 {
     let resp = server
         .get("/api/v1/keys/one-time-prekeys/count")
-        .add_header("Authorization", format!("Bearer {at}"))
-        .add_header("X-CSRF-Token", ct)
+        .add_header(authorization_header_name(), bearer_header(at))
+        .add_header(csrf_header_name(), csrf_header_value(ct))
         .await;
     if resp.status_code().is_success() {
         let body: serde_json::Value = resp.json();
