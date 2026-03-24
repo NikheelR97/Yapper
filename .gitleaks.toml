@@ -1,0 +1,8 @@
+# Gitleaks configuration — allowlist known false positives.
+# VAPID public keys are intentionally embedded in client-side code
+# (they are the public half of a Web Push key pair, not secrets).
+
+[[allowlists]]
+description = "Firebase VAPID public key (not a secret)"
+regexTarget = "match"
+regexes = ['''VITE_FIREBASE_VAPID_KEY''']
