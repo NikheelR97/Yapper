@@ -15,7 +15,11 @@ use governor::{
 };
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
-use std::{num::NonZeroU32, sync::Arc, time::{Duration, Instant}};
+use std::{
+    num::NonZeroU32,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tokio::sync::{mpsc, watch};
 use uuid::Uuid;
 
@@ -125,7 +129,8 @@ impl Hub {
 
     /// Insert or update a trust state in the cache.
     fn cache_trust_state(&self, user_id: Uuid, device_id: Uuid, state: DeviceTrustState) {
-        self.trust_cache.insert((user_id, device_id), (state, Instant::now()));
+        self.trust_cache
+            .insert((user_id, device_id), (state, Instant::now()));
     }
 
     /// Invalidate a cached trust state (called on approve/revoke).
@@ -157,7 +162,8 @@ impl Hub {
 
     /// Cache a channel → server_id mapping.
     fn cache_channel_server(&self, channel_id: Uuid, server_id: Uuid) {
-        self.channel_server_cache.insert(channel_id, (server_id, Instant::now()));
+        self.channel_server_cache
+            .insert(channel_id, (server_id, Instant::now()));
     }
 
     /// Look up cached server membership.
@@ -182,10 +188,14 @@ impl Hub {
     /// Evict expired entries from all Hub caches to bound memory growth.
     /// Called periodically from the global GC task.
     pub fn gc_caches(&self) {
-        self.trust_cache.retain(|_, (_, ts)| ts.elapsed() < TRUST_CACHE_TTL);
-        self.dm_recipient_cache.retain(|_, (_, ts)| ts.elapsed() < MEMBERSHIP_CACHE_TTL);
-        self.channel_server_cache.retain(|_, (_, ts)| ts.elapsed() < MEMBERSHIP_CACHE_TTL);
-        self.membership_cache.retain(|_, (_, ts)| ts.elapsed() < MEMBERSHIP_CACHE_TTL);
+        self.trust_cache
+            .retain(|_, (_, ts)| ts.elapsed() < TRUST_CACHE_TTL);
+        self.dm_recipient_cache
+            .retain(|_, (_, ts)| ts.elapsed() < MEMBERSHIP_CACHE_TTL);
+        self.channel_server_cache
+            .retain(|_, (_, ts)| ts.elapsed() < MEMBERSHIP_CACHE_TTL);
+        self.membership_cache
+            .retain(|_, (_, ts)| ts.elapsed() < MEMBERSHIP_CACHE_TTL);
     }
 
     /// Returns true if the user is within their message rate limit (5/sec, burst 20).
@@ -778,10 +788,14 @@ async fn live_device_trust_state(
         .await
         .ok()?;
     if device.revoked_at.is_some() || device.trust_state == DeviceTrustState::Revoked {
-        state.hub.cache_trust_state(user_id, device_id, DeviceTrustState::Revoked);
+        state
+            .hub
+            .cache_trust_state(user_id, device_id, DeviceTrustState::Revoked);
         return None;
     }
-    state.hub.cache_trust_state(user_id, device_id, device.trust_state.clone());
+    state
+        .hub
+        .cache_trust_state(user_id, device_id, device.trust_state.clone());
     Some(device.trust_state)
 }
 
@@ -1262,7 +1276,9 @@ async fn resolve_dm_recipient(
         return None;
     }
 
-    state.hub.cache_dm_recipient(conversation_id, sender_id, recipient_id);
+    state
+        .hub
+        .cache_dm_recipient(conversation_id, sender_id, recipient_id);
     Some(recipient_id)
 }
 
@@ -1590,7 +1606,9 @@ async fn fanout_to_channel_members(
 
     for m in member_rows.iter().take(MAX_FANOUT_MEMBERS as usize) {
         if let Ok(uid) = m.try_get::<Uuid, _>("user_id") {
-            state.hub.send_to_user(&uid, WsOutbound::PreSerialized(Arc::clone(&json)));
+            state
+                .hub
+                .send_to_user(&uid, WsOutbound::PreSerialized(Arc::clone(&json)));
         }
     }
 }

@@ -23,6 +23,7 @@
 			const res = await api.post<{
 				access_token: string;
 				csrf_token: string;
+				refresh_token?: string;
 				user: User;
 				device: {
 					id: string;

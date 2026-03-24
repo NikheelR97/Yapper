@@ -463,7 +463,9 @@ async fn approve_device(
     .await?;
 
     // Invalidate cached trust state so the hub picks up the change immediately
-    state.hub.invalidate_trust_cache(auth.user_id, target_device_id);
+    state
+        .hub
+        .invalidate_trust_cache(auth.user_id, target_device_id);
 
     enqueue_sync_event(
         auth.user_id,
@@ -524,7 +526,9 @@ async fn revoke_device(
     .await?;
 
     // Invalidate cached trust state so the hub rejects this device immediately
-    state.hub.invalidate_trust_cache(auth.user_id, target_device_id);
+    state
+        .hub
+        .invalidate_trust_cache(auth.user_id, target_device_id);
 
     send_live_sync_event(
         target_device_id,

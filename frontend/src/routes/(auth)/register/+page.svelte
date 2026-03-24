@@ -39,6 +39,7 @@
 				access_token: string;
 				user: User;
 				csrf_token?: string;
+				refresh_token?: string;
 				device: {
 					id: string;
 					signal_device_id: number;
