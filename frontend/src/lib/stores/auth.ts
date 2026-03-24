@@ -1,4 +1,5 @@
-import { writable } from 'svelte/store';
+import { writable, get } from 'svelte/store';
+import { api } from '$api/client.js';
 
 export interface User {
 	id: string;
@@ -88,6 +89,24 @@ export function clearStoredRefreshToken(): void {
 	try {
 		localStorage.removeItem(REFRESH_TOKEN_KEY);
 	} catch { /* ignore */ }
+}
+
+/** Refresh the access token via the backend. Updates authStore on success.
+ *  Returns the new access token, or null if the refresh failed. */
+export async function refreshAccessToken(): Promise<string | null> {
+	try {
+		const res = await api.post<{
+			access_token: string;
+			csrf_token: string;
+			refresh_token?: string;
+			user: User;
+		}>('/api/v2/auth/refresh');
+		if (res.refresh_token) storeRefreshToken(res.refresh_token);
+		setAuth(res.user, res.access_token, res.csrf_token);
+		return res.access_token;
+	} catch {
+		return null;
+	}
 }
 
 export function setPremiumStatus(isPremium: boolean) {

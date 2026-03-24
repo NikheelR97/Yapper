@@ -179,6 +179,15 @@ impl Hub {
         self.membership_cache.remove(&(user_id, server_id));
     }
 
+    /// Evict expired entries from all Hub caches to bound memory growth.
+    /// Called periodically from the global GC task.
+    pub fn gc_caches(&self) {
+        self.trust_cache.retain(|_, (_, ts)| ts.elapsed() < TRUST_CACHE_TTL);
+        self.dm_recipient_cache.retain(|_, (_, ts)| ts.elapsed() < MEMBERSHIP_CACHE_TTL);
+        self.channel_server_cache.retain(|_, (_, ts)| ts.elapsed() < MEMBERSHIP_CACHE_TTL);
+        self.membership_cache.retain(|_, (_, ts)| ts.elapsed() < MEMBERSHIP_CACHE_TTL);
+    }
+
     /// Returns true if the user is within their message rate limit (5/sec, burst 20).
     fn check_msg_rate(&self, user_id: &Uuid) -> bool {
         let limiter = self
@@ -456,8 +465,8 @@ pub enum WsOutbound {
         message: String,
     },
     Pong,
-    /// Pre-serialized JSON string — avoids repeated serde_json::to_string()
-    /// during high-fanout broadcasts (channel messages, typing indicators).
+    /// Pre-serialized JSON string — serialize once per fan-out instead of N times.
+    /// Each send still allocates a String from the Arc<str>, but skips serde entirely.
     #[serde(skip)]
     PreSerialized(Arc<str>),
 }

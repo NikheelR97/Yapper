@@ -9,7 +9,7 @@
  */
 
 import { get, writable } from 'svelte/store';
-import { authStore } from '$stores/auth.js';
+import { authStore, refreshAccessToken } from '$stores/auth.js';
 import { WS_URL } from '$lib/env.js';
 
 type MessageHandler = (payload: unknown) => void;
@@ -52,6 +52,8 @@ const handlers = new Map<string, Set<MessageHandler>>();
 // Flushed on next successful 'ready' event.
 const MAX_PENDING = 50;
 const pendingQueue: Record<string, unknown>[] = [];
+// Idempotent message types where only the latest per-type matters.
+const DEDUP_TYPES = new Set(['typing_start', 'read']);
 
 // Always-on handler: decrypt and store incoming SenderKey distributions.
 // Lazy-imported to keep @noble/curves (~150KB) and @noble/hashes (~50KB)
@@ -90,8 +92,18 @@ export function wsSend(msg: Record<string, unknown>): boolean {
 		socket.send(JSON.stringify(msg));
 		return true;
 	}
-	// Queue for delivery after reconnect
-	if (pendingQueue.length < MAX_PENDING) {
+	// Queue for delivery after reconnect.
+	// For idempotent types (typing, read receipts), replace any existing
+	// queued message of the same type — only the latest matters.
+	const msgType = msg.type as string | undefined;
+	if (msgType && DEDUP_TYPES.has(msgType)) {
+		const idx = pendingQueue.findIndex((m) => m.type === msgType);
+		if (idx !== -1) {
+			pendingQueue[idx] = msg;
+		} else if (pendingQueue.length < MAX_PENDING) {
+			pendingQueue.push(msg);
+		}
+	} else if (pendingQueue.length < MAX_PENDING) {
 		pendingQueue.push(msg);
 	}
 	return false;
@@ -195,9 +207,12 @@ function doConnect(): void {
 			}
 
 			case 're_auth_required': {
-				// Re-send token before it expires
-				const token = get(authStore).accessToken;
-				if (token) ws.send(JSON.stringify({ type: 'reauth', token }));
+				// Server is about to expire our session — refresh and re-send
+				refreshAccessToken().then((freshToken) => {
+					if (freshToken && ws.readyState === WebSocket.OPEN) {
+						ws.send(JSON.stringify({ type: 'reauth', token: freshToken }));
+					}
+				});
 				break;
 			}
 
@@ -270,14 +285,14 @@ function startPing(ws: WebSocket): void {
 	}, 30_000);
 }
 
-/** Send a fresh token proactively at 12 min to avoid the server's 60-second
- *  re_auth_required window (JWT lifetime = 15 min). */
+/** Refresh the JWT and re-auth proactively at 12 min to avoid the server's
+ *  60-second re_auth_required degradation window (JWT lifetime = 15 min). */
 function scheduleProactiveReauth(ws: WebSocket): void {
 	clearTimeout(proactiveReauthTimer ?? undefined);
-	proactiveReauthTimer = setTimeout(() => {
-		const token = get(authStore).accessToken;
-		if (token && ws.readyState === WebSocket.OPEN) {
-			ws.send(JSON.stringify({ type: 'reauth', token }));
+	proactiveReauthTimer = setTimeout(async () => {
+		const freshToken = await refreshAccessToken();
+		if (freshToken && ws.readyState === WebSocket.OPEN) {
+			ws.send(JSON.stringify({ type: 'reauth', token: freshToken }));
 		}
 	}, PROACTIVE_REAUTH_MS);
 }

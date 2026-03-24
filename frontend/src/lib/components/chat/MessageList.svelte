@@ -39,8 +39,16 @@
     return tokens;
   }
 
-  // Invalidate cache when emoji map changes (server emoji add/remove)
-  $: if (emojiMap) tokenCache.clear();
+  // Invalidate cache only when the emoji set actually changes (add/remove),
+  // not on every reactive reassignment of the same map contents.
+  let prevEmojiSize = -1;
+  $: {
+    const size = emojiMap.size;
+    if (size !== prevEmojiSize) {
+      prevEmojiSize = size;
+      tokenCache.clear();
+    }
+  }
 
   function formatTime(iso: string): string {
     return new Date(iso).toLocaleTimeString([], {
@@ -166,7 +174,7 @@
   aria-label="Messages"
 >
   {#if topSpacer > 0}
-    <div class="spacer" aria-hidden="true" />
+    <div class="spacer" style="height: {topSpacer * 52}px" aria-hidden="true" />
   {/if}
 
   {#each visibleMessages as msg (msg.id)}
@@ -226,10 +234,9 @@
   }
 
   .spacer {
-    /* Estimated height for messages above the render window.
-       Not pixel-perfect, but prevents the scrollbar from jumping drastically. */
+    /* Estimated height for messages above the render window (~52px per message:
+       bubble + meta + gap). Not pixel-perfect, but keeps the scrollbar stable. */
     flex-shrink: 0;
-    min-height: 1px;
   }
 
   .message {
