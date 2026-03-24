@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
 
 import { toast } from './toast.js';
@@ -15,6 +15,13 @@ describe('toast store', () => {
 		vi.useFakeTimers();
 		let nextId = 1;
 		vi.spyOn(globalThis.crypto, 'randomUUID').mockImplementation(() => `toast-${nextId++}`);
+	});
+
+	afterEach(() => {
+		vi.runOnlyPendingTimers();
+		clearToasts();
+		vi.useRealTimers();
+		vi.restoreAllMocks();
 	});
 
 	it('uses default durations for success and warning toasts', () => {
