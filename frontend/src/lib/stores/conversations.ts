@@ -205,13 +205,13 @@ export async function loadMessages(conversationId: string, peerId: string): Prom
 	// Decrypt sequentially with coalesced IDB writes.
 	// beginBatch() makes storeSession update only the in-memory cache per message;
 	// endBatch() flushes all dirty sessions in a single IDB transaction at the end.
-	const BATCH_SIZE = 10;
-	const batch = new Map<string, { text: string | null; decryptError: boolean; messageType: string }>();
+	// All decryption results are collected first, then applied in a single store.update()
+	// to avoid N/BATCH_SIZE DOM reconciliation passes.
+	const decrypted = new Map<string, { text: string | null; decryptError: boolean; messageType: string }>();
 
 	beginBatch();
 	try {
-		for (let i = 0; i < raw.length; i++) {
-			const message = raw[i];
+		for (const message of raw) {
 			if (alreadyDecrypted.has(message.id)) continue;
 
 			try {
@@ -230,33 +230,31 @@ export async function loadMessages(conversationId: string, peerId: string): Prom
 						crypto_version: message.crypto_version,
 					}
 				);
-				batch.set(message.id, {
+				decrypted.set(message.id, {
 					text,
 					decryptError: false,
 					messageType: inferDmMessageType(text),
 				});
 			} catch (e) {
 				console.error('[loadMessages] decryptDm failed for', message.id, e);
-				batch.set(message.id, { text: null, decryptError: true, messageType: 'text' });
-			}
-
-			// Flush decrypted messages to the UI in batches for progressive rendering
-			if (batch.size >= BATCH_SIZE || i === raw.length - 1) {
-				const flush = new Map(batch);
-				batch.clear();
-				store.update(msgs =>
-					msgs.map(m => {
-						const d = flush.get(m.id);
-						if (!d) return m;
-						// Never overwrite an already-decrypted message with a decrypt error
-						if (d.decryptError && m.text !== null && !m.decryptError) return m;
-						return { ...m, ...d };
-					})
-				);
+				decrypted.set(message.id, { text: null, decryptError: true, messageType: 'text' });
 			}
 		}
 	} finally {
 		await endBatch();
+	}
+
+	// Single store update — one DOM reconciliation pass instead of N/BATCH_SIZE
+	if (decrypted.size > 0) {
+		store.update(msgs =>
+			msgs.map(m => {
+				const d = decrypted.get(m.id);
+				if (!d) return m;
+				// Never overwrite an already-decrypted message with a decrypt error
+				if (d.decryptError && m.text !== null && !m.decryptError) return m;
+				return { ...m, ...d };
+			})
+		);
 	}
 }
 

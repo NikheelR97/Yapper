@@ -418,7 +418,19 @@ export function registerCanvasHandler(): () => void {
 
 		const serverId = payload.server_id as string | undefined;
 
-		canvasStores.forEach((store, storeServerId) => {
+		// Look up only the targeted store instead of iterating all stores.
+		// Falls back to forEach for events missing server_id (shouldn't happen
+		// but keeps backward compatibility).
+		const targetedStores: [string, ReturnType<typeof writable<CanvasState>>][] = [];
+		if (serverId && canvasStores.has(serverId)) {
+			targetedStores.push([serverId, canvasStores.get(serverId)!]);
+		} else if (!serverId) {
+			canvasStores.forEach((s, id) => targetedStores.push([id, s]));
+		} else {
+			return; // server_id present but no store subscribed — skip
+		}
+
+		for (const [storeServerId, store] of targetedStores) {
 			const state = get(store);
 
 			switch (payload.type) {
@@ -629,6 +641,6 @@ export function registerCanvasHandler(): () => void {
 					break;
 				}
 			}
-		});
+		}
 	});
 }

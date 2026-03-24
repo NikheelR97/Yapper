@@ -11,7 +11,7 @@
  *   $status.lastSeen  → ISO string | null
  */
 
-import { writable, derived, get } from 'svelte/store';
+import { writable, get } from 'svelte/store';
 import { api } from '$api/client.js';
 import { onWsMessage } from '$stores/ws.js';
 
@@ -23,6 +23,8 @@ interface PresenceState {
 
 // Map of userId → writable presence state
 const presenceMap = new Map<string, ReturnType<typeof writable<PresenceState>>>();
+// Track which users have already been fetched via REST to avoid duplicate requests
+const fetchedUsers = new Set<string>();
 
 function getOrCreate(userId: string) {
     if (!presenceMap.has(userId)) {
@@ -33,15 +35,19 @@ function getOrCreate(userId: string) {
 
 /**
  * Returns a readable store for the given user's presence.
- * Kicks off a REST fetch on first access, then stays updated via WS.
+ * Kicks off a REST fetch on first access (deduplicated), then stays updated via WS.
+ * Returns the writable's subscribe interface directly — no redundant derived() wrapper.
  */
 export function getPresence(userId: string) {
     const store = getOrCreate(userId);
 
-    // Fetch once if we haven't yet (store starts at offline default)
-    fetchPresence(userId).catch(() => {/* swallow — best-effort */ });
+    // Fetch once per session — deduplicate across multiple components
+    if (!fetchedUsers.has(userId)) {
+        fetchedUsers.add(userId);
+        fetchPresence(userId).catch(() => {/* swallow — best-effort */ });
+    }
 
-    return derived(store, ($s) => $s);
+    return { subscribe: store.subscribe };
 }
 
 /** Manually refresh presence for a user via REST. */

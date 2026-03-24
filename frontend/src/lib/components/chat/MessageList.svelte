@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
+  import { onMount, onDestroy, tick } from "svelte";
   import type { Message } from "$stores/conversations.js";
   import type { ServerEmoji } from "$stores/servers.js";
   import { authStore } from "$stores/auth.js";
@@ -24,6 +24,24 @@
 
   $: emojiMap = new Map(serverEmojis.map((e) => [e.name, e.imageUrl]));
 
+  // ── Memoized token rendering ──────────────────────────────────────────────
+  // Cache rendered tokens by message id + text to avoid re-parsing on every
+  // reactive update (typing indicators, presence changes, etc).
+  const tokenCache = new Map<string, ReturnType<typeof renderMessageTokens>>();
+
+  function getTokens(msg: Message) {
+    if (!msg.text) return [];
+    const cacheKey = msg.id;
+    const cached = tokenCache.get(cacheKey);
+    if (cached) return cached;
+    const tokens = renderMessageTokens(msg.text, emojiMap);
+    tokenCache.set(cacheKey, tokens);
+    return tokens;
+  }
+
+  // Invalidate cache when emoji map changes (server emoji add/remove)
+  $: if (emojiMap) tokenCache.clear();
+
   function formatTime(iso: string): string {
     return new Date(iso).toLocaleTimeString([], {
       hour: "2-digit",
@@ -47,6 +65,52 @@
       /* not a media payload */
     }
     return null;
+  }
+
+  // ── Viewport windowing ────────────────────────────────────────────────────
+  // Only render messages near the viewport to cap DOM nodes at ~80 instead
+  // of 200+. Uses a generous buffer so scrolling feels seamless.
+
+  const RENDER_WINDOW = 60; // messages to render around viewport
+  const SCROLL_BUFFER = 20; // extra messages above/below visible area
+  let renderStart = 0;
+  let renderEnd = 0;
+  let userScrolledUp = false;
+
+  $: {
+    // When messages change, recompute the visible window.
+    // Default: show the most recent messages (bottom of list).
+    const total = messages.length;
+    if (total <= RENDER_WINDOW) {
+      renderStart = 0;
+      renderEnd = total;
+    } else if (!userScrolledUp) {
+      // User is at the bottom — render the last RENDER_WINDOW messages
+      renderStart = total - RENDER_WINDOW;
+      renderEnd = total;
+    }
+    // If user has scrolled up, renderStart/renderEnd are managed by onScroll
+  }
+
+  $: visibleMessages = messages.slice(renderStart, renderEnd);
+  $: topSpacer = renderStart; // number of messages above the window
+
+  function onScroll() {
+    if (!listEl) return;
+    const { scrollTop, scrollHeight, clientHeight } = listEl;
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+
+    userScrolledUp = distanceFromBottom > 100;
+
+    if (messages.length <= RENDER_WINDOW) return;
+
+    // Estimate which messages are near the viewport based on scroll ratio
+    const scrollRatio = scrollTop / Math.max(1, scrollHeight - clientHeight);
+    const centerIndex = Math.floor(scrollRatio * messages.length);
+    const halfWindow = Math.floor(RENDER_WINDOW / 2);
+
+    renderStart = Math.max(0, centerIndex - halfWindow - SCROLL_BUFFER);
+    renderEnd = Math.min(messages.length, centerIndex + halfWindow + SCROLL_BUFFER);
   }
 
   // ── IntersectionObserver for read receipts ───────────────────────────────
@@ -82,21 +146,33 @@
       },
     };
   }
+
+  // ── Auto-scroll to bottom on new messages ─────────────────────────────────
+  let prevLength = 0;
+  $: if (messages.length > prevLength && !userScrolledUp) {
+    prevLength = messages.length;
+    tick().then(() => {
+      if (listEl) listEl.scrollTop = listEl.scrollHeight;
+    });
+  }
 </script>
 
 <div
   class="message-list"
   bind:this={listEl}
+  on:scroll={onScroll}
   role="log"
   aria-live="polite"
   aria-label="Messages"
 >
-  {#each messages as msg (msg.id)}
+  {#if topSpacer > 0}
+    <div class="spacer" aria-hidden="true" />
+  {/if}
+
+  {#each visibleMessages as msg (msg.id)}
     {@const isOwn = msg.senderId === myId}
     {@const mediaPayload = parseMediaPayload(msg.text)}
-    {@const renderedTokens = msg.text
-      ? renderMessageTokens(msg.text, emojiMap)
-      : []}
+    {@const renderedTokens = getTokens(msg)}
 
     <div class="message" class:own={isOwn} use:observe={msg.id}>
       {#if msg.decryptError}
@@ -147,6 +223,13 @@
     padding: 1rem;
     overflow-y: auto;
     flex: 1;
+  }
+
+  .spacer {
+    /* Estimated height for messages above the render window.
+       Not pixel-perfect, but prevents the scrollbar from jumping drastically. */
+    flex-shrink: 0;
+    min-height: 1px;
   }
 
   .message {

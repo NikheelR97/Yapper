@@ -10,10 +10,23 @@
 
 import { get, writable } from 'svelte/store';
 import { authStore } from '$stores/auth.js';
-import { receiveSenderKeyDist, handleKeyDistRequest } from '$lib/signal/index.js';
 import { WS_URL } from '$lib/env.js';
 
 type MessageHandler = (payload: unknown) => void;
+
+type KeyDistPayload = {
+	channel_id: string;
+	from_user: string;
+	from_device_id?: string | null;
+	ciphertext: string;
+	ek_public: string;
+};
+
+type KeyDistRequestPayload = {
+	channel_id: string;
+	requester_user_id: string;
+	requester_device_id: string;
+};
 
 interface WsState {
 	connected: boolean;
@@ -25,44 +38,35 @@ export const wsStore = writable<WsState>({ connected: false, error: null });
 let socket: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let pingTimer: ReturnType<typeof setInterval> | null = null;
+let proactiveReauthTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectDelay = 1000;
 let stopped = false;
+
+/** JWT lifetime is 15 min. Proactively re-auth at 12 min to avoid the
+ *  server's 60-second re_auth_required degradation window. */
+const PROACTIVE_REAUTH_MS = 12 * 60 * 1000;
 
 const handlers = new Map<string, Set<MessageHandler>>();
 
 // Always-on handler: decrypt and store incoming SenderKey distributions.
+// Lazy-imported to keep @noble/curves (~150KB) and @noble/hashes (~50KB)
+// out of the main entry chunk.
 onWsMessage('key_dist', (payload) => {
-	receiveSenderKeyDist(
-		payload as {
-			channel_id: string;
-			from_user: string;
-			from_device_id?: string | null;
-			ciphertext: string;
-			ek_public: string;
-		}
+	import('$lib/signal/index.js').then(({ receiveSenderKeyDist }) =>
+		receiveSenderKeyDist(payload as KeyDistPayload)
 	).catch((err) => console.error('[signal] Failed to process key_dist:', err));
 });
 
 onWsMessage('key_dist_v2', (payload) => {
-	receiveSenderKeyDist(
-		payload as {
-			channel_id: string;
-			from_user: string;
-			from_device_id?: string | null;
-			ciphertext: string;
-			ek_public: string;
-		}
+	import('$lib/signal/index.js').then(({ receiveSenderKeyDist }) =>
+		receiveSenderKeyDist(payload as KeyDistPayload)
 	).catch((err) => console.error('[signal] Failed to process key_dist_v2:', err));
 });
 
 // When a new device joins a channel, redistribute our sender key to it.
 onWsMessage('key_dist_request', (payload) => {
-	handleKeyDistRequest(
-		payload as {
-			channel_id: string;
-			requester_user_id: string;
-			requester_device_id: string;
-		}
+	import('$lib/signal/index.js').then(({ handleKeyDistRequest }) =>
+		handleKeyDistRequest(payload as KeyDistRequestPayload)
 	).catch((err) => console.error('[signal] Failed to handle key_dist_request:', err));
 });
 
@@ -161,6 +165,7 @@ function doConnect(): void {
 				wsStore.set({ connected: true, error: null });
 				reconnectDelay = 1000;
 				startPing(ws);
+				scheduleProactiveReauth(ws);
 				// Notify reconnect listeners so stale stores can refresh
 				handlers.get('_reconnected')?.forEach((h) => h({}));
 				break;
@@ -216,6 +221,7 @@ function doConnect(): void {
 
 	ws.onclose = (event) => {
 		clearInterval(pingTimer ?? undefined);
+		clearTimeout(proactiveReauthTimer ?? undefined);
 		wsStore.set({ connected: false, error: event.code !== 1000 ? 'disconnected' : null });
 		socket = null;
 
@@ -246,4 +252,16 @@ function startPing(ws: WebSocket): void {
 			ws.send(JSON.stringify({ type: 'ping' }));
 		}
 	}, 30_000);
+}
+
+/** Send a fresh token proactively at 12 min to avoid the server's 60-second
+ *  re_auth_required window (JWT lifetime = 15 min). */
+function scheduleProactiveReauth(ws: WebSocket): void {
+	clearTimeout(proactiveReauthTimer ?? undefined);
+	proactiveReauthTimer = setTimeout(() => {
+		const token = get(authStore).accessToken;
+		if (token && ws.readyState === WebSocket.OPEN) {
+			ws.send(JSON.stringify({ type: 'reauth', token }));
+		}
+	}, PROACTIVE_REAUTH_MS);
 }

@@ -15,7 +15,7 @@ use governor::{
 };
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
-use std::{num::NonZeroU32, sync::Arc};
+use std::{num::NonZeroU32, sync::Arc, time::{Duration, Instant}};
 use tokio::sync::{mpsc, watch};
 use uuid::Uuid;
 
@@ -75,6 +75,9 @@ pub struct Hub {
     away_timers: DashMap<Uuid, tokio::task::JoinHandle<()>>,
     /// Set of users currently marked as "away" (connected but inactive).
     away_users: DashMap<Uuid, ()>,
+    /// Cached device trust states — avoids a DB query per inbound WS message.
+    /// Entries expire after 60 seconds and are invalidated on approve/revoke.
+    trust_cache: DashMap<(Uuid, Uuid), (DeviceTrustState, Instant)>,
 }
 
 impl Default for Hub {
@@ -87,13 +90,35 @@ impl Default for Hub {
             typing_timers: DashMap::new(),
             away_timers: DashMap::new(),
             away_users: DashMap::new(),
+            trust_cache: DashMap::new(),
         }
     }
 }
 
+/// TTL for cached device trust state entries.
+const TRUST_CACHE_TTL: Duration = Duration::from_secs(60);
+
 impl Hub {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Look up a cached trust state. Returns `None` on miss or expiry.
+    fn cached_trust_state(&self, user_id: Uuid, device_id: Uuid) -> Option<DeviceTrustState> {
+        self.trust_cache
+            .get(&(user_id, device_id))
+            .filter(|entry| entry.1.elapsed() < TRUST_CACHE_TTL)
+            .map(|entry| entry.0.clone())
+    }
+
+    /// Insert or update a trust state in the cache.
+    fn cache_trust_state(&self, user_id: Uuid, device_id: Uuid, state: DeviceTrustState) {
+        self.trust_cache.insert((user_id, device_id), (state, Instant::now()));
+    }
+
+    /// Invalidate a cached trust state (called on approve/revoke).
+    pub fn invalidate_trust_cache(&self, user_id: Uuid, device_id: Uuid) {
+        self.trust_cache.remove(&(user_id, device_id));
     }
 
     /// Returns true if the user is within their message rate limit (5/sec, burst 20).
@@ -669,12 +694,20 @@ async fn live_device_trust_state(
     device_id: Uuid,
     state: &AppState,
 ) -> Option<DeviceTrustState> {
+    // Fast path: return cached trust state if within TTL
+    if let Some(cached) = state.hub.cached_trust_state(user_id, device_id) {
+        return Some(cached);
+    }
+
+    // Cache miss — query the database
     let device = crate::devices::get_device_for_user(user_id, device_id, state)
         .await
         .ok()?;
     if device.revoked_at.is_some() || device.trust_state == DeviceTrustState::Revoked {
+        state.hub.cache_trust_state(user_id, device_id, DeviceTrustState::Revoked);
         return None;
     }
+    state.hub.cache_trust_state(user_id, device_id, device.trust_state.clone());
     Some(device.trust_state)
 }
 
