@@ -13,12 +13,8 @@ describe('toast store', () => {
 	beforeEach(() => {
 		clearToasts();
 		vi.useFakeTimers();
-		vi.spyOn(globalThis.crypto, 'randomUUID')
-			.mockReturnValueOnce('toast-1')
-			.mockReturnValueOnce('toast-2')
-			.mockReturnValueOnce('toast-3')
-			.mockReturnValueOnce('toast-4')
-			.mockReturnValueOnce('toast-5');
+		let nextId = 1;
+		vi.spyOn(globalThis.crypto, 'randomUUID').mockImplementation(() => `toast-${nextId++}`);
 	});
 
 	it('uses default durations for success and warning toasts', () => {
@@ -52,22 +48,24 @@ describe('toast store', () => {
 	});
 
 	it('caps visible toasts to the most recent three entries', () => {
-		toast.info('One');
-		toast.info('Two');
-		toast.info('Three');
-		toast.info('Four');
+		const ids = [
+			toast.info('One'),
+			toast.info('Two'),
+			toast.info('Three'),
+			toast.info('Four'),
+		];
 
 		expect(get(toast)).toEqual([
-			{ id: 'toast-2', type: 'info', message: 'Two', duration: 4000 },
-			{ id: 'toast-3', type: 'info', message: 'Three', duration: 4000 },
-			{ id: 'toast-4', type: 'info', message: 'Four', duration: 4000 },
+			{ id: ids[1], type: 'info', message: 'Two', duration: 4000 },
+			{ id: ids[2], type: 'info', message: 'Three', duration: 4000 },
+			{ id: ids[3], type: 'info', message: 'Four', duration: 4000 },
 		]);
 	});
 
 	it('respects custom durations', () => {
-		toast.success('Short lived', 250);
+		const id = toast.success('Short lived', 250);
 		expect(get(toast)).toEqual([
-			{ id: 'toast-1', type: 'success', message: 'Short lived', duration: 250 },
+			{ id, type: 'success', message: 'Short lived', duration: 250 },
 		]);
 
 		vi.advanceTimersByTime(249);
