@@ -41,10 +41,10 @@ jobs:
 
       - name: Install Playwright browsers
         if: steps.pw-cache.outputs.cache-hit != 'true'
-        run: npx playwright install chromium
+        run: npx playwright install chromium webkit
 
       - name: Install Playwright system deps
-        run: npx playwright install-deps chromium
+        run: npx playwright install-deps chromium webkit
 
       - name: Run smoke tests
         run: npx playwright test --grep "@smoke"

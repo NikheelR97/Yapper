@@ -62,7 +62,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          go-version: "1.24"
+          go-version: "1.25"
 
       - name: Install OSV-Scanner
         run: go install github.com/google/osv-scanner/v2/cmd/osv-scanner@v2.3.3
