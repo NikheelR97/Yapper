@@ -282,6 +282,8 @@ pub async fn leave_server(user_id: Uuid, server_id: Uuid, state: &AppState) -> A
         .execute(state.db.pool())
         .await?;
 
+    state.hub.invalidate_membership(user_id, server_id);
+
     Ok(())
 }
 
@@ -439,6 +441,8 @@ pub(crate) async fn do_join(
     .await?;
 
     tx.commit().await?;
+
+    state.hub.invalidate_membership(user_id, server_id);
 
     Ok(serde_json::json!({ "status": "joined" }))
 }

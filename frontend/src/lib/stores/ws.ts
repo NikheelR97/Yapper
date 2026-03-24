@@ -48,6 +48,11 @@ const PROACTIVE_REAUTH_MS = 12 * 60 * 1000;
 
 const handlers = new Map<string, Set<MessageHandler>>();
 
+// Bounded queue for messages sent while the WS is reconnecting.
+// Flushed on next successful 'ready' event.
+const MAX_PENDING = 50;
+const pendingQueue: Record<string, unknown>[] = [];
+
 // Always-on handler: decrypt and store incoming SenderKey distributions.
 // Lazy-imported to keep @noble/curves (~150KB) and @noble/hashes (~50KB)
 // out of the main entry chunk.
@@ -77,11 +82,17 @@ export function onWsMessage(type: string, handler: MessageHandler): () => void {
 	return () => handlers.get(type)?.delete(handler);
 }
 
-/** Send a raw JSON frame over the WebSocket (fire-and-forget). */
+/** Send a raw JSON frame over the WebSocket.
+ *  If the socket is not open, queues the message (up to MAX_PENDING) for
+ *  delivery on the next successful reconnect. */
 export function wsSend(msg: Record<string, unknown>): boolean {
 	if (socket?.readyState === WebSocket.OPEN) {
 		socket.send(JSON.stringify(msg));
 		return true;
+	}
+	// Queue for delivery after reconnect
+	if (pendingQueue.length < MAX_PENDING) {
+		pendingQueue.push(msg);
 	}
 	return false;
 }
@@ -166,6 +177,11 @@ function doConnect(): void {
 				reconnectDelay = 1000;
 				startPing(ws);
 				scheduleProactiveReauth(ws);
+				// Flush any messages queued during reconnection
+				while (pendingQueue.length > 0) {
+					const queued = pendingQueue.shift()!;
+					ws.send(JSON.stringify(queued));
+				}
 				// Notify reconnect listeners so stale stores can refresh
 				handlers.get('_reconnected')?.forEach((h) => h({}));
 				break;

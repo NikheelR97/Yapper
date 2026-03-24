@@ -419,18 +419,15 @@ async fn list_messages_v1_for_user(
 
     let limit = q.limit.unwrap_or(50).min(100);
 
+    // V1 legacy path: compute msg_num via ROW_NUMBER() window function
+    // instead of O(n^2) scalar subquery.
     let rows = if let Some(before_id) = q.before {
-        // Cursor-based pagination: messages older than `before`
         sqlx::query(
             r#"
             SELECT id, conversation_id, sender_id, ciphertext, ek_public, opk_id,
-                   COALESCE(
-                       (SELECT COUNT(*) FROM messages m2
-                        WHERE m2.conversation_id = $1 AND m2.created_at < m.created_at),
-                       0
-                   ) AS msg_num,
+                   (ROW_NUMBER() OVER (ORDER BY created_at) - 1) AS msg_num,
                    created_at
-            FROM messages m
+            FROM messages
             WHERE conversation_id = $1
               AND deleted_at IS NULL
               AND created_at < (SELECT created_at FROM messages WHERE id = $2)
@@ -447,13 +444,9 @@ async fn list_messages_v1_for_user(
         sqlx::query(
             r#"
             SELECT id, conversation_id, sender_id, ciphertext, ek_public, opk_id,
-                   COALESCE(
-                       (SELECT COUNT(*) FROM messages m2
-                        WHERE m2.conversation_id = $1 AND m2.created_at < m.created_at),
-                       0
-                   ) AS msg_num,
+                   (ROW_NUMBER() OVER (ORDER BY created_at) - 1) AS msg_num,
                    created_at
-            FROM messages m
+            FROM messages
             WHERE conversation_id = $1 AND deleted_at IS NULL
             ORDER BY created_at DESC
             LIMIT $2

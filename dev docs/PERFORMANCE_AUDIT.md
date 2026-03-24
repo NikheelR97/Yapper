@@ -709,26 +709,26 @@ Trades `serde_json::to_string()` x N for `String::clone()` x N — ~10x reductio
 
 ## Prioritized Fix List
 
-| Priority | Finding | Severity | Estimated Impact | Effort |
-|----------|---------|----------|------------------|--------|
-| 1 | BE-3: Neon keepalive + test_before_acquire | CRITICAL | Eliminates 500ms–2s cold start | 30 min |
-| 2 | BE-1: Cache device trust state | CRITICAL | Saves 2–3 DB queries per WS message | 2 hrs |
-| 3 | BE-2: Bound IP rate limiter | CRITICAL | Prevents OOM on 256MB VM | 1 hr |
-| 4 | FE-4: Single store update for batch decrypt | HIGH | 20x fewer DOM reconciliations | 30 min |
-| 5 | FE-5: Fix presence store redundancy | HIGH | 10x fewer store subscriptions | 30 min |
-| 6 | FE-2: Parallelize media encrypt + URL fetch | HIGH | 30–50% faster upload initiation | 15 min |
-| 7 | FE-3: Lazy-import signal crypto | HIGH | 200KB smaller initial bundle | 1 hr |
-| 8 | FE-1: Virtual scroll for MessageList | CRITICAL | 200 -> ~40 DOM nodes | 4 hrs |
-| 9 | BE-4: Cache membership/participants | HIGH | 2 fewer DB queries per message | 3 hrs |
-| 10 | INFRA-2: Static asset cache headers | MEDIUM | Eliminates revalidation RTT | 15 min |
-| 11 | WS-1: Proactive token refresh | MEDIUM | Prevents re-auth degradation window | 30 min |
-| 12 | FE-6: Memoize emoji token rendering | MEDIUM | Eliminates redundant parsing | 1 hr |
-| 13 | BE-5: Canvas handler server_id filter | MEDIUM | N->1 store updates per event | 15 min |
-| 14 | INFRA-1: Edge cache for explore APIs | MEDIUM | ~200ms latency reduction globally | 2 hrs |
-| 15 | DB-2: Remove V1 legacy msg_num subquery | MEDIUM | O(n^2) -> O(n) query | 30 min |
-| 16 | WS-2: Outbound message buffer | MEDIUM | No lost typing indicators | 30 min |
-| 17 | BE-6: Upload timestamp cleanup | LOW | Minor memory hygiene | 10 min |
-| 18 | BE-8: Pre-serialize broadcast messages | LOW | ~500us saved per fan-out | 1 hr |
+| Priority | Finding | Severity | Estimated Impact | Effort | Status |
+|----------|---------|----------|------------------|--------|--------|
+| 1 | BE-3: Neon keepalive + test_before_acquire | CRITICAL | Eliminates 500ms–2s cold start | 30 min | DONE |
+| 2 | BE-1: Cache device trust state | CRITICAL | Saves 2–3 DB queries per WS message | 2 hrs | DONE |
+| 3 | BE-2: Bound IP rate limiter | CRITICAL | Prevents OOM on 256MB VM | 1 hr | DONE |
+| 4 | FE-4: Single store update for batch decrypt | HIGH | 20x fewer DOM reconciliations | 30 min | DONE |
+| 5 | FE-5: Fix presence store redundancy | HIGH | 10x fewer store subscriptions | 30 min | DONE |
+| 6 | FE-2: Parallelize media encrypt + URL fetch | HIGH | 30–50% faster upload initiation | 15 min | DONE |
+| 7 | FE-3: Lazy-import signal crypto | HIGH | 200KB smaller initial bundle | 1 hr | DONE |
+| 8 | FE-1: Virtual scroll for MessageList | CRITICAL | 200 -> ~40 DOM nodes | 4 hrs | DONE |
+| 9 | BE-4: Cache membership/participants | HIGH | 2 fewer DB queries per message | 3 hrs | DONE |
+| 10 | INFRA-2: Static asset cache headers | MEDIUM | Eliminates revalidation RTT | 15 min | DONE |
+| 11 | WS-1: Proactive token refresh | MEDIUM | Prevents re-auth degradation window | 30 min | DONE |
+| 12 | FE-6: Memoize emoji token rendering | MEDIUM | Eliminates redundant parsing | 1 hr | DONE |
+| 13 | BE-5: Canvas handler server_id filter | MEDIUM | N->1 store updates per event | 15 min | DONE |
+| 14 | INFRA-1: Edge cache for explore APIs | MEDIUM | ~200ms latency reduction globally | 2 hrs | DONE |
+| 15 | DB-2: Remove V1 legacy msg_num subquery | MEDIUM | O(n^2) -> O(n) query | 30 min | DONE |
+| 16 | WS-2: Outbound message buffer | MEDIUM | No lost typing indicators | 30 min | DONE |
+| 17 | BE-6: Upload timestamp cleanup | LOW | Minor memory hygiene | 10 min | DONE |
+| 18 | BE-8: Pre-serialize broadcast messages | LOW | ~500us saved per fan-out | 1 hr | DONE |
 
 ---
 

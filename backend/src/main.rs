@@ -69,7 +69,7 @@ async fn main() -> anyhow::Result<()> {
         .allow_burst(env_non_zero_u32("API_RATE_LIMIT_BURST", 20));
     let rate_limiter: IpRateLimiter = Arc::new(governor::RateLimiter::keyed(quota));
 
-    // GC task: shrink the per-IP rate limiter every 5 minutes to prevent unbounded
+    // GC task: shrink all keyed rate limiters every 5 minutes to prevent unbounded
     // memory growth from rotating IPs (governor's DefaultKeyedStateStore never evicts).
     {
         let rl = Arc::clone(&rate_limiter);
@@ -79,6 +79,7 @@ async fn main() -> anyhow::Result<()> {
             loop {
                 interval.tick().await;
                 rl.retain_recent();
+                yapper_server::auth::handlers::gc_auth_rate_limiters();
                 tracing::debug!("Rate limiter GC: retained recent entries");
             }
         });

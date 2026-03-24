@@ -100,6 +100,14 @@ static EMAIL_VERIFY_IP_LIMITER: once_cell::sync::Lazy<KeyedLimiter<IpAddr>> =
         )
     });
 
+/// Evict stale entries from the auth-related keyed rate limiters.
+/// Called periodically from the global GC task to prevent unbounded memory growth.
+pub fn gc_auth_rate_limiters() {
+    PASSWORD_RESET_IP_LIMITER.retain_recent();
+    PASSWORD_RESET_EMAIL_LIMITER.retain_recent();
+    EMAIL_VERIFY_IP_LIMITER.retain_recent();
+}
+
 // ─── Register ─────────────────────────────────────────────────────────────────
 
 pub async fn register(

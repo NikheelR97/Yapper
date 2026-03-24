@@ -78,6 +78,13 @@ pub struct Hub {
     /// Cached device trust states — avoids a DB query per inbound WS message.
     /// Entries expire after 60 seconds and are invalidated on approve/revoke.
     trust_cache: DashMap<(Uuid, Uuid), (DeviceTrustState, Instant)>,
+    /// Cached DM conversation → recipient_id (avoids 2 DB queries per DM send).
+    /// Keyed by (conversation_id, sender_id) → recipient_id.
+    dm_recipient_cache: DashMap<(Uuid, Uuid), (Uuid, Instant)>,
+    /// Cached channel_id → server_id (avoids 1 DB query per channel send).
+    channel_server_cache: DashMap<Uuid, (Uuid, Instant)>,
+    /// Cached (user_id, server_id) → is_member (avoids 1 DB query per channel send).
+    membership_cache: DashMap<(Uuid, Uuid), (bool, Instant)>,
 }
 
 impl Default for Hub {
@@ -91,12 +98,17 @@ impl Default for Hub {
             away_timers: DashMap::new(),
             away_users: DashMap::new(),
             trust_cache: DashMap::new(),
+            dm_recipient_cache: DashMap::new(),
+            channel_server_cache: DashMap::new(),
+            membership_cache: DashMap::new(),
         }
     }
 }
 
 /// TTL for cached device trust state entries.
 const TRUST_CACHE_TTL: Duration = Duration::from_secs(60);
+/// TTL for cached DM recipient and channel membership entries.
+const MEMBERSHIP_CACHE_TTL: Duration = Duration::from_secs(300);
 
 impl Hub {
     pub fn new() -> Self {
@@ -119,6 +131,52 @@ impl Hub {
     /// Invalidate a cached trust state (called on approve/revoke).
     pub fn invalidate_trust_cache(&self, user_id: Uuid, device_id: Uuid) {
         self.trust_cache.remove(&(user_id, device_id));
+    }
+
+    /// Look up a cached DM recipient for a conversation + sender pair.
+    fn cached_dm_recipient(&self, conversation_id: Uuid, sender_id: Uuid) -> Option<Uuid> {
+        self.dm_recipient_cache
+            .get(&(conversation_id, sender_id))
+            .filter(|e| e.1.elapsed() < MEMBERSHIP_CACHE_TTL)
+            .map(|e| e.0)
+    }
+
+    /// Cache a DM recipient lookup result.
+    fn cache_dm_recipient(&self, conversation_id: Uuid, sender_id: Uuid, recipient_id: Uuid) {
+        self.dm_recipient_cache
+            .insert((conversation_id, sender_id), (recipient_id, Instant::now()));
+    }
+
+    /// Look up a cached channel → server_id mapping.
+    fn cached_channel_server(&self, channel_id: Uuid) -> Option<Uuid> {
+        self.channel_server_cache
+            .get(&channel_id)
+            .filter(|e| e.1.elapsed() < MEMBERSHIP_CACHE_TTL)
+            .map(|e| e.0)
+    }
+
+    /// Cache a channel → server_id mapping.
+    fn cache_channel_server(&self, channel_id: Uuid, server_id: Uuid) {
+        self.channel_server_cache.insert(channel_id, (server_id, Instant::now()));
+    }
+
+    /// Look up cached server membership.
+    fn cached_membership(&self, user_id: Uuid, server_id: Uuid) -> Option<bool> {
+        self.membership_cache
+            .get(&(user_id, server_id))
+            .filter(|e| e.1.elapsed() < MEMBERSHIP_CACHE_TTL)
+            .map(|e| e.0)
+    }
+
+    /// Cache a server membership check result.
+    fn cache_membership(&self, user_id: Uuid, server_id: Uuid, is_member: bool) {
+        self.membership_cache
+            .insert((user_id, server_id), (is_member, Instant::now()));
+    }
+
+    /// Invalidate membership cache for a user in a server (on join/leave).
+    pub fn invalidate_membership(&self, user_id: Uuid, server_id: Uuid) {
+        self.membership_cache.remove(&(user_id, server_id));
     }
 
     /// Returns true if the user is within their message rate limit (5/sec, burst 20).
@@ -398,6 +456,10 @@ pub enum WsOutbound {
         message: String,
     },
     Pong,
+    /// Pre-serialized JSON string — avoids repeated serde_json::to_string()
+    /// during high-fanout broadcasts (channel messages, typing indicators).
+    #[serde(skip)]
+    PreSerialized(Arc<str>),
 }
 
 // ─── Shared helpers ──────────────────────────────────────────────────────────
@@ -498,9 +560,12 @@ fn spawn_ws_send_task(
                 }
                 msg = rx.recv() => {
                     let Some(msg) = msg else { break; };
-                    let Ok(text) = serde_json::to_string(&msg) else {
-                        tracing::error!("WS serialize error");
-                        continue;
+                    let text = match msg {
+                        WsOutbound::PreSerialized(ref s) => s.to_string(),
+                        _ => match serde_json::to_string(&msg) {
+                            Ok(t) => t,
+                            Err(_) => { tracing::error!("WS serialize error"); continue; }
+                        },
                     };
                     if sender.send(Message::Text(text)).await.is_err() { break; }
                 }
@@ -1136,6 +1201,11 @@ async fn resolve_dm_recipient(
     state: &AppState,
     tx: &ConnTx,
 ) -> Option<Uuid> {
+    // Fast path: return cached recipient if within TTL
+    if let Some(cached) = state.hub.cached_dm_recipient(conversation_id, sender_id) {
+        return Some(cached);
+    }
+
     let is_participant =
         sqlx::query("SELECT 1 FROM dm_participants WHERE conversation_id = $1 AND user_id = $2")
             .bind(conversation_id)
@@ -1183,6 +1253,7 @@ async fn resolve_dm_recipient(
         return None;
     }
 
+    state.hub.cache_dm_recipient(conversation_id, sender_id, recipient_id);
     Some(recipient_id)
 }
 
@@ -1338,30 +1409,45 @@ async fn resolve_channel_membership(
     state: &AppState,
     tx: &ConnTx,
 ) -> Option<Uuid> {
-    let server_row = sqlx::query("SELECT server_id FROM channels WHERE id = $1")
-        .bind(channel_id)
-        .fetch_optional(state.db.pool())
-        .await
-        .ok()
-        .flatten();
-
-    let server_id: Uuid = match server_row.and_then(|r| r.try_get("server_id").ok()) {
-        Some(id) => id,
-        None => {
-            send_ws_error(tx, 4006, "Channel not found");
-            return None;
-        }
-    };
-
-    let is_member =
-        sqlx::query("SELECT 1 FROM server_memberships WHERE user_id = $1 AND server_id = $2")
-            .bind(sender_id)
-            .bind(server_id)
+    // Fast path: look up channel → server_id from cache
+    let server_id = if let Some(cached) = state.hub.cached_channel_server(channel_id) {
+        cached
+    } else {
+        let server_row = sqlx::query("SELECT server_id FROM channels WHERE id = $1")
+            .bind(channel_id)
             .fetch_optional(state.db.pool())
             .await
             .ok()
-            .flatten()
-            .is_some();
+            .flatten();
+
+        match server_row.and_then(|r| r.try_get("server_id").ok()) {
+            Some(id) => {
+                state.hub.cache_channel_server(channel_id, id);
+                id
+            }
+            None => {
+                send_ws_error(tx, 4006, "Channel not found");
+                return None;
+            }
+        }
+    };
+
+    // Fast path: look up membership from cache
+    let is_member = if let Some(cached) = state.hub.cached_membership(sender_id, server_id) {
+        cached
+    } else {
+        let found =
+            sqlx::query("SELECT 1 FROM server_memberships WHERE user_id = $1 AND server_id = $2")
+                .bind(sender_id)
+                .bind(server_id)
+                .fetch_optional(state.db.pool())
+                .await
+                .ok()
+                .flatten()
+                .is_some();
+        state.hub.cache_membership(sender_id, server_id, found);
+        found
+    };
 
     if !is_member {
         send_ws_error(tx, 4006, "Not a member of this server");
@@ -1483,14 +1569,19 @@ async fn fanout_to_channel_members(
             }
         };
 
+    // Pre-serialize once for all recipients instead of serializing per-connection.
+    let wrapper = WsOutbound::Message { payload };
+    let json: Arc<str> = match serde_json::to_string(&wrapper) {
+        Ok(s) => Arc::from(s),
+        Err(e) => {
+            tracing::error!("Failed to serialize fanout message: {e}");
+            return;
+        }
+    };
+
     for m in member_rows.iter().take(MAX_FANOUT_MEMBERS as usize) {
         if let Ok(uid) = m.try_get::<Uuid, _>("user_id") {
-            state.hub.send_to_user(
-                &uid,
-                WsOutbound::Message {
-                    payload: payload.clone(),
-                },
-            );
+            state.hub.send_to_user(&uid, WsOutbound::PreSerialized(Arc::clone(&json)));
         }
     }
 }
