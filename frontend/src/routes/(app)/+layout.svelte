@@ -639,26 +639,26 @@
     unregisterCanvasHandler = registerCanvasHandler();
     unregisterEmojiHandler = registerEmojiHandler();
     fetchConversations().catch((err) => {
-      console.error('[boot] Failed to fetch conversations:', err);
-      toast.error('Failed to load conversations');
+      console.error("[boot] Failed to fetch conversations:", err);
+      toast.error("Failed to load conversations");
     });
     fetchServers().catch((err) => {
-      console.error('[boot] Failed to fetch servers:', err);
-      toast.error('Failed to load servers');
+      console.error("[boot] Failed to fetch servers:", err);
+      toast.error("Failed to load servers");
     });
 
-    unregisterReconnectHandler = onWsMessage('_reconnected', () => {
+    unregisterReconnectHandler = onWsMessage("_reconnected", () => {
       fetchConversations().catch((err) => {
-        console.warn('[reconnect] Failed to refresh conversations:', err);
+        console.warn("[reconnect] Failed to refresh conversations:", err);
       });
       fetchServers().catch((err) => {
-        console.warn('[reconnect] Failed to refresh servers:', err);
+        console.warn("[reconnect] Failed to refresh servers:", err);
       });
     });
 
     stopScreenTimeTracker = startYapperUsageTracker();
     reportScreenTimeUsage().catch((err) => {
-      console.warn('[screentime] Usage report failed:', err);
+      console.warn("[screentime] Usage report failed:", err);
     });
 
     initUpdater();
@@ -683,7 +683,7 @@
     stopScreenTimeTracker?.();
     stopScreenTimeTracker = null;
     reportScreenTimeUsage().catch((err) => {
-      console.warn('[screentime] Final usage report failed:', err);
+      console.warn("[screentime] Final usage report failed:", err);
     });
     wsDisconnect();
     servicesStarted = false;
@@ -928,7 +928,9 @@
 
     pendingRestoreBusy = true;
     try {
-      const restored = await restoreKeys(pin, sourceDeviceId);
+      const restored = await restoreKeys(pin, sourceDeviceId, {
+        currentDeviceId: deviceId,
+      });
       if (!restored) {
         toast.error("No encrypted backup found for that device.");
         return;

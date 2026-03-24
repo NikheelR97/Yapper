@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, Query, State},
+    extract::{DefaultBodyLimit, Path, Query, State},
     routing::get,
     Json, Router,
 };
@@ -11,8 +11,9 @@ use uuid::Uuid;
 
 use crate::{
     auth::{AuthDevice, AuthUser},
+    constants,
     error::{AppError, AppResult},
-    AppState,
+    users, AppState,
 };
 
 pub fn router() -> Router<AppState> {
@@ -25,12 +26,18 @@ pub fn router() -> Router<AppState> {
 }
 
 pub fn v2_router() -> Router<AppState> {
+    let message_routes = Router::new()
+        .route("/:id/messages", get(list_messages_v2).post(send_message_v2))
+        .layer(DefaultBodyLimit::max(
+            crate::constants::MAX_MESSAGE_REQUEST_BODY_SIZE,
+        ));
+
     Router::new()
         .route(
             "/",
             axum::routing::post(create_or_get_conversation_v2).get(list_conversations_v2),
         )
-        .route("/:id/messages", get(list_messages_v2).post(send_message_v2))
+        .merge(message_routes)
 }
 
 // ─── Create or Get DM Conversation ───────────────────────────────────────────
@@ -110,6 +117,8 @@ async fn create_or_get_conversation_for_user(
             created_at,
         }));
     }
+
+    users::require_dm_access(user_id, req.peer_id, &state).await?;
 
     // Create a new conversation
     let mut tx = state.db.pool().begin().await?;
@@ -650,6 +659,9 @@ async fn insert_dm_envelope(
     let ciphertext = BASE64
         .decode(&e.ciphertext)
         .map_err(|_| AppError::BadRequest("Invalid ciphertext encoding".into()))?;
+    if ciphertext.is_empty() || ciphertext.len() > constants::MAX_MESSAGE_LENGTH {
+        return Err(AppError::BadRequest("Ciphertext exceeds size limit".into()));
+    }
     let ek_public = e
         .ephemeral_key
         .as_deref()

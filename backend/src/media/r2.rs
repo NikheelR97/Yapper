@@ -68,6 +68,25 @@ pub fn r2_bucket_opt() -> Option<&'static str> {
     R2_BUCKET.get().map(|s| s.as_str())
 }
 
+// ─── Object deletion ─────────────────────────────────────────────────────────
+
+/// Delete a single object from R2. No-op if R2 is not configured.
+pub async fn delete_object(r2_key: &str) -> anyhow::Result<()> {
+    let (Some(client), Some(bucket)) = (r2_client_opt(), r2_bucket_opt()) else {
+        return Ok(());
+    };
+
+    client
+        .delete_object()
+        .bucket(bucket)
+        .key(r2_key)
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("R2 delete_object error: {e}"))?;
+
+    Ok(())
+}
+
 // ─── Upload URL generation ────────────────────────────────────────────────────
 
 /// Info returned to the client after generating a pre-signed upload URL.
@@ -81,8 +100,9 @@ pub struct UploadTarget {
 /// Object key format: `media/{media_type}/{uuid}.bin`
 /// The `.bin` extension is intentional — the file content is AES-encrypted;
 /// revealing the true extension would leak the media type in storage logs.
-pub async fn generate_upload_url(media_type: &str) -> AppResult<UploadTarget> {
+pub async fn generate_upload_url(media_type: &str, content_length: u64) -> AppResult<UploadTarget> {
     debug_assert!(ALLOWED_MEDIA_TYPES.contains(&media_type));
+    debug_assert!(content_length > 0);
 
     let object_key = format!("media/{}/{}.bin", media_type, Uuid::new_v4());
 
@@ -96,6 +116,7 @@ pub async fn generate_upload_url(media_type: &str) -> AppResult<UploadTarget> {
         .bucket(r2_bucket())
         .key(&object_key)
         .content_type("application/octet-stream")
+        .content_length(content_length as i64)
         .presigned(presigning_config)
         .await
         .map_err(|e| {

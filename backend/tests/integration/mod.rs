@@ -4,6 +4,7 @@
 //! database (TEST_DATABASE_URL), registering users, and making authenticated
 //! requests via `axum_test::TestServer`.
 
+use axum::http::{header::AUTHORIZATION, HeaderName, HeaderValue};
 use axum_test::TestServer;
 use governor::{Quota, RateLimiter};
 use serde_json::Value;
@@ -22,10 +23,15 @@ use yapper_server::{
 /// Reads `TEST_DATABASE_URL` from the environment (or falls back to
 /// `DATABASE_URL`). Each test should use an isolated schema or run with
 /// `serial_test::serial` to prevent race conditions.
-pub async fn spawn_test_server() -> TestServer {
-    let db_url = std::env::var("TEST_DATABASE_URL")
-        .or_else(|_| std::env::var("DATABASE_URL"))
-        .expect("TEST_DATABASE_URL or DATABASE_URL must be set for integration tests");
+pub async fn build_test_state() -> Option<AppState> {
+    let db_url = match std::env::var("TEST_DATABASE_URL").or_else(|_| std::env::var("DATABASE_URL"))
+    {
+        Ok(value) => value,
+        Err(_) => {
+            eprintln!("Skipping integration tests: TEST_DATABASE_URL or DATABASE_URL is not set");
+            return None;
+        }
+    };
 
     let db = Database::connect(&db_url)
         .await
@@ -40,12 +46,15 @@ pub async fn spawn_test_server() -> TestServer {
 
     // JWT keys: read from env (JWT_PRIVATE_KEY / JWT_PRIVATE_KEY_PATH).
     // Integration tests require these to be set in the test environment.
-    let jwt_keys = Arc::new(
-        JwtKeys::from_env()
-            .expect("JWT_PRIVATE_KEY or JWT_PRIVATE_KEY_PATH must be set for integration tests"),
-    );
+    let jwt_keys = match JwtKeys::from_env() {
+        Ok(keys) => Arc::new(keys),
+        Err(error) => {
+            eprintln!("Skipping integration tests: {error}");
+            return None;
+        }
+    };
 
-    let state = AppState {
+    Some(AppState {
         db,
         hub,
         rate_limiter,
@@ -54,9 +63,13 @@ pub async fn spawn_test_server() -> TestServer {
         login_limiter: Arc::new(LoginRateLimiter::new()),
         oauth_states: Arc::new(OAuthStateStore::new()),
         discord_import_states: Arc::new(DiscordImportStateStore::new()),
-    };
+        http_client: reqwest::Client::new(),
+    })
+}
 
-    TestServer::new(build_router(state)).expect("Failed to create test server")
+pub async fn spawn_test_server() -> Option<TestServer> {
+    let state = build_test_state().await?;
+    Some(TestServer::new(build_router(state)).expect("Failed to create test server"))
 }
 
 /// Register a new user and return their (user_id, access_token, csrf_token).
@@ -123,6 +136,23 @@ pub async fn login_test_user(
     (user_id, access_token, csrf_token)
 }
 
+pub fn bearer_header(token: &str) -> HeaderValue {
+    HeaderValue::from_str(&format!("Bearer {token}")).expect("valid bearer header")
+}
+
+pub fn csrf_header_name() -> HeaderName {
+    HeaderName::from_static("x-csrf-token")
+}
+
+pub fn csrf_header_value(token: &str) -> HeaderValue {
+    HeaderValue::from_str(token).expect("valid csrf header")
+}
+
+pub fn authorization_header_name() -> HeaderName {
+    AUTHORIZATION
+}
+
+pub mod account;
 pub mod auth;
 pub mod devices;
 pub mod keys;

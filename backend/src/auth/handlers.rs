@@ -307,11 +307,17 @@ pub async fn refresh(
     // Hash the presented refresh token and look it up
     let token_hash = sha256_hex(&refresh_token);
 
-    let session = sqlx::query!(
+    // HIGH-003: Atomic UPDATE … WHERE revoked_at IS NULL RETURNING to prevent
+    // TOCTOU race conditions on concurrent refresh requests. Only one concurrent
+    // request can successfully match and atomically revoke the token.
+    let revoked = sqlx::query!(
         r#"
-        SELECT id, revoked_at, family_id
-        FROM sessions
-        WHERE token_hash = $1 AND user_id = $2
+        UPDATE sessions
+        SET revoked_at = NOW()
+        WHERE token_hash = $1
+          AND user_id = $2
+          AND revoked_at IS NULL
+        RETURNING id, family_id
         "#,
         token_hash,
         claims.sub,
@@ -319,30 +325,36 @@ pub async fn refresh(
     .fetch_optional(pool)
     .await?;
 
-    match session {
-        None => return Err(AppError::Unauthorized),
-        Some(s) if s.revoked_at.is_some() => {
-            // Reuse detection: revoked token presented → invalidate entire family
-            sqlx::query!(
-                "UPDATE sessions SET revoked_at = NOW() WHERE family_id = $1",
-                s.family_id,
-            )
-            .execute(pool)
-            .await?;
-            tracing::warn!(
-                "Refresh token reuse detected for user {}. Family {} invalidated.",
+    let family_id = match revoked {
+        Some(s) => s.family_id,
+        None => {
+            // Token was not found or was already revoked.
+            // Check if the token exists at all — if so, this is reuse detection.
+            let exists = sqlx::query!(
+                "SELECT family_id FROM sessions WHERE token_hash = $1 AND user_id = $2",
+                token_hash,
                 claims.sub,
-                s.family_id
-            );
-            return Err(AppError::Unauthorized);
-        }
-        Some(s) => {
-            // Revoke current token (rotation)
-            sqlx::query!("UPDATE sessions SET revoked_at = NOW() WHERE id = $1", s.id)
+            )
+            .fetch_optional(pool)
+            .await?;
+
+            if let Some(row) = exists {
+                // Reuse detected: revoked token presented → invalidate entire family
+                sqlx::query!(
+                    "UPDATE sessions SET revoked_at = NOW() WHERE family_id = $1 AND revoked_at IS NULL",
+                    row.family_id,
+                )
                 .execute(pool)
                 .await?;
+                tracing::warn!(
+                    "Refresh token reuse detected for user {}. Family {} invalidated.",
+                    claims.sub,
+                    row.family_id
+                );
+            }
+            return Err(AppError::Unauthorized);
         }
-    }
+    };
 
     // Fetch user for new token
     let user = sqlx::query_as!(
@@ -362,7 +374,7 @@ pub async fn refresh(
         &state.jwt_keys,
     )?;
     let new_refresh =
-        generate_refresh_token(user.id, claims.family_id, claims.device_id, &state.jwt_keys)?;
+        generate_refresh_token(user.id, family_id, claims.device_id, &state.jwt_keys)?;
 
     let exp = (Utc::now() + chrono::Duration::seconds(REFRESH_TTL_SECS)).timestamp();
     store_session_with_claims(
@@ -370,7 +382,7 @@ pub async fn refresh(
         user.id,
         &new_refresh,
         claims.device_id,
-        claims.family_id,
+        family_id,
         exp,
     )
     .await?;

@@ -53,7 +53,7 @@ fn check_upload_rate(user_id: Uuid) -> AppResult<()> {
 pub struct UploadUrlReq {
     media_type: String,
     /// Client-declared content length in bytes (server enforces tier-based cap).
-    content_length: Option<u64>,
+    content_length: u64,
 }
 
 #[derive(Serialize)]
@@ -114,32 +114,34 @@ pub async fn upload_url(
         constants::MAX_UPLOAD_SIZE
     };
 
-    if let Some(size) = req.content_length {
-        if size > max_size {
-            return Err(AppError::BadRequest(format!(
-                "File too large. Maximum upload size is {} MB",
-                max_size / (1024 * 1024)
-            )));
-        }
+    if req.content_length == 0 {
+        return Err(AppError::BadRequest(
+            "content_length must be greater than zero".into(),
+        ));
     }
 
-    let target = r2::generate_upload_url(&media_type).await?;
+    if req.content_length > max_size {
+        return Err(AppError::BadRequest(format!(
+            "File too large. Maximum upload size is {} MB",
+            max_size / (1024 * 1024)
+        )));
+    }
+
+    let target = r2::generate_upload_url(&media_type, req.content_length).await?;
 
     // Track the upload for quota/GC (best-effort — don't fail the request)
-    if let Some(size) = req.content_length {
-        if let Err(e) = sqlx::query(
-            "INSERT INTO media_uploads (user_id, object_key, media_type, size_bytes) \
-             VALUES ($1, $2, $3, $4)",
-        )
-        .bind(auth.user_id)
-        .bind(&target.object_key)
-        .bind(&media_type)
-        .bind(size as i64)
-        .execute(_state.db.pool())
-        .await
-        {
-            tracing::warn!(user_id = %auth.user_id, "Failed to track media upload: {e}");
-        }
+    if let Err(e) = sqlx::query(
+        "INSERT INTO media_uploads (user_id, object_key, media_type, size_bytes) \
+         VALUES ($1, $2, $3, $4)",
+    )
+    .bind(auth.user_id)
+    .bind(&target.object_key)
+    .bind(&media_type)
+    .bind(req.content_length as i64)
+    .execute(_state.db.pool())
+    .await
+    {
+        tracing::warn!(user_id = %auth.user_id, "Failed to track media upload: {e}");
     }
 
     Ok(Json(UploadUrlResp {

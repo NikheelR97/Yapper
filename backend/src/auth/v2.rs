@@ -266,11 +266,12 @@ async fn refresh(
     let device_id = claims.device_id.ok_or(AppError::Unauthorized)?;
     let token_hash = sha256_hex(&refresh_token);
 
-    let session = sqlx::query(
+    let revoked = sqlx::query(
         r#"
-        SELECT id, revoked_at, family_id
-        FROM sessions
-        WHERE token_hash = $1 AND user_id = $2 AND device_id = $3
+        UPDATE sessions
+        SET revoked_at = NOW()
+        WHERE token_hash = $1 AND user_id = $2 AND device_id = $3 AND revoked_at IS NULL
+        RETURNING family_id
         "#,
     )
     .bind(&token_hash)
@@ -279,31 +280,38 @@ async fn refresh(
     .fetch_optional(state.db.pool())
     .await?;
 
-    match session {
-        None => return Err(AppError::Unauthorized),
-        Some(ref s)
-            if s.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("revoked_at")?
-                .is_some() =>
-        {
-            let family_id: Uuid = s.try_get("family_id")?;
-            sqlx::query!(
-                "UPDATE sessions SET revoked_at = NOW() WHERE family_id = $1",
-                family_id
+    let family_id = match revoked {
+        Some(row) => row.try_get("family_id")?,
+        None => {
+            let existing = sqlx::query(
+                r#"
+                SELECT family_id
+                FROM sessions
+                WHERE token_hash = $1 AND user_id = $2 AND device_id = $3
+                "#,
             )
-            .execute(state.db.pool())
+            .bind(&token_hash)
+            .bind(claims.sub)
+            .bind(device_id)
+            .fetch_optional(state.db.pool())
             .await?;
+
+            if let Some(row) = existing {
+                let family_id: Uuid = row.try_get("family_id")?;
+                sqlx::query("UPDATE sessions SET revoked_at = NOW() WHERE family_id = $1 AND revoked_at IS NULL")
+                    .bind(family_id)
+                    .execute(state.db.pool())
+                    .await?;
+                tracing::warn!(
+                    "Refresh token reuse detected for user {} device {:?}. Family {} invalidated.",
+                    claims.sub,
+                    device_id,
+                    family_id
+                );
+            }
             return Err(AppError::Unauthorized);
         }
-        Some(s) => {
-            let session_id: Uuid = s.try_get("id")?;
-            sqlx::query!(
-                "UPDATE sessions SET revoked_at = NOW() WHERE id = $1",
-                session_id
-            )
-            .execute(state.db.pool())
-            .await?;
-        }
-    }
+    };
 
     let user = sqlx::query_as::<_, UserDto>(
         "SELECT id, username, display_name, avatar_url, account_type, is_premium
@@ -326,7 +334,7 @@ async fn refresh(
         &state.jwt_keys,
     )?;
     let refresh_token =
-        generate_refresh_token(user.id, claims.family_id, Some(device.id), &state.jwt_keys)?;
+        generate_refresh_token(user.id, family_id, Some(device.id), &state.jwt_keys)?;
     let exp = (chrono::Utc::now() + chrono::Duration::seconds(super::service::REFRESH_TTL_SECS))
         .timestamp();
     store_session_with_claims(
@@ -334,7 +342,7 @@ async fn refresh(
         user.id,
         &refresh_token,
         Some(device.id),
-        claims.family_id,
+        family_id,
         exp,
     )
     .await?;

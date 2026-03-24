@@ -8,6 +8,11 @@
 /// 4000 characters of plaintext ≈ ~5400 bytes base64; we cap at the wire level.
 pub const MAX_MESSAGE_LENGTH: usize = 8_000;
 
+/// Maximum HTTP request body size for message submission routes.
+/// This comfortably fits the largest supported multi-device DM payload while
+/// rejecting oversized JSON before deserialization.
+pub const MAX_MESSAGE_REQUEST_BODY_SIZE: usize = 256 * 1024;
+
 /// Maximum plaintext message length in characters (for validation messages).
 pub const MAX_MESSAGE_CHARS: usize = 4_000;
 

@@ -3,6 +3,7 @@ use axum::{
         ws::{Message, WebSocket, WebSocketUpgrade},
         State,
     },
+    http::StatusCode,
     response::IntoResponse,
 };
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
@@ -16,6 +17,7 @@ use governor::{
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use std::{
+    net::IpAddr,
     num::NonZeroU32,
     sync::Arc,
     time::{Duration, Instant},
@@ -500,9 +502,48 @@ fn check_rate_limit(state: &AppState, user_id: &Uuid, tx: &ConnTx) -> bool {
     true
 }
 
+/// HIGH-002: Per-IP rate limiter for WebSocket upgrades.
+/// 10 upgrades/sec per IP, burst of 20. Prevents connection-flood DoS
+/// against the 256MB VM where each unauthenticated connection holds
+/// resources for up to 5 seconds (auth timeout).
+static WS_UPGRADE_LIMITER: once_cell::sync::Lazy<
+    governor::RateLimiter<
+        IpAddr,
+        governor::state::keyed::DefaultKeyedStateStore<IpAddr>,
+        governor::clock::DefaultClock,
+    >,
+> = once_cell::sync::Lazy::new(|| {
+    governor::RateLimiter::keyed(
+        governor::Quota::per_second(NonZeroU32::new(10).unwrap())
+            .allow_burst(NonZeroU32::new(20).unwrap()),
+    )
+});
+
+/// Evict stale entries from the WS upgrade rate limiter.
+/// Called periodically from the global GC task.
+pub fn gc_ws_rate_limiter() {
+    WS_UPGRADE_LIMITER.retain_recent();
+}
+
 /// WebSocket upgrade handler — attached to GET /ws
-pub async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_socket(socket, state))
+pub async fn ws_handler(
+    axum::extract::ConnectInfo(peer_addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
+    headers: axum::http::HeaderMap,
+    ws: WebSocketUpgrade,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    // HIGH-002: rate-limit WebSocket upgrades per IP
+    let ip = crate::auth::handlers::extract_ip(&headers, Some(peer_addr.ip()), &state);
+    if WS_UPGRADE_LIMITER.check_key(&ip).is_err() {
+        return StatusCode::TOO_MANY_REQUESTS.into_response();
+    }
+
+    // MED-010: enforce frame size at the WebSocket protocol layer,
+    // rejecting oversized frames before they are fully buffered in memory.
+    ws.max_message_size(MAX_WS_FRAME_SIZE)
+        .max_frame_size(MAX_WS_FRAME_SIZE)
+        .on_upgrade(move |socket| handle_socket(socket, state))
+        .into_response()
 }
 
 // ─── Socket lifecycle ────────────────────────────────────────────────────────

@@ -6,7 +6,10 @@
 //! Run with:
 //!   TEST_DATABASE_URL=postgres://... cargo test --test integration -- auth
 
-use super::{create_test_user, spawn_test_server};
+use super::{
+    authorization_header_name, bearer_header, create_test_user, csrf_header_name,
+    csrf_header_value, spawn_test_server,
+};
 use serial_test::serial;
 use uuid::Uuid;
 
@@ -14,7 +17,9 @@ use uuid::Uuid;
 #[tokio::test]
 #[serial]
 async fn auth_register_login_me_logout() {
-    let server = spawn_test_server().await;
+    let Some(server) = spawn_test_server().await else {
+        return;
+    };
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
 
     let (_user_id, access_token, csrf_token) = create_test_user(&server, &suffix).await;
@@ -22,8 +27,8 @@ async fn auth_register_login_me_logout() {
     // GET /api/v1/users/me must return the user's profile
     let me = server
         .get("/api/v1/users/me")
-        .add_header("Authorization", format!("Bearer {access_token}"))
-        .add_header("X-CSRF-Token", &csrf_token)
+        .add_header(authorization_header_name(), bearer_header(&access_token))
+        .add_header(csrf_header_name(), csrf_header_value(&csrf_token))
         .await;
     assert!(
         me.status_code().is_success(),
@@ -36,8 +41,8 @@ async fn auth_register_login_me_logout() {
     // POST /api/v1/auth/logout must succeed
     let logout = server
         .post("/api/v1/auth/logout")
-        .add_header("Authorization", format!("Bearer {access_token}"))
-        .add_header("X-CSRF-Token", &csrf_token)
+        .add_header(authorization_header_name(), bearer_header(&access_token))
+        .add_header(csrf_header_name(), csrf_header_value(&csrf_token))
         .json(&serde_json::json!({}))
         .await;
     assert!(
@@ -51,7 +56,9 @@ async fn auth_register_login_me_logout() {
 #[tokio::test]
 #[serial]
 async fn auth_wrong_password_returns_401() {
-    let server = spawn_test_server().await;
+    let Some(server) = spawn_test_server().await else {
+        return;
+    };
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
     let email = format!("wrong_pw_{suffix}@integration.test");
     let username = format!("wrong_pw_{suffix}");
@@ -88,7 +95,9 @@ async fn auth_wrong_password_returns_401() {
 #[tokio::test]
 #[serial]
 async fn auth_duplicate_email_rejected() {
-    let server = spawn_test_server().await;
+    let Some(server) = spawn_test_server().await else {
+        return;
+    };
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
     let email = format!("dup_{suffix}@integration.test");
 
@@ -125,14 +134,16 @@ async fn auth_duplicate_email_rejected() {
 #[tokio::test]
 #[serial]
 async fn auth_refresh_returns_new_token() {
-    let server = spawn_test_server().await;
+    let Some(server) = spawn_test_server().await else {
+        return;
+    };
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
     let (_user_id, access_token, csrf_token) = create_test_user(&server, &suffix).await;
 
     let refresh = server
         .post("/api/v1/auth/refresh")
-        .add_header("Authorization", format!("Bearer {access_token}"))
-        .add_header("X-CSRF-Token", &csrf_token)
+        .add_header(authorization_header_name(), bearer_header(&access_token))
+        .add_header(csrf_header_name(), csrf_header_value(&csrf_token))
         .json(&serde_json::json!({}))
         .await;
 

@@ -2,7 +2,10 @@
 //!
 //! Tests the bootstrap → pending → trusted → revoked lifecycle.
 
-use super::{create_test_user, spawn_test_server};
+use super::{
+    authorization_header_name, bearer_header, create_test_user, csrf_header_name,
+    csrf_header_value, spawn_test_server,
+};
 use serial_test::serial;
 use uuid::Uuid;
 
@@ -10,7 +13,9 @@ use uuid::Uuid;
 #[tokio::test]
 #[serial]
 async fn devices_bootstrap_creates_pending_device() {
-    let server = spawn_test_server().await;
+    let Some(server) = spawn_test_server().await else {
+        return;
+    };
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
     let email = format!("dev_boot_{suffix}@integration.test");
     let username = format!("dev_boot_{suffix}");
@@ -59,8 +64,8 @@ async fn devices_bootstrap_creates_pending_device() {
     // List devices and verify the newly bootstrapped device exists
     let devices_resp = server
         .get("/api/v2/devices")
-        .add_header("Authorization", format!("Bearer {access_token}"))
-        .add_header("X-CSRF-Token", csrf_token)
+        .add_header(authorization_header_name(), bearer_header(access_token))
+        .add_header(csrf_header_name(), csrf_header_value(csrf_token))
         .await;
 
     assert!(
@@ -89,7 +94,9 @@ async fn devices_bootstrap_creates_pending_device() {
 #[tokio::test]
 #[serial]
 async fn health_check_returns_200() {
-    let server = spawn_test_server().await;
+    let Some(server) = spawn_test_server().await else {
+        return;
+    };
     let resp = server.get("/health").await;
     assert_eq!(
         resp.status_code().as_u16(),
@@ -106,7 +113,9 @@ async fn health_check_returns_200() {
 #[tokio::test]
 #[serial]
 async fn protected_endpoints_require_auth() {
-    let server = spawn_test_server().await;
+    let Some(server) = spawn_test_server().await else {
+        return;
+    };
     let (_user_id, at, ct) =
         create_test_user(&server, &Uuid::new_v4().to_string().replace('-', "")[..8]).await;
     let _ = (at, ct); // suppress unused warning

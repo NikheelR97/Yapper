@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT id, revoked_at, family_id\n        FROM sessions\n        WHERE token_hash = $1 AND user_id = $2\n        ",
+  "query": "\n        UPDATE sessions\n        SET revoked_at = NOW()\n        WHERE token_hash = $1\n          AND user_id = $2\n          AND revoked_at IS NULL\n        RETURNING id, family_id\n        ",
   "describe": {
     "columns": [
       {
@@ -10,11 +10,6 @@
       },
       {
         "ordinal": 1,
-        "name": "revoked_at",
-        "type_info": "Timestamptz"
-      },
-      {
-        "ordinal": 2,
         "name": "family_id",
         "type_info": "Uuid"
       }
@@ -27,9 +22,8 @@
     },
     "nullable": [
       false,
-      true,
       false
     ]
   },
-  "hash": "14a6824e75e1d5fbc2b2fcd6dbec55c85a1346f50413ede56914c76c2f81b068"
+  "hash": "dbd951c12c7f234999b501767ece8c9d4a6f84e0e83e3efadb1343de652b3873"
 }
