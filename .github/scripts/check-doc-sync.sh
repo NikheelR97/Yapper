@@ -1,8 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Clone the wiki repo if not already present
+if [ ! -d "wiki-repo" ]; then
+  git clone "https://github.com/${GITHUB_REPOSITORY}.wiki.git" wiki-repo 2>/dev/null || {
+    echo "Wiki not available — skipping docs-sync check"
+    exit 0
+  }
+fi
+
 api_doc="wiki-repo/API-Reference.md"
 security_doc="wiki-repo/Security.md"
+
+if [ ! -f "$api_doc" ] || [ ! -f "$security_doc" ]; then
+  echo "Wiki docs missing — skipping docs-sync check"
+  exit 0
+fi
 
 grep -Fq 'wss://api.yapperhq.com/ws' "$api_doc"
 if grep -Fq 'ws?token=' "$api_doc"; then
