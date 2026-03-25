@@ -604,6 +604,15 @@ async fn delete_account(
         .bind(auth.user_id)
         .execute(&mut *tx)
         .await?;
+    // GDPR: soft-delete all messages authored by this user. The ciphertext is
+    // unrecoverable once keys are purged above, but metadata (sender_id,
+    // timestamps) still constitutes personal data under GDPR Art. 17.
+    sqlx::query(
+        "UPDATE messages SET deleted_at = NOW() WHERE sender_id = $1 AND deleted_at IS NULL",
+    )
+    .bind(auth.user_id)
+    .execute(&mut *tx)
+    .await?;
     sqlx::query("DELETE FROM sender_key_distributions WHERE from_user = $1 OR to_user = $1")
         .bind(auth.user_id)
         .execute(&mut *tx)

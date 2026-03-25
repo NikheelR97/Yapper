@@ -1,6 +1,7 @@
 import { x25519 } from "@noble/curves/ed25519.js";
 import { hkdf } from "@noble/hashes/hkdf.js";
 import { sha256 } from "@noble/hashes/sha2.js";
+import { openDB, type IDBPDatabase } from "idb";
 import { api } from "$api/client.js";
 import {
   exportSignalSnapshot,
@@ -11,7 +12,9 @@ import type {
   CachedDmHistoryMessage,
 } from "$signal/keystore.js";
 
-const SYNC_REQUEST_PREFIX = "yapper_device_sync_request_";
+const SYNC_DB_NAME = "yapper-device-sync";
+const SYNC_DB_VERSION = 1;
+const SYNC_STORE = "sync_requests";
 const SYNC_INFO = new TextEncoder().encode("YapperDeviceSync_v1");
 const HISTORY_PAGE_LIMIT = 100;
 
@@ -55,8 +58,63 @@ function concat(...arrays: Uint8Array[]): Uint8Array {
   return output;
 }
 
-function syncRequestKey(deviceId: string): string {
-  return `${SYNC_REQUEST_PREFIX}${deviceId}`;
+// ── IndexedDB-backed sync request storage ────────────────────────────────────
+// Private keys for pending device-sync requests are stored in IndexedDB rather
+// than localStorage to reduce XSS exfiltration surface (localStorage is trivially
+// enumerable; IndexedDB requires knowing the database and store names).
+
+let _syncDb: IDBPDatabase | null = null;
+
+async function getSyncDb(): Promise<IDBPDatabase> {
+  if (_syncDb) return _syncDb;
+  _syncDb = await openDB(SYNC_DB_NAME, SYNC_DB_VERSION, {
+    upgrade(db) {
+      if (!db.objectStoreNames.contains(SYNC_STORE)) {
+        db.createObjectStore(SYNC_STORE);
+      }
+    },
+  });
+  return _syncDb;
+}
+
+async function loadStoredSyncRequest(
+  deviceId: string,
+): Promise<StoredSyncRequest | null> {
+  if (typeof indexedDB === "undefined") return null;
+  try {
+    const db = await getSyncDb();
+    const value = await db.get(SYNC_STORE, deviceId);
+    if (value && value.privateKey && value.publicKey) {
+      return value as StoredSyncRequest;
+    }
+    return null;
+  } catch {
+    /* IndexedDB unavailable (e.g., SSR or opaque origin) */
+    return null;
+  }
+}
+
+async function saveStoredSyncRequest(
+  deviceId: string,
+  request: StoredSyncRequest,
+): Promise<void> {
+  if (typeof indexedDB === "undefined") return;
+  try {
+    const db = await getSyncDb();
+    await db.put(SYNC_STORE, request, deviceId);
+  } catch {
+    /* IndexedDB unavailable — key lives only in memory for this session */
+  }
+}
+
+async function deleteStoredSyncRequest(deviceId: string): Promise<void> {
+  if (typeof indexedDB === "undefined") return;
+  try {
+    const db = await getSyncDb();
+    await db.delete(SYNC_STORE, deviceId);
+  } catch {
+    /* IndexedDB unavailable */
+  }
 }
 
 function mergeById<T extends { id: string }>(
@@ -79,41 +137,6 @@ function mergeById<T extends { id: string }>(
   });
 }
 
-function loadStoredSyncRequest(deviceId: string): StoredSyncRequest | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  const raw = window.localStorage.getItem(syncRequestKey(deviceId));
-  if (!raw) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as StoredSyncRequest;
-    if (!parsed.privateKey || !parsed.publicKey) {
-      return null;
-    }
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-function saveStoredSyncRequest(
-  deviceId: string,
-  request: StoredSyncRequest,
-): void {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.setItem(
-    syncRequestKey(deviceId),
-    JSON.stringify(request),
-  );
-}
-
 function jsonReplacer(_key: string, value: unknown): unknown {
   if (value instanceof Uint8Array) {
     return { __u8: bytesToB64(value) };
@@ -128,10 +151,10 @@ function jsonReviver(_key: string, value: unknown): unknown {
   return value;
 }
 
-export function ensurePendingDeviceSyncRequest(deviceId: string): {
+export async function ensurePendingDeviceSyncRequest(deviceId: string): Promise<{
   publicKey: string;
-} {
-  const existing = loadStoredSyncRequest(deviceId);
+}> {
+  const existing = await loadStoredSyncRequest(deviceId);
   if (existing) {
     return { publicKey: existing.publicKey };
   }
@@ -142,24 +165,20 @@ export function ensurePendingDeviceSyncRequest(deviceId: string): {
     privateKey: bytesToB64(privateKey),
     publicKey: bytesToB64(publicKey),
   };
-  saveStoredSyncRequest(deviceId, request);
+  await saveStoredSyncRequest(deviceId, request);
   return { publicKey: request.publicKey };
 }
 
-export function clearPendingDeviceSyncRequest(deviceId: string): void {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.removeItem(syncRequestKey(deviceId));
+export async function clearPendingDeviceSyncRequest(deviceId: string): Promise<void> {
+  await deleteStoredSyncRequest(deviceId);
 }
 
-export function hasPendingDeviceSyncRequest(deviceId: string): boolean {
-  return loadStoredSyncRequest(deviceId) != null;
+export async function hasPendingDeviceSyncRequest(deviceId: string): Promise<boolean> {
+  return (await loadStoredSyncRequest(deviceId)) != null;
 }
 
-function getPendingDeviceSyncPrivateKey(deviceId: string): Uint8Array {
-  const request = loadStoredSyncRequest(deviceId);
+async function getPendingDeviceSyncPrivateKey(deviceId: string): Promise<Uint8Array> {
+  const request = await loadStoredSyncRequest(deviceId);
   if (!request) {
     throw new Error("Missing pending device sync request key");
   }
@@ -215,7 +234,7 @@ export async function decryptDeviceSyncChunk(
   ciphertext: string,
   ekPublic: string,
 ): Promise<Uint8Array> {
-  const requestPrivateKey = getPendingDeviceSyncPrivateKey(deviceId);
+  const requestPrivateKey = await getPendingDeviceSyncPrivateKey(deviceId);
   const ephemeralPublicKey = b64ToBytes(ekPublic);
   const myPublicKey = x25519.getPublicKey(requestPrivateKey);
   const ciphertextBytes = b64ToBytes(ciphertext);

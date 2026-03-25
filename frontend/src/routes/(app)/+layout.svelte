@@ -292,7 +292,7 @@
     }
     lastPendingTrustRequestAt = now;
 
-    const syncRequest = ensurePendingDeviceSyncRequest(state.device.id);
+    const syncRequest = await ensurePendingDeviceSyncRequest(state.device.id);
     await api
       .post("/api/v2/devices/trust-requests", {
         target_device_id: state.device.id,
@@ -448,7 +448,7 @@
 
       await importTrustedDeviceSnapshot(transfer.chunks.join(""));
       incomingSyncTransfers.delete(transferId);
-      clearPendingDeviceSyncRequest(deviceId);
+      await clearPendingDeviceSyncRequest(deviceId);
       importedSnapshot = true;
     }
 
@@ -535,11 +535,11 @@
       return false;
     }
 
-    if (!importedSnapshot && hasPendingDeviceSyncRequest(deviceId)) {
+    if (!importedSnapshot && (await hasPendingDeviceSyncRequest(deviceId))) {
       return false;
     }
 
-    clearPendingDeviceSyncRequest(deviceId);
+    await clearPendingDeviceSyncRequest(deviceId);
     try {
       await configureActiveSignalStore();
     } catch (error) {
@@ -559,7 +559,7 @@
     stopDevicePolling();
     stopAppServices();
     if (deviceId) {
-      clearPendingDeviceSyncRequest(deviceId);
+      await clearPendingDeviceSyncRequest(deviceId);
     }
     await clearCurrentSignalStore().catch((err) => {
       console.warn("[signal] Failed to clear signal store on logout:", err);
@@ -865,8 +865,8 @@
         // activation — clear the pending sync request so the device can
         // proceed. The sync snapshot is optional; the device will generate
         // fresh signal keys and new messages will work immediately.
-        if (hasPendingDeviceSyncRequest(current.id)) {
-          clearPendingDeviceSyncRequest(current.id);
+        if (await hasPendingDeviceSyncRequest(current.id)) {
+          await clearPendingDeviceSyncRequest(current.id);
         }
         if (await maybeActivateTrustedDevice(current.id, false)) {
           return;
