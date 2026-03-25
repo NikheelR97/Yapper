@@ -208,8 +208,7 @@ pub async fn register_or_reuse_device(
     )
     .bind(user_id)
     .fetch_one(state.db.pool())
-    .await
-    .unwrap_or(0);
+    .await?;
 
     let signal_device_id = next_signal_device_id(user_id, state).await?;
     let trust_state = if trusted_count == 0 {
@@ -505,6 +504,27 @@ async fn revoke_device(
         return Ok(Json(serde_json::json!({ "status": "already_revoked" })));
     }
 
+    // Guard: prevent revoking the sole trusted device if the user has no password,
+    // as they would be permanently locked out with no way to re-authenticate.
+    if target.trust_state == DeviceTrustState::Trusted {
+        let trusted = trusted_devices_for_user(auth.user_id, &state).await?;
+        if trusted.len() <= 1 {
+            let has_password = sqlx::query_scalar::<_, bool>(
+                "SELECT password_hash IS NOT NULL FROM users WHERE id = $1 AND deleted_at IS NULL",
+            )
+            .bind(auth.user_id)
+            .fetch_optional(state.db.pool())
+            .await?
+            .unwrap_or(false);
+
+            if !has_password {
+                return Err(AppError::Conflict(
+                    "Cannot revoke your only trusted device without a password set".into(),
+                ));
+            }
+        }
+    }
+
     sqlx::query(
         r#"
         UPDATE devices
@@ -518,12 +538,35 @@ async fn revoke_device(
     .execute(state.db.pool())
     .await?;
 
+    // Revoke all active sessions for this device
     sqlx::query(
         "UPDATE sessions SET revoked_at = NOW() WHERE device_id = $1 AND revoked_at IS NULL",
     )
     .bind(target_device_id)
     .execute(state.db.pool())
     .await?;
+
+    // Clean up signal keys for the revoked device (identity keys, signed prekeys, OPKs, backup)
+    sqlx::query("DELETE FROM one_time_prekeys WHERE user_id = $1 AND device_id = $2")
+        .bind(auth.user_id)
+        .bind(target.signal_device_id)
+        .execute(state.db.pool())
+        .await?;
+    sqlx::query("DELETE FROM signed_prekeys WHERE user_id = $1 AND device_id = $2")
+        .bind(auth.user_id)
+        .bind(target.signal_device_id)
+        .execute(state.db.pool())
+        .await?;
+    sqlx::query("DELETE FROM identity_keys WHERE user_id = $1 AND device_id = $2")
+        .bind(auth.user_id)
+        .bind(target.signal_device_id)
+        .execute(state.db.pool())
+        .await?;
+    sqlx::query("DELETE FROM key_backup WHERE user_id = $1")
+        .bind(auth.user_id)
+        .execute(state.db.pool())
+        .await
+        .ok(); // backup may not exist — ignore error
 
     // Invalidate cached trust state so the hub rejects this device immediately
     state

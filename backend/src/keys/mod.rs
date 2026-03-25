@@ -786,6 +786,13 @@ fn parse_device_ids_filter(value: Option<&str>) -> AppResult<Option<Vec<Uuid>>> 
         })
         .collect::<Result<Vec<_>, _>>()?;
 
+    if parsed.len() > crate::constants::MAX_DEVICE_IDS {
+        return Err(AppError::BadRequest(format!(
+            "Too many device_ids (max {})",
+            crate::constants::MAX_DEVICE_IDS
+        )));
+    }
+
     if parsed.is_empty() {
         return Err(AppError::BadRequest(
             "device_ids must include at least one UUID".into(),

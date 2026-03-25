@@ -285,7 +285,7 @@ async fn refresh(
         None => {
             let existing = sqlx::query(
                 r#"
-                SELECT family_id
+                SELECT family_id, revoked_at
                 FROM sessions
                 WHERE token_hash = $1 AND user_id = $2 AND device_id = $3
                 "#,
@@ -298,16 +298,26 @@ async fn refresh(
 
             if let Some(row) = existing {
                 let family_id: Uuid = row.try_get("family_id")?;
-                sqlx::query("UPDATE sessions SET revoked_at = NOW() WHERE family_id = $1 AND revoked_at IS NULL")
-                    .bind(family_id)
-                    .execute(state.db.pool())
-                    .await?;
-                tracing::warn!(
-                    "Refresh token reuse detected for user {} device {:?}. Family {} invalidated.",
-                    claims.sub,
-                    device_id,
-                    family_id
-                );
+                let revoked_at: Option<chrono::DateTime<chrono::Utc>> = row.try_get("revoked_at").unwrap_or(None);
+                
+                // If revoked very recently (e.g. <30s), treat as benign concurrent client retry,
+                // fail this request but don't nuke the session family.
+                let is_recent_retry = revoked_at
+                    .map(|r| chrono::Utc::now().signed_duration_since(r).num_seconds() < 30)
+                    .unwrap_or(false);
+
+                if !is_recent_retry {
+                    sqlx::query("UPDATE sessions SET revoked_at = NOW() WHERE family_id = $1 AND revoked_at IS NULL")
+                        .bind(family_id)
+                        .execute(state.db.pool())
+                        .await?;
+                    tracing::warn!(
+                        "Refresh token reuse detected for user {} device {:?}. Family {} invalidated.",
+                        claims.sub,
+                        device_id,
+                        family_id
+                    );
+                }
             }
             return Err(AppError::Unauthorized);
         }
@@ -349,12 +359,22 @@ async fn refresh(
     devices::touch_device(device.id, &state).await?;
 
     let (cookies, csrf_token) = auth_cookies_for_path(&refresh_token, REFRESH_COOKIE_PATH_V2);
+
+    // Only expose refresh_token in JSON for native clients (Tauri/Capacitor) where
+    // cross-origin cookies are unreliable. Web browsers use the HttpOnly cookie instead,
+    // keeping the token out of JavaScript reach (XSS mitigation).
+    let json_refresh_token = if device.platform == "tauri" || device.platform == "capacitor" {
+        Some(refresh_token)
+    } else {
+        None
+    };
+
     Ok((
         append_set_cookie_headers(&cookies),
         Json(AuthResponseV2 {
             access_token,
             csrf_token,
-            refresh_token: Some(refresh_token),
+            refresh_token: json_refresh_token,
             user,
             device: device.to_summary(),
         }),
@@ -420,12 +440,22 @@ pub(super) async fn issue_device_session(
     // already set last_seen_at = NOW() during device creation/update.
 
     let (cookies, csrf_token) = auth_cookies_for_path(&refresh_token, REFRESH_COOKIE_PATH_V2);
+
+    // Only expose refresh_token in JSON for native clients (Tauri/Capacitor) where
+    // cross-origin cookies are unreliable. Web browsers use the HttpOnly cookie instead,
+    // keeping the token out of JavaScript reach (XSS mitigation).
+    let json_refresh_token = if device.platform == "tauri" || device.platform == "capacitor" {
+        Some(refresh_token)
+    } else {
+        None
+    };
+
     Ok((
         append_set_cookie_headers(&cookies),
         Json(AuthResponseV2 {
             access_token,
             csrf_token,
-            refresh_token: Some(refresh_token),
+            refresh_token: json_refresh_token,
             user,
             device: device.to_summary(),
         }),

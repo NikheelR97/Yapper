@@ -44,3 +44,16 @@ pub const MAX_MESSAGES_PER_TICK: usize = 32;
 
 /// Maximum media uploads per user per minute.
 pub const MAX_UPLOADS_PER_MINUTE: u32 = 10;
+
+/// Maximum single image dimension (width or height) accepted for upload.
+/// Prevents decompression bombs that expand a tiny file into gigabytes of RAM.
+pub const MAX_IMAGE_DIMENSION: u32 = 4096;
+
+/// Maximum decoded pixel count (width × height) for uploaded images.
+pub const MAX_DECODED_PIXELS: u32 = 4096 * 4096;
+
+/// Maximum device IDs that can be requested in a single key-bundle query.
+pub const MAX_DEVICE_IDS: usize = 100;
+
+/// Maximum push tokens a single user may register across all devices.
+pub const MAX_PUSH_TOKENS_PER_USER: i64 = 10;

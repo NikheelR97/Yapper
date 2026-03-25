@@ -207,8 +207,8 @@ impl Hub {
             .entry(*user_id)
             .or_insert_with(|| {
                 // SAFETY: Literal 5 and 20 are non-zero; NonZeroU32::new cannot fail.
-                let quota = governor::Quota::per_second(NonZeroU32::new(5).unwrap())
-                    .allow_burst(NonZeroU32::new(20).unwrap());
+                let quota = governor::Quota::per_second(NonZeroU32::new(5).expect("non-zero constant"))
+                    .allow_burst(NonZeroU32::new(20).expect("non-zero constant"));
                 Arc::new(RateLimiter::direct(quota))
             })
             .clone();
@@ -404,7 +404,7 @@ impl Hub {
 
 /// Messages sent FROM client TO server over WebSocket.
 #[derive(Debug, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum WsInbound {
     Auth {
         token: String,
@@ -514,8 +514,8 @@ static WS_UPGRADE_LIMITER: once_cell::sync::Lazy<
     >,
 > = once_cell::sync::Lazy::new(|| {
     governor::RateLimiter::keyed(
-        governor::Quota::per_second(NonZeroU32::new(10).unwrap())
-            .allow_burst(NonZeroU32::new(20).unwrap()),
+        governor::Quota::per_second(NonZeroU32::new(10).expect("non-zero constant"))
+            .allow_burst(NonZeroU32::new(20).expect("non-zero constant")),
     )
 });
 

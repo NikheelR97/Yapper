@@ -1,5 +1,6 @@
 import { writable, get } from 'svelte/store';
 import { api } from '$api/client.js';
+import { isNative } from '$lib/plugins/tauri-compat.js';
 
 export interface User {
 	id: string;
@@ -70,25 +71,29 @@ export function clearAuth() {
 
 const REFRESH_TOKEN_KEY = 'yapper_refresh_token';
 
-/** Store refresh token for native apps where cookies are blocked */
+/** Store refresh token for native apps (Tauri/Capacitor) where cross-origin cookies
+ *  are unreliable. Web browsers rely on the HttpOnly cookie instead — the token is
+ *  never exposed to JavaScript in that context. */
 export function storeRefreshToken(token: string): void {
+	if (!isNative()) return; // web browsers use HttpOnly cookie
 	try {
 		localStorage.setItem(REFRESH_TOKEN_KEY, token);
-	} catch { /* quota exceeded or unavailable */ }
+	} catch { /* quota exceeded or unavailable — native storage fallback */ }
 }
 
 export function getStoredRefreshToken(): string | null {
+	if (!isNative()) return null; // web browsers use HttpOnly cookie
 	try {
 		return localStorage.getItem(REFRESH_TOKEN_KEY);
 	} catch {
-		return null;
+		return null; // storage unavailable
 	}
 }
 
 export function clearStoredRefreshToken(): void {
 	try {
 		localStorage.removeItem(REFRESH_TOKEN_KEY);
-	} catch { /* ignore */ }
+	} catch { /* storage unavailable — no-op */ }
 }
 
 /** Refresh the access token via the backend. Updates authStore on success.

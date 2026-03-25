@@ -70,7 +70,7 @@ export async function sendLocalNotification(title: string, body: string): Promis
                 );
                 if (!(await isPermissionGranted())) return;
                 sendNotification({ title, body, sound: 'default' });
-            } catch {}
+            } catch { /* Tauri notification plugin unavailable — graceful no-op */ }
             break;
         }
         case 'web': {
@@ -95,7 +95,7 @@ export async function setBadgeCount(count: number): Promise<void> {
     try {
         const { invoke } = await import('@tauri-apps/api/core');
         await invoke('set_tray_badge', { count });
-    } catch {}
+    } catch { /* Tauri command unavailable — running on web or plugin not registered */ }
 }
 
 // ── Window management (Tauri only) ────────────────────────────────────────────
@@ -106,7 +106,7 @@ export async function showWindow(): Promise<void> {
     try {
         const { invoke } = await import('@tauri-apps/api/core');
         await invoke('show_window');
-    } catch {}
+    } catch { /* Tauri command unavailable — running on web or plugin not registered */ }
 }
 
 /** Minimise the Tauri window to the taskbar/tray. No-op on web/Capacitor. */
@@ -115,7 +115,7 @@ export async function minimizeWindow(): Promise<void> {
     try {
         const { getCurrentWindow } = await import('@tauri-apps/api/window');
         await getCurrentWindow().minimize();
-    } catch {}
+    } catch { /* Tauri window API unavailable */ }
 }
 
 // ── Share ─────────────────────────────────────────────────────────────────────
@@ -138,7 +138,7 @@ export async function shareContent(title: string, text: string, url?: string): P
     const fallback = url ?? text;
     try {
         await navigator.clipboard.writeText(fallback);
-    } catch {}
+    } catch { /* Clipboard API unavailable — no fallback */ }
 }
 
 // ── Clipboard ─────────────────────────────────────────────────────────────────

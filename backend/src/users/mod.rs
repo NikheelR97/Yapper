@@ -206,15 +206,24 @@ async fn unlink_connection(
 
     let discord_id_raw: Option<String> = row.try_get("discord_id").ok().flatten();
     let password_hash: Option<String> = row.try_get("password_hash").ok().flatten();
+
+    let is_discord = discord_id_raw
+        .as_deref()
+        .map(|v| !v.starts_with("google:") && !v.starts_with("apple:"))
+        .unwrap_or(false);
+    let is_google = discord_id_raw
+        .as_deref()
+        .map(|v| v.starts_with("google:"))
+        .unwrap_or(false);
+    let is_apple = discord_id_raw
+        .as_deref()
+        .map(|v| v.starts_with("apple:"))
+        .unwrap_or(false);
+
     let is_linked = match provider.as_str() {
-        "discord" => discord_id_raw
-            .as_deref()
-            .map(|v| !v.starts_with("google:") && !v.starts_with("apple:"))
-            .unwrap_or(false),
-        "google" => discord_id_raw
-            .as_deref()
-            .map(|v| v.starts_with("google:"))
-            .unwrap_or(false),
+        "discord" => is_discord,
+        "google" => is_google,
+        "apple" => is_apple,
         _ => false,
     };
 
@@ -224,9 +233,19 @@ async fn unlink_connection(
         )));
     }
 
-    if password_hash.is_none() {
+    // Safety check: ensure at least one other auth method remains after unlinking.
+    // Without this, unlinking the last provider would strand the account.
+    let has_password = password_hash.is_some();
+    let other_provider_count = [is_discord, is_google, is_apple]
+        .iter()
+        .filter(|&&linked| linked)
+        .count()
+        - 1; // subtract the one being unlinked
+
+    if !has_password && other_provider_count == 0 {
         return Err(AppError::Conflict(
-            "Set a password before unlinking your only sign-in provider".into(),
+            "Set a password or link another provider before unlinking your only sign-in method"
+                .into(),
         ));
     }
 
@@ -2198,8 +2217,34 @@ fn is_supported_image_content_type(content_type: &str) -> bool {
     )
 }
 
+/// Read image dimensions without full decompression. Rejects images that
+/// exceed `MAX_IMAGE_DIMENSION` in either axis or `MAX_DECODED_PIXELS` total,
+/// preventing decompression-bomb OOM on the 256 MB VM.
+fn validate_image_dimensions(data: &[u8]) -> AppResult<(u32, u32)> {
+    use image::io::Reader as ImageReader;
+    let reader = ImageReader::new(Cursor::new(data))
+        .with_guessed_format()
+        .map_err(|e| AppError::BadRequest(format!("Unrecognised image format: {e}")))?;
+    let (w, h) = reader
+        .into_dimensions()
+        .map_err(|e| AppError::BadRequest(format!("Cannot read image dimensions: {e}")))?;
+    if w > crate::constants::MAX_IMAGE_DIMENSION || h > crate::constants::MAX_IMAGE_DIMENSION {
+        return Err(AppError::BadRequest(format!(
+            "Image dimensions {w}×{h} exceed the {max}×{max} limit",
+            max = crate::constants::MAX_IMAGE_DIMENSION,
+        )));
+    }
+    if w.saturating_mul(h) > crate::constants::MAX_DECODED_PIXELS {
+        return Err(AppError::BadRequest(
+            "Image pixel count exceeds the maximum allowed".into(),
+        ));
+    }
+    Ok((w, h))
+}
+
 async fn transcode_avatar_webp(raw_bytes: Vec<u8>) -> AppResult<Vec<u8>> {
     tokio::task::spawn_blocking(move || -> AppResult<Vec<u8>> {
+        validate_image_dimensions(&raw_bytes)?;
         let img = image::load_from_memory(&raw_bytes)
             .map_err(|e| AppError::BadRequest(format!("Unsupported image format: {e}")))?;
 
@@ -2222,6 +2267,7 @@ async fn transcode_avatar_webp(raw_bytes: Vec<u8>) -> AppResult<Vec<u8>> {
 
 async fn transcode_banner_webp(raw_bytes: Vec<u8>) -> AppResult<Vec<u8>> {
     tokio::task::spawn_blocking(move || -> AppResult<Vec<u8>> {
+        validate_image_dimensions(&raw_bytes)?;
         let img = image::load_from_memory(&raw_bytes)
             .map_err(|e| AppError::BadRequest(format!("Unsupported image format: {e}")))?;
 

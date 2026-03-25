@@ -18,6 +18,61 @@ use yapper_server::{
 use sentry::integrations::tracing as sentry_tracing;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+/// Scrub PII from Sentry events before they leave the process.
+/// Strips sensitive headers (Authorization, Cookie) and redacts fields
+/// that may contain tokens, passwords, or email addresses.
+fn scrub_sentry_event(
+    mut event: sentry::protocol::Event<'static>,
+) -> Option<sentry::protocol::Event<'static>> {
+    // Scrub sensitive headers from request data
+    if let Some(ref mut request) = event.request {
+        let sensitive_headers = ["authorization", "cookie", "set-cookie", "x-refresh-token"];
+        request.headers.retain(|k, _| {
+            !sensitive_headers.contains(&k.to_lowercase().as_str())
+        });
+    }
+
+    // Scrub user email if captured
+    if let Some(ref mut user) = event.user {
+        user.email = None;
+    }
+
+    // Scrub sensitive keys from extra data
+    let sensitive_keys = ["password", "token", "secret", "key", "refresh_token", "email"];
+    event.extra.retain(|k, _| {
+        !sensitive_keys.iter().any(|s| k.to_lowercase().contains(s))
+    });
+
+    // Scrub breadcrumb data that may contain PII
+    for breadcrumb in &mut event.breadcrumbs {
+        breadcrumb.data.retain(|k, _| {
+            !sensitive_keys.iter().any(|s| k.to_lowercase().contains(s))
+        });
+        // Redact message content that looks like an email
+        if let Some(ref msg) = breadcrumb.message {
+            if msg.contains('@') && msg.contains('.') {
+                breadcrumb.message = Some("[redacted]".to_string());
+            }
+        }
+    }
+
+    // Scrub exception values that may embed PII
+    for exc in &mut event.exception.values {
+        if let Some(ref val) = exc.value {
+            if val.contains('@') && val.contains('.') {
+                exc.value = Some("[redacted — may contain PII]".to_string());
+            }
+        }
+    }
+
+    // Scrub tags
+    event.tags.retain(|k, _| {
+        !sensitive_keys.iter().any(|s| k.to_lowercase().contains(s))
+    });
+
+    Some(event)
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Load .env in development
@@ -33,6 +88,7 @@ async fn main() -> anyhow::Result<()> {
             } else {
                 "development".into()
             }),
+            before_send: Some(std::sync::Arc::new(scrub_sentry_event)),
             ..Default::default()
         },
     ));

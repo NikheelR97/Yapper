@@ -331,7 +331,7 @@ pub async fn refresh(
             // Token was not found or was already revoked.
             // Check if the token exists at all — if so, this is reuse detection.
             let exists = sqlx::query!(
-                "SELECT family_id FROM sessions WHERE token_hash = $1 AND user_id = $2",
+                "SELECT family_id, revoked_at FROM sessions WHERE token_hash = $1 AND user_id = $2",
                 token_hash,
                 claims.sub,
             )
@@ -339,18 +339,24 @@ pub async fn refresh(
             .await?;
 
             if let Some(row) = exists {
-                // Reuse detected: revoked token presented → invalidate entire family
-                sqlx::query!(
-                    "UPDATE sessions SET revoked_at = NOW() WHERE family_id = $1 AND revoked_at IS NULL",
-                    row.family_id,
-                )
-                .execute(pool)
-                .await?;
-                tracing::warn!(
-                    "Refresh token reuse detected for user {}. Family {} invalidated.",
-                    claims.sub,
-                    row.family_id
-                );
+                let is_recent_retry = row.revoked_at
+                    .map(|r| chrono::Utc::now().signed_duration_since(r).num_seconds() < 30)
+                    .unwrap_or(false);
+
+                if !is_recent_retry {
+                    // Reuse detected: revoked token presented → invalidate entire family
+                    sqlx::query!(
+                        "UPDATE sessions SET revoked_at = NOW() WHERE family_id = $1 AND revoked_at IS NULL",
+                        row.family_id,
+                    )
+                    .execute(pool)
+                    .await?;
+                    tracing::warn!(
+                        "Refresh token reuse detected for user {}. Family {} invalidated.",
+                        claims.sub,
+                        row.family_id
+                    );
+                }
             }
             return Err(AppError::Unauthorized);
         }

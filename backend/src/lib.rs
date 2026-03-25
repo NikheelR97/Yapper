@@ -63,6 +63,20 @@ use auth::{JwtKeys, LoginRateLimiter, OAuthStateStore};
 use db::Database;
 use hub::Hub;
 
+/// Encode a byte slice as lowercase hexadecimal.
+/// Writing to a pre-allocated `String` is infallible, so this cannot panic.
+pub fn hex_encode(bytes: &[u8]) -> String {
+    use std::fmt::Write;
+    bytes.iter().fold(
+        String::with_capacity(bytes.len() * 2),
+        |mut s, b| {
+            // write! to String is infallible — the fmt::Error branch is unreachable.
+            let _ = write!(s, "{b:02x}");
+            s
+        },
+    )
+}
+
 // ─── Shared types ─────────────────────────────────────────────────────────────
 
 /// Per-IP rate limiter shared across all API routes.
@@ -197,6 +211,10 @@ pub(crate) fn cors_layer() -> CorsLayer {
             AUTHORIZATION,
             ACCEPT,
             HeaderName::from_static("x-csrf-token"),
+            // x-refresh-token is only used by native clients (Tauri/Capacitor) where
+            // cross-origin cookies are unreliable. Web browser clients use HttpOnly cookies
+            // and never send this header. The backend only returns refresh tokens in JSON
+            // for native device platforms.
             HeaderName::from_static("x-refresh-token"),
         ])
         .allow_credentials(true)

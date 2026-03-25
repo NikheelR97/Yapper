@@ -65,13 +65,7 @@ async fn import_profile_start(
     let mut csrf_bytes = [0u8; 16];
     getrandom::getrandom(&mut csrf_bytes)
         .map_err(|e| AppError::Internal(anyhow::anyhow!("RNG error: {e}")))?;
-    let csrf_token: String = csrf_bytes
-        .iter()
-        .fold(String::with_capacity(32), |mut s, b| {
-            use std::fmt::Write;
-            write!(s, "{b:02x}").unwrap();
-            s
-        });
+    let csrf_token: String = crate::hex_encode(&csrf_bytes);
 
     // Store csrf_token → (user_id, timestamp) server-side.
     // The URL state param is the opaque token only — user_id never appears in the URL.

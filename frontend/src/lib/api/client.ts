@@ -40,8 +40,9 @@ async function request<T>(
 		if (csrf) headers['X-CSRF-Token'] = csrf;
 	}
 
-	// Fallback for Tauri/Capacitor where cross-origin cookies are blocked:
-	// send the stored refresh token as a header so the backend can use it.
+	// Native-only fallback: Tauri/Capacitor can't rely on cross-origin cookies,
+	// so we send the stored refresh token as a header. getStoredRefreshToken()
+	// returns null on web browsers, so this header is never sent from a browser.
 	if (path.includes('/auth/refresh')) {
 		const rt = getStoredRefreshToken();
 		if (rt) headers['X-Refresh-Token'] = rt;

@@ -228,16 +228,9 @@ pub fn validate_refresh_token(token: &str, keys: &JwtKeys) -> AppResult<TokenDat
 
 /// Generate a cryptographically random hex token for email verification / password reset.
 pub fn generate_email_token() -> String {
-    use std::fmt::Write;
-    let bytes: [u8; 32] = {
-        let mut b = [0u8; 32];
-        getrandom::getrandom(&mut b).expect("getrandom failed");
-        b
-    };
-    bytes.iter().fold(String::with_capacity(64), |mut s, b| {
-        write!(s, "{:02x}", b).unwrap();
-        s
-    })
+    let mut bytes = [0u8; 32];
+    getrandom::getrandom(&mut bytes).expect("getrandom failed");
+    crate::hex_encode(&bytes)
 }
 
 #[cfg(test)]
