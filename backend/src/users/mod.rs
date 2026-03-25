@@ -134,7 +134,11 @@ pub fn account_router() -> Router<AppState> {
 
 // ─── Own profile ──────────────────────────────────────────────────────────────
 
-/// GET /api/v1/users/me
+/// GET /api/v1/users/me — return the authenticated user's full profile.
+///
+/// Includes linked OAuth `connections` (discord, google, apple) and account
+/// metadata (premium status, parental controls). Private fields like
+/// `password_hash` are never exposed.
 async fn get_me(auth: AuthUser, State(state): State<AppState>) -> AppResult<impl IntoResponse> {
     let row = sqlx::query(
         "SELECT id, username, display_name, avatar_url, banner_url, about_me, location,
@@ -183,10 +187,14 @@ async fn get_me(auth: AuthUser, State(state): State<AppState>) -> AppResult<impl
 
 // ─── Connected accounts ───────────────────────────────────────────────────────
 
-/// DELETE /api/v1/users/me/connections/:provider
+/// DELETE /api/v1/users/me/connections/:provider — unlink an OAuth provider.
 ///
-/// Unlinks a connected OAuth provider from the user's account.
-/// Sets discord_id = NULL. Both "discord" and "google" share the discord_id column.
+/// Clears the `discord_id` column (which stores `"provider:id"` for all providers).
+///
+/// # Security invariants
+///
+/// * Prevents unlinking the sole authentication method — returns 409 if the user
+///   has no password and no other linked provider. This avoids permanent lockout.
 async fn unlink_connection(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -500,6 +508,20 @@ async fn purge_account_r2_objects(user_id: Uuid, media_object_keys: &[String]) {
     }
 }
 
+/// DELETE /api/v1/account — soft-delete the user's account (GDPR Art. 17).
+///
+/// In a single transaction:
+/// 1. Anonymises PII (display_name, avatar, email, discord_id).
+/// 2. Purges all operational rows: devices, sessions, keys, OPKs, push tokens,
+///    support tickets, parental artefacts.
+/// 3. Soft-deletes all messages authored by the user (metadata is PII under GDPR).
+/// 4. Sets `deleted_at = NOW()` on the users row.
+///
+/// After a 30-day hold, the retention worker hard-deletes the shell (or retains
+/// it for referential integrity if foreign-key references still exist).
+///
+/// R2 media objects (avatar, banner, uploads) are deleted best-effort outside
+/// the transaction to avoid blocking on external I/O.
 async fn delete_account(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -2147,6 +2169,17 @@ pub async fn require_dm_access(
     Ok(())
 }
 
+/// Verify that `requester_id` may fetch the key bundle of `target_id`.
+///
+/// Access is granted if any of:
+/// 1. Requester is fetching their own keys.
+/// 2. Both users share at least one server membership.
+/// 3. Both users share a DM conversation.
+///
+/// # Security invariants
+///
+/// * Prevents arbitrary key-bundle enumeration — a user can only fetch keys
+///   for peers they already have a social relationship with.
 pub async fn require_key_bundle_access(
     requester_id: Uuid,
     target_id: Uuid,

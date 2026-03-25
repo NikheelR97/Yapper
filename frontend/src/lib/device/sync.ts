@@ -151,6 +151,16 @@ function jsonReviver(_key: string, value: unknown): unknown {
   return value;
 }
 
+/**
+ * Create or retrieve a pending device-sync key pair for the given device.
+ *
+ * The X25519 private key is stored in IndexedDB (`yapper-device-sync`) rather
+ * than localStorage to reduce XSS key exfiltration surface.
+ *
+ * @param deviceId — the local device UUID
+ * @returns the base64-encoded X25519 public key for the sync handshake
+ * @security Private key never leaves IndexedDB; cleared on sync completion or logout.
+ */
 export async function ensurePendingDeviceSyncRequest(deviceId: string): Promise<{
   publicKey: string;
 }> {
@@ -169,10 +179,12 @@ export async function ensurePendingDeviceSyncRequest(deviceId: string): Promise<
   return { publicKey: request.publicKey };
 }
 
+/** Remove the pending sync request (and its private key) from IndexedDB. */
 export async function clearPendingDeviceSyncRequest(deviceId: string): Promise<void> {
   await deleteStoredSyncRequest(deviceId);
 }
 
+/** Check whether a pending sync request exists for the given device. */
 export async function hasPendingDeviceSyncRequest(deviceId: string): Promise<boolean> {
   return (await loadStoredSyncRequest(deviceId)) != null;
 }
@@ -185,6 +197,14 @@ async function getPendingDeviceSyncPrivateKey(deviceId: string): Promise<Uint8Ar
   return b64ToBytes(request.privateKey);
 }
 
+/**
+ * Encrypt a device-sync payload using ephemeral X25519 + HKDF + AES-256-GCM.
+ *
+ * @param plaintext — the serialised snapshot bytes to encrypt
+ * @param recipientPublicKey — base64-encoded X25519 public key of the new device
+ * @returns ciphertext (base64 of IV || AES-GCM output) and the ephemeral public key
+ * @e2ee Ephemeral key is discarded after encryption — provides forward secrecy for the sync.
+ */
 export async function encryptDeviceSyncChunk(
   plaintext: Uint8Array,
   recipientPublicKey: string,
@@ -229,6 +249,15 @@ export async function encryptDeviceSyncChunk(
   };
 }
 
+/**
+ * Decrypt a device-sync chunk using the stored X25519 private key.
+ *
+ * @param deviceId — local device UUID (used to look up the private key in IndexedDB)
+ * @param ciphertext — base64-encoded IV || AES-GCM ciphertext
+ * @param ekPublic — base64-encoded ephemeral X25519 public key from the sender
+ * @returns the decrypted plaintext bytes
+ * @throws if no pending sync request exists or decryption fails
+ */
 export async function decryptDeviceSyncChunk(
   deviceId: string,
   ciphertext: string,
@@ -358,6 +387,17 @@ async function fetchPaginatedHistory<T extends { id: string }>(
   return history;
 }
 
+/**
+ * Export a complete device snapshot (signal sessions, receiver keys, message history)
+ * for transfer to a newly-trusted device.
+ *
+ * Merges remote server history with the local IndexedDB cache, preferring cached
+ * ciphertext for messages that exist in both (the local copy has the correct
+ * encryption context for the current device).
+ *
+ * @returns JSON-serialised snapshot string (Uint8Arrays encoded as `{ __u8: base64 }`)
+ * @e2ee The snapshot contains ciphertext and signal session state — never plaintext.
+ */
 export async function exportTrustedDeviceSnapshot(): Promise<string> {
   const snapshot = await exportSignalSnapshot();
   const [remoteDmHistory, remoteChannelHistory] = await Promise.all([
@@ -375,6 +415,12 @@ export async function exportTrustedDeviceSnapshot(): Promise<string> {
   );
 }
 
+/**
+ * Import a decrypted device-sync snapshot into the local signal store.
+ *
+ * @param serializedSnapshot — JSON string from {@link exportTrustedDeviceSnapshot}
+ * @e2ee Restores signal sessions, receiver keys, and message ciphertext history.
+ */
 export async function importTrustedDeviceSnapshot(
   serializedSnapshot: string,
 ): Promise<void> {

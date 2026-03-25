@@ -74,6 +74,9 @@ struct OAuthExchangeRequest {
     device: DeviceBootstrap,
 }
 
+/// POST /api/v2/auth/register — create account with device bootstrap.
+///
+/// Like v1 register but also registers the first device (auto-trusted).
 async fn register(
     State(state): State<AppState>,
     Json(req): Json<RegisterRequestV2>,
@@ -153,6 +156,10 @@ async fn register(
     Ok(response)
 }
 
+/// POST /api/v2/auth/login — authenticate with device bootstrap (multi-device).
+///
+/// Same rate limiting and security invariants as v1 login, but also registers
+/// or reuses a device and issues a device-scoped session.
 async fn login(
     State(state): State<AppState>,
     ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
@@ -257,6 +264,7 @@ async fn oauth_exchange(
     Ok(response)
 }
 
+/// POST /api/v2/auth/refresh — refresh with device-scoped session and atomic token rotation.
 async fn refresh(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -381,6 +389,7 @@ async fn refresh(
     ))
 }
 
+/// DELETE /api/v2/auth/logout — revoke the current device session.
 async fn logout(State(state): State<AppState>, headers: HeaderMap) -> AppResult<impl IntoResponse> {
     if let Some(refresh_token) = extract_refresh_cookie(&headers) {
         if let Ok(claims) = validate_refresh_token(&refresh_token, &state.jwt_keys) {
@@ -410,6 +419,10 @@ async fn logout(State(state): State<AppState>, headers: HeaderMap) -> AppResult<
     ))
 }
 
+/// Issue a complete device-scoped session (access token, refresh token, cookies).
+///
+/// Native clients (detected via `?platform=native`) receive the refresh token
+/// in the JSON body; browser clients receive it only in an HttpOnly cookie.
 pub(super) async fn issue_device_session(
     state: &AppState,
     user: UserDto,

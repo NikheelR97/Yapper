@@ -109,6 +109,7 @@ pub struct SyncEvent {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
+/// Wrap a [`SyncEvent`] into the JSON envelope sent over WebSocket.
 pub fn sync_event_payload(event: &SyncEvent) -> serde_json::Value {
     serde_json::json!({
         "type": "device_sync_event",
@@ -120,6 +121,10 @@ pub fn sync_event_payload(event: &SyncEvent) -> serde_json::Value {
     })
 }
 
+/// Send a sync event directly to a device over WebSocket (no DB persistence).
+///
+/// Used for ephemeral notifications (e.g. `device_revoked`) where delivery
+/// guarantees are not required — the event is fire-and-forget.
 pub fn send_live_sync_event(
     target_device_id: Uuid,
     source_device_id: Option<Uuid>,
@@ -167,6 +172,25 @@ pub fn router() -> Router<AppState> {
         .route("/:id", delete(revoke_device))
 }
 
+/// Register a new device or reactivate an existing one for the given user.
+///
+/// If `bootstrap.installation_id` matches an existing non-revoked device, that
+/// device is reused (platform/label updated, `last_seen_at` bumped). Otherwise
+/// a new device row is inserted.
+///
+/// The first device for a user is automatically trusted. Subsequent devices
+/// start in `pending_trust` and a trust request is enqueued for approval by
+/// an existing trusted device.
+///
+/// # Errors
+///
+/// * `AppError::BadRequest` — invalid platform/label in bootstrap payload.
+/// * `AppError::Internal` — database error.
+///
+/// # Security invariants
+///
+/// * Only the first device is auto-trusted; all others require explicit approval
+///   from an already-trusted device to prevent unauthorized device enrollment.
 pub async fn register_or_reuse_device(
     user_id: Uuid,
     bootstrap: &DeviceBootstrap,
@@ -251,6 +275,12 @@ pub async fn register_or_reuse_device(
     Ok(device)
 }
 
+/// Fetch a single device belonging to `user_id`, or 401 if not found.
+///
+/// # Security invariants
+///
+/// * Ownership check: returns `Unauthorized` if the device does not belong to
+///   the given user, preventing cross-user device access (IDOR).
 pub async fn get_device_for_user(
     user_id: Uuid,
     device_id: Uuid,
@@ -273,6 +303,7 @@ pub async fn get_device_for_user(
     device_from_row(&row)
 }
 
+/// Bump `last_seen_at` for the given device to `NOW()`.
 pub async fn touch_device(device_id: Uuid, state: &AppState) -> AppResult<()> {
     sqlx::query("UPDATE devices SET last_seen_at = NOW() WHERE id = $1")
         .bind(device_id)
@@ -281,6 +312,7 @@ pub async fn touch_device(device_id: Uuid, state: &AppState) -> AppResult<()> {
     Ok(())
 }
 
+/// Return all non-revoked, trusted devices for a user (ordered by creation date).
 pub async fn trusted_devices_for_user(
     user_id: Uuid,
     state: &AppState,
@@ -301,6 +333,12 @@ pub async fn trusted_devices_for_user(
     rows.iter().map(device_from_row).collect()
 }
 
+/// Persist a device sync event to the database and deliver it live if the
+/// target device is currently connected via WebSocket.
+///
+/// Unlike [`send_live_sync_event`], this provides at-least-once delivery:
+/// events are stored in `device_sync_events` and re-delivered on reconnect
+/// via [`take_sync_events`].
 pub async fn enqueue_sync_event(
     user_id: Uuid,
     target_device_id: Uuid,
@@ -346,6 +384,8 @@ pub async fn enqueue_sync_event(
     Ok(())
 }
 
+/// Atomically mark all undelivered sync events for `device_id` as delivered
+/// and return them. Each event is delivered at most once per call.
 pub async fn take_sync_events(device_id: Uuid, state: &AppState) -> AppResult<Vec<SyncEvent>> {
     let rows = sqlx::query(
         r#"
@@ -373,6 +413,7 @@ pub async fn take_sync_events(device_id: Uuid, state: &AppState) -> AppResult<Ve
         .map_err(AppError::from)
 }
 
+/// GET /api/v2/devices — list all devices (including revoked) for the authenticated user.
 async fn list_devices(
     auth: AuthDevice,
     State(state): State<AppState>,
@@ -401,6 +442,10 @@ async fn list_devices(
     Ok(Json(devices))
 }
 
+/// POST /api/v2/devices/trust-requests — request trust approval for a device.
+///
+/// If the target device is already trusted, returns `{ "status": "already_trusted" }`.
+/// Otherwise enqueues a trust request for approval by an existing trusted device.
 async fn create_trust_request(
     auth: AuthDevice,
     State(state): State<AppState>,
@@ -420,6 +465,13 @@ async fn create_trust_request(
     ))
 }
 
+/// POST /api/v2/devices/:id/approve — approve a pending device from a trusted device.
+///
+/// # Security invariants
+///
+/// * Caller must be on a trusted device (`require_trusted`).
+/// * Target device must belong to the same user (`get_device_for_user` ownership check).
+/// * Revoked devices cannot be re-approved.
 async fn approve_device(
     auth: AuthDevice,
     State(state): State<AppState>,
@@ -490,6 +542,24 @@ async fn approve_device(
     Ok(Json(updated.to_summary()))
 }
 
+/// DELETE /api/v2/devices/:id — revoke a device, destroying its sessions and signal keys.
+///
+/// A device can revoke itself (self-logout) or a trusted device can revoke
+/// another device belonging to the same user.
+///
+/// # Security invariants
+///
+/// * Cross-device revocation requires a trusted device (`require_trusted`).
+/// * Cannot revoke the user's sole trusted device unless a password is set,
+///   preventing permanent account lockout for OAuth-only users.
+/// * Revocation deletes all signal keys (identity, signed prekeys, OPKs) and
+///   the key backup for the device, ensuring no stale cryptographic material
+///   remains on the server after revocation.
+///
+/// # E2EE contract
+///
+/// * Signal keys are hard-deleted, not soft-deleted. A revoked device cannot
+///   be used to decrypt future messages or participate in key exchanges.
 async fn revoke_device(
     auth: AuthDevice,
     State(state): State<AppState>,

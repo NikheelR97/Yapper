@@ -19,8 +19,18 @@ use sentry::integrations::tracing as sentry_tracing;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Scrub PII from Sentry events before they leave the process.
-/// Strips sensitive headers (Authorization, Cookie) and redacts fields
-/// that may contain tokens, passwords, or email addresses.
+///
+/// Strips sensitive headers (Authorization, Cookie, Set-Cookie, X-Refresh-Token),
+/// redacts user email, and removes extra/tag/breadcrumb entries whose keys
+/// match `password`, `token`, `secret`, `key`, `refresh_token`, or `email`.
+/// Exception values and breadcrumb messages containing email-like patterns
+/// (`@` + `.`) are replaced with `[redacted]`.
+///
+/// # Security invariants
+///
+/// * No JWT, session cookie, refresh token, or email address is ever
+///   transmitted to Sentry. This is required for GDPR Art. 5(1)(c)
+///   (data minimisation) and prevents credential leakage to a third party.
 fn scrub_sentry_event(
     mut event: sentry::protocol::Event<'static>,
 ) -> Option<sentry::protocol::Event<'static>> {

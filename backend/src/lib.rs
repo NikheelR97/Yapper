@@ -236,6 +236,14 @@ pub(crate) async fn api_rate_limit_check(
     Ok(next.run(req).await)
 }
 
+/// Load trusted reverse-proxy IPs from the `TRUSTED_PROXY_IPS` env var.
+///
+/// Always includes `127.0.0.1` and `::1`. Additional IPs are parsed from
+/// a comma-separated list. Invalid entries are logged and skipped.
+///
+/// # Returns
+///
+/// Set of IPs whose `X-Forwarded-For` headers are trusted for client-IP extraction.
 pub fn load_trusted_proxy_ips() -> HashSet<IpAddr> {
     let mut ips = HashSet::from([
         IpAddr::from([127, 0, 0, 1]),
@@ -257,6 +265,11 @@ pub fn load_trusted_proxy_ips() -> HashSet<IpAddr> {
     ips
 }
 
+/// Read a `NonZeroU32` from the environment, falling back to `default`.
+///
+/// # Panics
+///
+/// Panics if `default` is zero (compile-time logic error).
 pub fn env_non_zero_u32(name: &str, default: u32) -> NonZeroU32 {
     std::env::var(name)
         .ok()

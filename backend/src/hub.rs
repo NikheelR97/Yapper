@@ -403,6 +403,14 @@ impl Hub {
 }
 
 /// Messages sent FROM client TO server over WebSocket.
+///
+/// `deny_unknown_fields` prevents clients from injecting unrecognised fields
+/// that could bypass future validation or be silently forwarded.
+///
+/// # E2EE contract
+///
+/// * `SendDm` / `SendChannel` carry **ciphertext only** — the server relays
+///   without decryption and never has access to plaintext message content.
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum WsInbound {
@@ -525,7 +533,18 @@ pub fn gc_ws_rate_limiter() {
     WS_UPGRADE_LIMITER.retain_recent();
 }
 
-/// WebSocket upgrade handler — attached to GET /ws
+/// GET /ws — WebSocket upgrade handler.
+///
+/// Authentication happens post-upgrade: the first message must be `{ "type": "auth", "token": "..." }`.
+/// Tokens are **not** sent in the query string (prevents URL-logged credentials).
+///
+/// # Security invariants
+///
+/// * Per-IP upgrade rate limit (10/min, burst 20) to prevent connection exhaustion.
+/// * Max frame size (`MAX_WS_FRAME_SIZE = 64 KB`) enforced at the protocol layer.
+/// * Per-user connection cap (`MAX_CONNECTIONS_PER_USER = 5`).
+/// * Per-user message rate limit (5 msg/sec, burst 20).
+/// * Only trusted devices may send `SendDm` / `SendChannel` messages.
 pub async fn ws_handler(
     axum::extract::ConnectInfo(peer_addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
     headers: axum::http::HeaderMap,

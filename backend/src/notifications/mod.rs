@@ -51,6 +51,15 @@ struct RegisterPushTokenReq {
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
+/// PUT /api/v1/notifications/push-token — register or update a push token.
+///
+/// Enforces a per-user cap ([`MAX_PUSH_TOKENS_PER_USER`](crate::constants::MAX_PUSH_TOKENS_PER_USER));
+/// when the limit is reached the oldest token is evicted before inserting.
+///
+/// # Security invariants
+///
+/// * Requires a trusted device.
+/// * Token is stored per-device, not per-user — revoking a device clears its token.
 async fn register_push_token(
     auth: AuthDevice,
     State(state): State<AppState>,
@@ -112,6 +121,7 @@ async fn register_push_token(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// DELETE /api/v1/notifications/push-token — clear the push token for the current device.
 async fn remove_push_token(
     auth: AuthDevice,
     State(state): State<AppState>,
