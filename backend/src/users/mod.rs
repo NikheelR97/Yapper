@@ -2506,6 +2506,111 @@ mod tests {
     }
 
     #[test]
+    fn validate_image_dimensions_accepts_small_png() {
+        let png = tiny_png_bytes(); // 2×2 — well within limits
+        let (w, h) = validate_image_dimensions(&png).expect("small png should pass validation");
+        assert_eq!(w, 2);
+        assert_eq!(h, 2);
+    }
+
+    #[test]
+    fn validate_image_dimensions_rejects_oversized_dimension() {
+        // Craft a minimal PNG with a huge width (50000) in the IHDR chunk.
+        // PNG format: 8-byte signature, then IHDR chunk with width/height as u32 BE.
+        let png = craft_png_header(50_000, 1);
+        let err = validate_image_dimensions(&png).expect_err("huge dimension must be rejected");
+        match err {
+            AppError::BadRequest(msg) => {
+                assert!(
+                    msg.contains("exceed"),
+                    "error should mention exceeding limit, got: {msg}"
+                );
+            }
+            other => panic!("unexpected error variant: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_image_dimensions_rejects_pixel_count_bomb() {
+        // 4096×4097 — each dimension is within MAX_IMAGE_DIMENSION (4096) individually,
+        // but the product (16,781,312) exceeds MAX_DECODED_PIXELS (4096×4096 = 16,777,216).
+        // This verifies the pixel-count check catches decompression bombs where both
+        // dimensions are just under the single-axis limit.
+        let png = craft_png_header(4096, 4097);
+        let err = validate_image_dimensions(&png).expect_err("pixel bomb must be rejected");
+        match err {
+            AppError::BadRequest(msg) => {
+                assert!(
+                    msg.contains("pixel count") || msg.contains("exceed"),
+                    "error should mention pixel count or exceed, got: {msg}"
+                );
+            }
+            other => panic!("unexpected error variant: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_image_dimensions_rejects_nonsense_bytes() {
+        let garbage = b"not an image at all";
+        validate_image_dimensions(garbage).expect_err("garbage bytes must be rejected");
+    }
+
+    /// Craft a minimal valid PNG file with the given dimensions in the IHDR chunk.
+    /// The image data is a valid (but minimal) IDAT so that `into_dimensions()` can
+    /// parse the header without error.
+    fn craft_png_header(width: u32, height: u32) -> Vec<u8> {
+        let mut buf = Vec::new();
+
+        // PNG signature
+        buf.extend_from_slice(&[137, 80, 78, 71, 13, 10, 26, 10]);
+
+        // IHDR chunk: 13 bytes of data
+        let mut ihdr_data = Vec::new();
+        ihdr_data.extend_from_slice(&width.to_be_bytes());
+        ihdr_data.extend_from_slice(&height.to_be_bytes());
+        ihdr_data.push(8); // bit depth
+        ihdr_data.push(2); // color type (RGB)
+        ihdr_data.push(0); // compression
+        ihdr_data.push(0); // filter
+        ihdr_data.push(0); // interlace
+        write_png_chunk(&mut buf, b"IHDR", &ihdr_data);
+
+        // Minimal IDAT chunk (empty deflate stream: single block, no data)
+        let idat_data = [0x08, 0xd7, 0x01, 0x00, 0x00, 0xff, 0xff, 0x00, 0x01, 0x00, 0x01];
+        write_png_chunk(&mut buf, b"IDAT", &idat_data);
+
+        // IEND chunk
+        write_png_chunk(&mut buf, b"IEND", &[]);
+
+        buf
+    }
+
+    fn write_png_chunk(buf: &mut Vec<u8>, chunk_type: &[u8; 4], data: &[u8]) {
+        buf.extend_from_slice(&(data.len() as u32).to_be_bytes());
+        buf.extend_from_slice(chunk_type);
+        buf.extend_from_slice(data);
+        // CRC32 over chunk_type + data (ISO 3309 / PNG spec)
+        let crc = png_crc32(chunk_type, data);
+        buf.extend_from_slice(&crc.to_be_bytes());
+    }
+
+    /// Minimal CRC32 (ISO 3309) for PNG chunk checksums in tests.
+    fn png_crc32(chunk_type: &[u8; 4], data: &[u8]) -> u32 {
+        let mut crc: u32 = 0xFFFF_FFFF;
+        for &byte in chunk_type.iter().chain(data.iter()) {
+            crc ^= byte as u32;
+            for _ in 0..8 {
+                if crc & 1 != 0 {
+                    crc = (crc >> 1) ^ 0xEDB8_8320;
+                } else {
+                    crc >>= 1;
+                }
+            }
+        }
+        crc ^ 0xFFFF_FFFF
+    }
+
+    #[test]
     fn build_data_export_zip_contains_expected_json_file() {
         let payload = br#"{"hello":"world"}"#;
         let zip_bytes =
