@@ -256,6 +256,25 @@ async fn download_and_reupload_avatar(
     }
     let image_bytes = image_bytes.to_vec();
 
+    // Validate dimensions BEFORE full decompression to prevent decompression bombs.
+    // A malicious Discord avatar could be a tiny file with huge pixel dimensions.
+    {
+        use image::io::Reader as ImageReader;
+        use std::io::Cursor;
+        let reader = ImageReader::new(Cursor::new(&image_bytes))
+            .with_guessed_format()
+            .map_err(|e| anyhow::anyhow!("Unrecognised image format: {e}"))?;
+        let (w, h) = reader
+            .into_dimensions()
+            .map_err(|e| anyhow::anyhow!("Cannot read image dimensions: {e}"))?;
+        if w > crate::constants::MAX_IMAGE_DIMENSION || h > crate::constants::MAX_IMAGE_DIMENSION {
+            anyhow::bail!("Discord avatar dimensions {w}×{h} exceed limit");
+        }
+        if w.saturating_mul(h) > crate::constants::MAX_DECODED_PIXELS {
+            anyhow::bail!("Discord avatar pixel count exceeds limit");
+        }
+    }
+
     // Resize to 256×256 WebP in a blocking thread
     let webp_bytes = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<u8>> {
         use image::{imageops::FilterType, ImageFormat};

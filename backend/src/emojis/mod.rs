@@ -15,7 +15,7 @@
  *   6. Insert DB row + broadcast emoji_added WS event to all server members
  */
 use axum::{
-    extract::{Multipart, Path, State},
+    extract::{DefaultBodyLimit, Multipart, Path, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{delete, get},
@@ -55,6 +55,7 @@ pub fn server_emoji_router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_emojis).post(upload_emoji))
         .route("/:emoji_id", delete(delete_emoji))
+        .layer(DefaultBodyLimit::max(MAX_EMOJI_BYTES))
 }
 
 /// Empty stub router still needed for the top-level /api/v1/emojis nest in main.rs.

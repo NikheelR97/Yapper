@@ -23,7 +23,7 @@
  *   DELETE /                                — soft-delete account
  */
 use axum::{
-    extract::{Multipart, Path, State},
+    extract::{DefaultBodyLimit, Multipart, Path, State},
     http::{header, StatusCode},
     response::IntoResponse,
     routing::{delete, get, patch, post, put},
@@ -88,10 +88,16 @@ static HEX_COLOR_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^#[0-9a-fA-F]{6}
 static HTTPS_URL_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^https://").unwrap());
 
 pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/me", get(get_me).patch(update_profile))
+    // Upload routes get a generous body limit matching the largest upload (banner = 5 MB).
+    // The handler-level parse_image_upload enforces per-route limits (2 MB avatar, 5 MB banner).
+    let upload_routes = Router::new()
         .route("/me/avatar", post(upload_avatar))
         .route("/me/banner", post(upload_banner))
+        .layer(DefaultBodyLimit::max(MAX_BANNER_UPLOAD_BYTES));
+
+    Router::new()
+        .route("/me", get(get_me).patch(update_profile))
+        .merge(upload_routes)
         .route("/me/username", patch(change_username))
         .route("/me/privacy", get(get_privacy).patch(update_privacy))
         .route("/me/connections/:provider", delete(unlink_connection))
