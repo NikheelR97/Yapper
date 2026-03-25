@@ -68,7 +68,7 @@ describe('api client', () => {
 		});
 	});
 
-	it('adds the stored refresh token when refreshing auth', async () => {
+	it('does not send X-Refresh-Token header in browser (non-native) refresh requests', async () => {
 		const fetchMock = vi.fn().mockResolvedValue({
 			ok: true,
 			status: 200,
@@ -76,6 +76,8 @@ describe('api client', () => {
 		});
 		vi.stubGlobal('fetch', fetchMock);
 
+		// storeRefreshToken is a no-op in browser context (isNative() returns false),
+		// so the refresh token is sent only via HttpOnly cookie (credentials: 'include').
 		storeRefreshToken('refresh-token');
 
 		await expect(api.post('/api/v1/auth/refresh')).resolves.toEqual({ refreshed: true });
@@ -85,7 +87,6 @@ describe('api client', () => {
 			body: undefined,
 			headers: {
 				'Content-Type': 'application/json',
-				'X-Refresh-Token': 'refresh-token',
 			},
 			credentials: 'include',
 		});
