@@ -37,9 +37,9 @@ fn scrub_sentry_event(
     // Scrub sensitive headers from request data
     if let Some(ref mut request) = event.request {
         let sensitive_headers = ["authorization", "cookie", "set-cookie", "x-refresh-token"];
-        request.headers.retain(|k, _| {
-            !sensitive_headers.contains(&k.to_lowercase().as_str())
-        });
+        request
+            .headers
+            .retain(|k, _| !sensitive_headers.contains(&k.to_lowercase().as_str()));
     }
 
     // Scrub user email if captured
@@ -48,16 +48,23 @@ fn scrub_sentry_event(
     }
 
     // Scrub sensitive keys from extra data
-    let sensitive_keys = ["password", "token", "secret", "key", "refresh_token", "email"];
-    event.extra.retain(|k, _| {
-        !sensitive_keys.iter().any(|s| k.to_lowercase().contains(s))
-    });
+    let sensitive_keys = [
+        "password",
+        "token",
+        "secret",
+        "key",
+        "refresh_token",
+        "email",
+    ];
+    event
+        .extra
+        .retain(|k, _| !sensitive_keys.iter().any(|s| k.to_lowercase().contains(s)));
 
     // Scrub breadcrumb data that may contain PII
     for breadcrumb in &mut event.breadcrumbs {
-        breadcrumb.data.retain(|k, _| {
-            !sensitive_keys.iter().any(|s| k.to_lowercase().contains(s))
-        });
+        breadcrumb
+            .data
+            .retain(|k, _| !sensitive_keys.iter().any(|s| k.to_lowercase().contains(s)));
         // Redact message content that looks like an email
         if let Some(ref msg) = breadcrumb.message {
             if msg.contains('@') && msg.contains('.') {
@@ -76,9 +83,9 @@ fn scrub_sentry_event(
     }
 
     // Scrub tags
-    event.tags.retain(|k, _| {
-        !sensitive_keys.iter().any(|s| k.to_lowercase().contains(s))
-    });
+    event
+        .tags
+        .retain(|k, _| !sensitive_keys.iter().any(|s| k.to_lowercase().contains(s)));
 
     Some(event)
 }

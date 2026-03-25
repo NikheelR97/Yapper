@@ -2609,7 +2609,9 @@ mod tests {
         write_png_chunk(&mut buf, b"IHDR", &ihdr_data);
 
         // Minimal IDAT chunk (empty deflate stream: single block, no data)
-        let idat_data = [0x08, 0xd7, 0x01, 0x00, 0x00, 0xff, 0xff, 0x00, 0x01, 0x00, 0x01];
+        let idat_data = [
+            0x08, 0xd7, 0x01, 0x00, 0x00, 0xff, 0xff, 0x00, 0x01, 0x00, 0x01,
+        ];
         write_png_chunk(&mut buf, b"IDAT", &idat_data);
 
         // IEND chunk

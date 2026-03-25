@@ -384,7 +384,8 @@ pub async fn refresh(
             .await?;
 
             if let Some(row) = exists {
-                let is_recent_retry = row.revoked_at
+                let is_recent_retry = row
+                    .revoked_at
                     .map(|r| chrono::Utc::now().signed_duration_since(r).num_seconds() < 30)
                     .unwrap_or(false);
 

@@ -306,8 +306,9 @@ async fn refresh(
 
             if let Some(row) = existing {
                 let family_id: Uuid = row.try_get("family_id")?;
-                let revoked_at: Option<chrono::DateTime<chrono::Utc>> = row.try_get("revoked_at").unwrap_or(None);
-                
+                let revoked_at: Option<chrono::DateTime<chrono::Utc>> =
+                    row.try_get("revoked_at").unwrap_or(None);
+
                 // If revoked very recently (e.g. <30s), treat as benign concurrent client retry,
                 // fail this request but don't nuke the session family.
                 let is_recent_retry = revoked_at

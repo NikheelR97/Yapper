@@ -67,14 +67,13 @@ use hub::Hub;
 /// Writing to a pre-allocated `String` is infallible, so this cannot panic.
 pub fn hex_encode(bytes: &[u8]) -> String {
     use std::fmt::Write;
-    bytes.iter().fold(
-        String::with_capacity(bytes.len() * 2),
-        |mut s, b| {
+    bytes
+        .iter()
+        .fold(String::with_capacity(bytes.len() * 2), |mut s, b| {
             // write! to String is infallible — the fmt::Error branch is unreachable.
             let _ = write!(s, "{b:02x}");
             s
-        },
-    )
+        })
 }
 
 // ─── Shared types ─────────────────────────────────────────────────────────────

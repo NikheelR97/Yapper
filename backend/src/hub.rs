@@ -207,8 +207,9 @@ impl Hub {
             .entry(*user_id)
             .or_insert_with(|| {
                 // SAFETY: Literal 5 and 20 are non-zero; NonZeroU32::new cannot fail.
-                let quota = governor::Quota::per_second(NonZeroU32::new(5).expect("non-zero constant"))
-                    .allow_burst(NonZeroU32::new(20).expect("non-zero constant"));
+                let quota =
+                    governor::Quota::per_second(NonZeroU32::new(5).expect("non-zero constant"))
+                        .allow_burst(NonZeroU32::new(20).expect("non-zero constant"));
                 Arc::new(RateLimiter::direct(quota))
             })
             .clone();

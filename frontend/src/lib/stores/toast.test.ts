@@ -14,7 +14,9 @@ describe('toast store', () => {
 		clearToasts();
 		vi.useFakeTimers();
 		let nextId = 1;
-		vi.spyOn(globalThis.crypto, 'randomUUID').mockImplementation(() => `toast-${nextId++}`);
+		vi.spyOn(globalThis.crypto, 'randomUUID').mockImplementation(
+			() => `00000000-0000-0000-0000-00000000000${nextId++}` as ReturnType<typeof crypto.randomUUID>,
+		);
 	});
 
 	afterEach(() => {
@@ -29,13 +31,13 @@ describe('toast store', () => {
 		toast.warning('Careful');
 
 		expect(get(toast)).toEqual([
-			{ id: 'toast-1', type: 'success', message: 'Saved', duration: 4000 },
-			{ id: 'toast-2', type: 'warning', message: 'Careful', duration: 6000 },
+			{ id: '00000000-0000-0000-0000-000000000001', type: 'success', message: 'Saved', duration: 4000 },
+			{ id: '00000000-0000-0000-0000-000000000002', type: 'warning', message: 'Careful', duration: 6000 },
 		]);
 
 		vi.advanceTimersByTime(4_000);
 		expect(get(toast)).toEqual([
-			{ id: 'toast-2', type: 'warning', message: 'Careful', duration: 6000 },
+			{ id: '00000000-0000-0000-0000-000000000002', type: 'warning', message: 'Careful', duration: 6000 },
 		]);
 
 		vi.advanceTimersByTime(2_000);
