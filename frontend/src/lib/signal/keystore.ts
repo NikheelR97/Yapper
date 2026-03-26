@@ -42,6 +42,7 @@ const DB_NAME = "yapper-signal";
 const DB_NAME_PREFIX = "yapper-signal";
 const DB_VERSION = 7;
 const BOOTSTRAP_COMPLETE_KEY = "bootstrap-complete";
+const SIGNAL_BACKUP_FORMAT_VERSION = 2;
 
 interface SignalSecretSnapshot {
   identityKey: IdentityKeyPair | null;
@@ -51,6 +52,25 @@ interface SignalSecretSnapshot {
   senderKeys: SenderKey[];
   receiverKeys: SenderKeyRecord[];
   bootstrapComplete: boolean;
+}
+
+interface SignalBackupSnapshot extends SignalSecretSnapshot {
+  formatVersion: typeof SIGNAL_BACKUP_FORMAT_VERSION;
+  dmHistory: CachedDmHistoryMessage[];
+  channelHistory: CachedChannelHistoryMessage[];
+}
+
+interface SignalBackupImportSnapshot {
+  formatVersion?: number;
+  identityKey?: IdentityKeyPair | null;
+  prekeys?: PreKeyPair[];
+  signedPrekeys?: SignedPreKey[];
+  sessions?: Session[];
+  senderKeys?: SenderKey[];
+  receiverKeys?: SenderKeyRecord[];
+  dmHistory?: CachedDmHistoryMessage[];
+  channelHistory?: CachedChannelHistoryMessage[];
+  bootstrapComplete?: boolean;
 }
 
 export interface CachedDmHistoryMessage {
@@ -399,6 +419,26 @@ function cloneSecretSnapshot(
     receiverKeys: [...snapshot.receiverKeys],
     bootstrapComplete: snapshot.bootstrapComplete,
   };
+}
+
+function isEncryptedIdbEnvelope(value: unknown): boolean {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    (value as Record<string, unknown>).__yenc === 1
+  );
+}
+
+function snapshotContainsLegacyEncryptedEnvelope(
+  snapshot: SignalBackupImportSnapshot,
+): boolean {
+  if (isEncryptedIdbEnvelope(snapshot.identityKey)) return true;
+  if (snapshot.prekeys?.some(isEncryptedIdbEnvelope)) return true;
+  if (snapshot.signedPrekeys?.some(isEncryptedIdbEnvelope)) return true;
+  if (snapshot.sessions?.some(isEncryptedIdbEnvelope)) return true;
+  if (snapshot.senderKeys?.some(isEncryptedIdbEnvelope)) return true;
+  if (snapshot.receiverKeys?.some(isEncryptedIdbEnvelope)) return true;
+  return false;
 }
 
 async function requireDesktopSecretSnapshot(): Promise<SignalSecretSnapshot> {
@@ -1245,21 +1285,12 @@ export async function storePeerKeyChanged(
   await db.delete("peer_trust", peerKeyChangedKey(peerId));
 }
 
-export async function exportSignalSnapshot(): Promise<{
-  identityKey: IdentityKeyPair | null;
-  prekeys: PreKeyPair[];
-  signedPrekeys: SignedPreKey[];
-  sessions: Session[];
-  senderKeys: SenderKey[];
-  receiverKeys: SenderKeyRecord[];
-  dmHistory: CachedDmHistoryMessage[];
-  channelHistory: CachedChannelHistoryMessage[];
-  bootstrapComplete: boolean;
-}> {
+export async function exportSignalSnapshot(): Promise<SignalBackupSnapshot> {
   if (useDesktopVault()) {
     const db = await getDB();
     const snapshot = await requireDesktopSecretSnapshot();
     return {
+      formatVersion: SIGNAL_BACKUP_FORMAT_VERSION,
       ...cloneSecretSnapshot(snapshot),
       dmHistory: await db.getAll("dm_history"),
       channelHistory: await db.getAll("channel_history"),
@@ -1267,33 +1298,37 @@ export async function exportSignalSnapshot(): Promise<{
   }
 
   const db = await getDB();
-  const receiverKeys = await listReceiverKeysFromDb(db);
+  const snapshot = await readSecretSnapshotFromDb(db);
 
   return {
-    identityKey: (await db.get("identity", "own")) ?? null,
-    prekeys: await db.getAll("prekeys"),
-    signedPrekeys: await db.getAll("signed_prekeys"),
-    sessions: await db.getAll("dm_sessions"),
-    senderKeys: await db.getAll("sender_keys"),
-    receiverKeys,
+    formatVersion: SIGNAL_BACKUP_FORMAT_VERSION,
+    ...snapshot,
     dmHistory: await db.getAll("dm_history"),
     channelHistory: await db.getAll("channel_history"),
-    bootstrapComplete: (await db.get("meta", BOOTSTRAP_COMPLETE_KEY)) === true,
   };
 }
 
-export async function importSignalSnapshot(snapshot: {
-  identityKey?: IdentityKeyPair | null;
-  prekeys?: PreKeyPair[];
-  signedPrekeys?: SignedPreKey[];
-  sessions?: Session[];
-  senderKeys?: SenderKey[];
-  receiverKeys?: SenderKeyRecord[];
-  dmHistory?: CachedDmHistoryMessage[];
-  channelHistory?: CachedChannelHistoryMessage[];
-  bootstrapComplete?: boolean;
-}): Promise<void> {
+export async function importSignalSnapshot(
+  snapshot: SignalBackupImportSnapshot,
+): Promise<void> {
   clearInMemoryCaches();
+
+  if (
+    snapshot.formatVersion != null &&
+    snapshot.formatVersion !== SIGNAL_BACKUP_FORMAT_VERSION
+  ) {
+    throw new Error(
+      `Unsupported Signal backup format version: ${snapshot.formatVersion}`,
+    );
+  }
+  if (
+    snapshot.formatVersion == null &&
+    snapshotContainsLegacyEncryptedEnvelope(snapshot)
+  ) {
+    throw new Error(
+      "Legacy Signal backup envelope format is no longer supported; re-export the backup with the current app version.",
+    );
+  }
 
   if (useDesktopVault()) {
     const current = await requireDesktopSecretSnapshot();

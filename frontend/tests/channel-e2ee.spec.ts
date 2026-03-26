@@ -64,7 +64,7 @@ async function createApiSession(
 
 async function createServer(session: Session): Promise<{ serverId: string; channelId: string }> {
 	const name = `E2E Channel E2EE ${Date.now()}`;
-	const createRes = await fetch(`${API_URL}/api/v1/servers`, {
+	const createRes = await fetch(`${API_URL}/api/v2/servers`, {
 		method: 'POST',
 		headers: apiHeaders(session),
 		body: JSON.stringify({ name }),
@@ -72,7 +72,7 @@ async function createServer(session: Session): Promise<{ serverId: string; chann
 	if (!createRes.ok) throw new Error(`createServer failed: ${createRes.status}`);
 	const server = (await createRes.json()) as { id: string };
 
-	const chRes = await fetch(`${API_URL}/api/v1/servers/${server.id}/channels`, {
+	const chRes = await fetch(`${API_URL}/api/v2/servers/${server.id}/channels`, {
 		headers: { Authorization: `Bearer ${session.accessToken}` },
 	});
 	if (!chRes.ok) throw new Error(`listChannels failed: ${chRes.status}`);
@@ -84,7 +84,7 @@ async function createServer(session: Session): Promise<{ serverId: string; chann
 }
 
 async function createInvite(session: Session, serverId: string): Promise<string> {
-	const res = await fetch(`${API_URL}/api/v1/servers/${serverId}/invite`, {
+	const res = await fetch(`${API_URL}/api/v2/servers/${serverId}/invite`, {
 		method: 'POST',
 		headers: apiHeaders(session),
 		body: JSON.stringify({ max_uses: 5 }),
@@ -95,7 +95,7 @@ async function createInvite(session: Session, serverId: string): Promise<string>
 }
 
 async function joinByInvite(session: Session, code: string): Promise<void> {
-	const res = await fetch(`${API_URL}/api/v1/servers/join/${code}`, {
+	const res = await fetch(`${API_URL}/api/v2/servers/join/${code}`, {
 		method: 'POST',
 		headers: apiHeaders(session),
 		body: '{}',

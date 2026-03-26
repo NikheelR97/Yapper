@@ -15,7 +15,7 @@
         "video/webm;codecs=vp8,opus",
         "video/webm",
     ];
-    const UPLOAD_URL_PATH = "/api/v1/media/upload-url";
+    const UPLOAD_URL_PATH = "/api/v2/media/upload-url";
 
     // ── State ──────────────────────────────────────────────────────────────────
     let recording = false;

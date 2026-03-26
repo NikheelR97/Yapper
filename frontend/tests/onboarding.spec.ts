@@ -66,14 +66,14 @@ test.describe('Onboarding carousel', () => {
 
 	test('completing all steps navigates to /explore or /login (redirect blocked mid-flow)', async ({ page }) => {
 		// Mock explore endpoints in case we actually reach /explore
-		await page.route(`**/api/v1/explore/**`, async (route) => {
+		await page.route(`**/api/v2/explore/**`, async (route) => {
 			await route.fulfill({
 				status: 200,
 				contentType: 'application/json',
 				body: JSON.stringify([]),
 			});
 		});
-		await page.route(`**/api/v1/search**`, async (route) => {
+		await page.route(`**/api/v2/search**`, async (route) => {
 			await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ servers: [], users: [] }) });
 		});
 

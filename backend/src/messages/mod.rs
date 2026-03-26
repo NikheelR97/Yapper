@@ -10,20 +10,12 @@ use sqlx::Row;
 use uuid::Uuid;
 
 use crate::{
-    auth::{AuthDevice, AuthUser},
+    auth::{AuthDevice},
     constants,
     error::{AppError, AppResult},
+    hub::mark_dm_delivered,
     users, AppState,
 };
-
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route(
-            "/",
-            axum::routing::post(create_or_get_conversation).get(list_conversations),
-        )
-        .route("/:id/messages", get(list_messages))
-}
 
 pub fn v2_router() -> Router<AppState> {
     let message_routes = Router::new()
@@ -40,7 +32,7 @@ pub fn v2_router() -> Router<AppState> {
         .merge(message_routes)
 }
 
-// ─── Create or Get DM Conversation ───────────────────────────────────────────
+// â”€â”€â”€ Create or Get DM Conversation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -53,14 +45,6 @@ struct ConversationResp {
     id: Uuid,
     peer_id: Uuid,
     created_at: DateTime<Utc>,
-}
-
-async fn create_or_get_conversation(
-    auth: AuthUser,
-    State(state): State<AppState>,
-    Json(req): Json<CreateConversationReq>,
-) -> AppResult<Json<ConversationResp>> {
-    create_or_get_conversation_for_user(auth.user_id, req, state).await
 }
 
 async fn create_or_get_conversation_v2(
@@ -92,19 +76,24 @@ async fn create_or_get_conversation_for_user(
         return Err(AppError::NotFound("Peer user not found".into()));
     }
 
-    // Look for existing conversation between the two users
+    let (user_low, user_high) = if user_id < req.peer_id {
+        (user_id, req.peer_id)
+    } else {
+        (req.peer_id, user_id)
+    };
+
+    // Resolve through the canonical pair table first so duplicate DM threads
+    // cannot be created for the same unordered user pair.
     let existing = sqlx::query(
         r#"
-        SELECT dp1.conversation_id AS id, dm.created_at
-        FROM dm_participants dp1
-        JOIN dm_participants dp2 ON dp1.conversation_id = dp2.conversation_id
-        JOIN dm_conversations dm  ON dm.id = dp1.conversation_id
-        WHERE dp1.user_id = $1 AND dp2.user_id = $2
-        LIMIT 1
+        SELECT dcp.conversation_id AS id, dc.created_at
+        FROM dm_conversation_pairs dcp
+        JOIN dm_conversations dc ON dc.id = dcp.conversation_id
+        WHERE dcp.user_low = $1 AND dcp.user_high = $2
         "#,
     )
-    .bind(user_id)
-    .bind(req.peer_id)
+    .bind(user_low)
+    .bind(user_high)
     .fetch_optional(state.db.pool())
     .await?;
 
@@ -123,17 +112,47 @@ async fn create_or_get_conversation_for_user(
     // Create a new conversation
     let mut tx = state.db.pool().begin().await?;
 
-    let conv_id: Uuid =
-        sqlx::query("INSERT INTO dm_conversations DEFAULT VALUES RETURNING id, created_at")
-            .fetch_one(&mut *tx)
-            .await?
-            .try_get("id")?;
-
-    let created_at_row = sqlx::query("SELECT created_at FROM dm_conversations WHERE id = $1")
-        .bind(conv_id)
+    let conv_row = sqlx::query("INSERT INTO dm_conversations DEFAULT VALUES RETURNING id, created_at")
         .fetch_one(&mut *tx)
         .await?;
-    let created_at: DateTime<Utc> = created_at_row.try_get("created_at")?;
+    let conv_id: Uuid = conv_row.try_get("id")?;
+    let created_at: DateTime<Utc> = conv_row.try_get("created_at")?;
+
+    let pair_inserted = sqlx::query(
+        r#"
+        INSERT INTO dm_conversation_pairs (conversation_id, user_low, user_high)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (user_low, user_high) DO NOTHING
+        RETURNING conversation_id
+        "#,
+    )
+    .bind(conv_id)
+    .bind(user_low)
+    .bind(user_high)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    if pair_inserted.is_none() {
+        let existing = sqlx::query(
+            r#"
+            SELECT dcp.conversation_id AS id, dc.created_at
+            FROM dm_conversation_pairs dcp
+            JOIN dm_conversations dc ON dc.id = dcp.conversation_id
+            WHERE dcp.user_low = $1 AND dcp.user_high = $2
+            "#,
+        )
+        .bind(user_low)
+        .bind(user_high)
+        .fetch_one(&mut *tx)
+        .await?;
+
+        tx.rollback().await.ok();
+        return Ok(Json(ConversationResp {
+            id: existing.try_get("id")?,
+            peer_id: req.peer_id,
+            created_at: existing.try_get("created_at")?,
+        }));
+    }
 
     sqlx::query("INSERT INTO dm_participants (conversation_id, user_id) VALUES ($1, $2), ($1, $3)")
         .bind(conv_id)
@@ -151,7 +170,7 @@ async fn create_or_get_conversation_for_user(
     }))
 }
 
-// ─── List Conversations ───────────────────────────────────────────────────────
+// â”€â”€â”€ List Conversations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 #[derive(Serialize)]
 struct ConversationListItem {
@@ -161,13 +180,6 @@ struct ConversationListItem {
     peer_display_name: Option<String>,
     peer_avatar_url: Option<String>,
     last_message_at: Option<DateTime<Utc>>,
-}
-
-async fn list_conversations(
-    auth: AuthUser,
-    State(state): State<AppState>,
-) -> AppResult<Json<Vec<ConversationListItem>>> {
-    list_conversations_for_user(auth.user_id, state).await
 }
 
 async fn list_conversations_v2(
@@ -220,7 +232,7 @@ async fn list_conversations_for_user(
     Ok(Json(items))
 }
 
-// ─── List Messages (paginated, cursor-based) ──────────────────────────────────
+// â”€â”€â”€ List Messages (paginated, cursor-based) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -228,21 +240,6 @@ struct ListMessagesQuery {
     /// Fetch messages created before this cursor (UUID of last known message).
     before: Option<Uuid>,
     limit: Option<i64>,
-}
-
-#[derive(Serialize)]
-struct MessageResp {
-    id: Uuid,
-    conversation_id: Uuid,
-    sender_id: Uuid,
-    /// Base64-encoded AES-256-GCM ciphertext.
-    ciphertext: String,
-    /// Base64-encoded X25519 ephemeral public key — only on first message of a session.
-    ephemeral_key: Option<String>,
-    /// OPK id used for X3DH — only on first message.
-    opk_id: Option<i32>,
-    msg_num: i64,
-    created_at: DateTime<Utc>,
 }
 
 #[derive(Serialize)]
@@ -280,15 +277,6 @@ struct SendEnvelopeReqV2 {
 #[serde(deny_unknown_fields)]
 struct SendMessageReqV2 {
     envelopes: Vec<SendEnvelopeReqV2>,
-}
-
-async fn list_messages(
-    auth: AuthUser,
-    State(state): State<AppState>,
-    Path(conv_id): Path<Uuid>,
-    Query(q): Query<ListMessagesQuery>,
-) -> AppResult<Json<Vec<MessageResp>>> {
-    list_messages_v1_for_user(auth.user_id, conv_id, q, state).await
 }
 
 async fn list_messages_v2(
@@ -407,96 +395,6 @@ async fn list_messages_v2(
     Ok(Json(messages))
 }
 
-async fn list_messages_v1_for_user(
-    user_id: Uuid,
-    conv_id: Uuid,
-    q: ListMessagesQuery,
-    state: AppState,
-) -> AppResult<Json<Vec<MessageResp>>> {
-    // Verify caller is a participant
-    let is_participant =
-        sqlx::query("SELECT 1 FROM dm_participants WHERE conversation_id = $1 AND user_id = $2")
-            .bind(conv_id)
-            .bind(user_id)
-            .fetch_optional(state.db.pool())
-            .await?
-            .is_some();
-
-    if !is_participant {
-        return Err(AppError::Forbidden);
-    }
-
-    let limit = q.limit.unwrap_or(50).min(100);
-
-    // V1 legacy path: compute msg_num via ROW_NUMBER() in a CTE over ALL
-    // conversation messages, then paginate the numbered result.  This gives
-    // a global sequence number (matching the old scalar subquery semantics)
-    // while staying O(n) instead of O(n^2).
-    let rows = if let Some(before_id) = q.before {
-        sqlx::query(
-            r#"
-            WITH numbered AS (
-                SELECT id, conversation_id, sender_id, ciphertext, ek_public, opk_id,
-                       (ROW_NUMBER() OVER (ORDER BY created_at) - 1) AS msg_num,
-                       created_at
-                FROM messages
-                WHERE conversation_id = $1 AND deleted_at IS NULL
-            )
-            SELECT * FROM numbered
-            WHERE created_at < (SELECT created_at FROM messages WHERE id = $2)
-            ORDER BY created_at DESC
-            LIMIT $3
-            "#,
-        )
-        .bind(conv_id)
-        .bind(before_id)
-        .bind(limit)
-        .fetch_all(state.db.pool())
-        .await?
-    } else {
-        sqlx::query(
-            r#"
-            WITH numbered AS (
-                SELECT id, conversation_id, sender_id, ciphertext, ek_public, opk_id,
-                       (ROW_NUMBER() OVER (ORDER BY created_at) - 1) AS msg_num,
-                       created_at
-                FROM messages
-                WHERE conversation_id = $1 AND deleted_at IS NULL
-            )
-            SELECT * FROM numbered
-            ORDER BY created_at DESC
-            LIMIT $2
-            "#,
-        )
-        .bind(conv_id)
-        .bind(limit)
-        .fetch_all(state.db.pool())
-        .await?
-    };
-
-    let mut messages: Vec<MessageResp> = rows
-        .into_iter()
-        .map(|r| -> Result<MessageResp, sqlx::Error> {
-            let cipher: Vec<u8> = r.try_get("ciphertext").unwrap_or_default();
-            let ek: Option<Vec<u8>> = r.try_get("ek_public").ok().flatten();
-            Ok(MessageResp {
-                id: r.try_get("id")?,
-                conversation_id: r.try_get("conversation_id")?,
-                sender_id: r.try_get("sender_id")?,
-                ciphertext: BASE64.encode(&cipher),
-                ephemeral_key: ek.as_ref().map(|k| BASE64.encode(k)),
-                opk_id: r.try_get("opk_id").ok().flatten(),
-                msg_num: r.try_get("msg_num").unwrap_or(0),
-                created_at: r.try_get("created_at")?,
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-
-    // Return in chronological order
-    messages.reverse();
-    Ok(Json(messages))
-}
-
 async fn send_message_v2(
     auth: AuthDevice,
     State(state): State<AppState>,
@@ -516,12 +414,12 @@ async fn send_message_v2(
 
     let message_id = Uuid::new_v4();
     let created_at = Utc::now();
-    let delivered =
-        store_dm_envelopes(message_id, conv_id, created_at, &auth, &req, &state).await?;
+    store_dm_envelopes(message_id, conv_id, created_at, &auth, &req, &state).await?;
 
-    fanout_dm_v2(
-        message_id, conv_id, created_at, &auth, &req, &delivered, &state,
-    );
+    let delivered = fanout_dm_v2(message_id, conv_id, created_at, &auth, &req, &state);
+    if let Err(e) = mark_dm_delivered(&delivered, &state).await {
+        tracing::warn!("Failed to mark DM v2 delivered: {e}");
+    }
 
     Ok(Json(serde_json::json!({
         "status": "ok",
@@ -614,7 +512,6 @@ async fn validate_dm_recipient_devices(req: &SendMessageReqV2, state: &AppState)
 }
 
 /// Insert the parent message row + per-device envelopes inside a transaction.
-/// Returns the list of device IDs that are currently online.
 async fn store_dm_envelopes(
     message_id: Uuid,
     conv_id: Uuid,
@@ -622,29 +519,23 @@ async fn store_dm_envelopes(
     auth: &AuthDevice,
     req: &SendMessageReqV2,
     state: &AppState,
-) -> AppResult<Vec<Uuid>> {
+) -> AppResult<()> {
     let mut tx = state.db.pool().begin().await?;
 
     sqlx::query(
         "INSERT INTO messages (id, conversation_id, sender_id, sender_device_id, delivered, created_at) \
-         VALUES ($1, $2, $3, $4, TRUE, $5)",
+         VALUES ($1, $2, $3, $4, FALSE, $5)",
     )
     .bind(message_id).bind(conv_id).bind(auth.user_id).bind(auth.device_id).bind(created_at)
     .execute(&mut *tx)
     .await?;
 
-    let mut delivered = Vec::new();
     for envelope in &req.envelopes {
-        let deliver_now = envelope.recipient_device_id == auth.device_id
-            || state.hub.is_device_online(&envelope.recipient_device_id);
-        insert_dm_envelope(message_id, created_at, auth, envelope, deliver_now, &mut tx).await?;
-        if deliver_now {
-            delivered.push(envelope.recipient_device_id);
-        }
+        insert_dm_envelope(message_id, created_at, auth, envelope, &mut tx).await?;
     }
 
     tx.commit().await?;
-    Ok(delivered)
+    Ok(())
 }
 
 /// Insert a single dm_message_envelope row.
@@ -653,7 +544,6 @@ async fn insert_dm_envelope(
     created_at: DateTime<Utc>,
     auth: &AuthDevice,
     e: &SendEnvelopeReqV2,
-    deliver_now: bool,
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
 ) -> AppResult<()> {
     let ciphertext = BASE64
@@ -698,7 +588,7 @@ async fn insert_dm_envelope(
     .bind(&ratchet_pub)
     .bind(e.previous_chain_len)
     .bind(crypto_version)
-    .bind(if deliver_now { Some(created_at) } else { None })
+    .bind(None::<DateTime<Utc>>)
     .bind(created_at)
     .execute(&mut **tx)
     .await?;
@@ -712,29 +602,31 @@ fn fanout_dm_v2(
     created_at: DateTime<Utc>,
     auth: &AuthDevice,
     req: &SendMessageReqV2,
-    delivered: &[Uuid],
     state: &AppState,
-) {
+) -> Vec<(Uuid, Uuid)> {
+    let mut delivered = Vec::new();
     for envelope in &req.envelopes {
         if envelope.recipient_device_id == auth.device_id {
             continue;
         }
-        if !delivered.contains(&envelope.recipient_device_id) {
+        if !state.hub.try_send_to_device(
+            &envelope.recipient_device_id,
+            crate::hub::WsOutbound::Message {
+                payload: serde_json::json!({
+                    "type": "dm_v2", "id": message_id, "conversation_id": conv_id,
+                    "sender_id": auth.user_id, "sender_device_id": auth.device_id,
+                    "sender_signal_device_id": auth.signal_device_id,
+                    "recipient_device_id": envelope.recipient_device_id,
+                    "ciphertext": envelope.ciphertext, "ephemeral_key": envelope.ephemeral_key,
+                    "opk_id": envelope.opk_id, "msg_num": envelope.msg_num,
+                    "ratchet_pub": envelope.ratchet_pub, "previous_chain_len": envelope.previous_chain_len,
+                    "crypto_version": envelope.crypto_version.unwrap_or(1), "created_at": created_at,
+                }),
+            },
+        ) {
             continue;
         }
-        let payload = serde_json::json!({
-            "type": "dm_v2", "id": message_id, "conversation_id": conv_id,
-            "sender_id": auth.user_id, "sender_device_id": auth.device_id,
-            "sender_signal_device_id": auth.signal_device_id,
-            "recipient_device_id": envelope.recipient_device_id,
-            "ciphertext": envelope.ciphertext, "ephemeral_key": envelope.ephemeral_key,
-            "opk_id": envelope.opk_id, "msg_num": envelope.msg_num,
-            "ratchet_pub": envelope.ratchet_pub, "previous_chain_len": envelope.previous_chain_len,
-            "crypto_version": envelope.crypto_version.unwrap_or(1), "created_at": created_at,
-        });
-        state.hub.send_to_device(
-            &envelope.recipient_device_id,
-            crate::hub::WsOutbound::Message { payload },
-        );
+        delivered.push((message_id, envelope.recipient_device_id));
     }
+    delivered
 }

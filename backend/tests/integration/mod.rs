@@ -72,6 +72,14 @@ pub async fn spawn_test_server() -> Option<TestServer> {
     Some(TestServer::new(build_router(state)).expect("Failed to create test server"))
 }
 
+pub fn test_device_bootstrap(suffix: &str) -> serde_json::Value {
+    serde_json::json!({
+        "installation_id": format!("install-{suffix}"),
+        "platform": "web",
+        "label": format!("Integration Test Browser {suffix}"),
+    })
+}
+
 /// Register a new user and return their (user_id, access_token, csrf_token).
 pub async fn create_test_user(server: &TestServer, suffix: &str) -> (Uuid, String, String) {
     let email = format!("test_{suffix}@integration.test");
@@ -79,11 +87,12 @@ pub async fn create_test_user(server: &TestServer, suffix: &str) -> (Uuid, Strin
     let password = format!("TestPass123!{suffix}");
 
     let resp = server
-        .post("/api/v1/auth/register")
+        .post("/api/v2/auth/register")
         .json(&serde_json::json!({
             "email": email,
             "username": username,
             "password": password,
+            "device": test_device_bootstrap(suffix),
         }))
         .await;
 
@@ -98,17 +107,51 @@ pub async fn create_test_user(server: &TestServer, suffix: &str) -> (Uuid, Strin
     login_test_user(server, &email, &password).await
 }
 
+/// Register a new user and return their (user_id, access_token, csrf_token, device_id).
+pub async fn create_test_user_with_device(
+    server: &TestServer,
+    suffix: &str,
+) -> (Uuid, String, String, Uuid) {
+    let email = format!("test_{suffix}@integration.test");
+    let username = format!("test_{suffix}");
+    let password = format!("TestPass123!{suffix}");
+
+    let resp = server
+        .post("/api/v2/auth/register")
+        .json(&serde_json::json!({
+            "email": email,
+            "username": username,
+            "password": password,
+            "device": test_device_bootstrap(suffix),
+        }))
+        .await;
+
+    assert!(
+        resp.status_code().is_success(),
+        "register failed: {} â€” {:?}",
+        resp.status_code(),
+        resp.text()
+    );
+
+    login_test_user_with_device(server, &email, &password, suffix).await
+}
+
 /// Log in an existing user and return (user_id, access_token, csrf_token).
 pub async fn login_test_user(
     server: &TestServer,
     email: &str,
     password: &str,
 ) -> (Uuid, String, String) {
+    let suffix = email
+        .strip_prefix("test_")
+        .and_then(|rest| rest.split('@').next())
+        .expect("test email must use test_<suffix>@integration.test");
     let resp = server
-        .post("/api/v1/auth/login")
+        .post("/api/v2/auth/login")
         .json(&serde_json::json!({
             "email": email,
             "password": password,
+            "device": test_device_bootstrap(suffix),
         }))
         .await;
 
@@ -136,6 +179,50 @@ pub async fn login_test_user(
     (user_id, access_token, csrf_token)
 }
 
+/// Log in an existing user and return the active device ID too.
+pub async fn login_test_user_with_device(
+    server: &TestServer,
+    email: &str,
+    password: &str,
+    device_suffix: &str,
+) -> (Uuid, String, String, Uuid) {
+    let resp = server
+        .post("/api/v2/auth/login")
+        .json(&serde_json::json!({
+            "email": email,
+            "password": password,
+            "device": test_device_bootstrap(device_suffix),
+        }))
+        .await;
+
+    assert!(
+        resp.status_code().is_success(),
+        "login failed: {} â€” {:?}",
+        resp.status_code(),
+        resp.text()
+    );
+
+    let body: Value = resp.json();
+    let access_token = body["access_token"]
+        .as_str()
+        .expect("missing access_token")
+        .to_string();
+    let csrf_token = body["csrf_token"]
+        .as_str()
+        .expect("missing csrf_token")
+        .to_string();
+    let user_id: Uuid = body["user"]["id"]
+        .as_str()
+        .and_then(|s| s.parse().ok())
+        .expect("missing or invalid user.id");
+    let device_id: Uuid = body["device"]["id"]
+        .as_str()
+        .and_then(|s| s.parse().ok())
+        .expect("missing or invalid device.id");
+
+    (user_id, access_token, csrf_token, device_id)
+}
+
 pub fn bearer_header(token: &str) -> HeaderValue {
     HeaderValue::from_str(&format!("Bearer {token}")).expect("valid bearer header")
 }
@@ -155,4 +242,10 @@ pub fn authorization_header_name() -> HeaderName {
 pub mod account;
 pub mod auth;
 pub mod devices;
+pub mod identity;
 pub mod keys;
+pub mod messages;
+pub mod parental;
+pub mod privacy;
+pub mod server_caps;
+pub mod v1_absence;

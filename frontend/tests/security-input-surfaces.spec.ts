@@ -133,7 +133,7 @@ async function setupBaseAuth(page: Page, installId = 'xss-surface-install'): Pro
 	await mockAuthEndpoints(page, authData);
 
 	// Stub list endpoints so the app shell doesn't make extra real requests.
-	await page.route('**/api/v1/servers', async (route) => {
+	await page.route('**/api/v2/servers', async (route) => {
 		if (route.request().method() === 'GET') {
 			await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
 		} else {
@@ -194,7 +194,7 @@ test.describe('XSS neutralization — DM peer display names @security @xss @smok
 		await mockAuthEndpoints(page, authData);
 
 		// Stub server list
-		await page.route('**/api/v1/servers', async (route) => {
+		await page.route('**/api/v2/servers', async (route) => {
 			await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
 		});
 
@@ -241,7 +241,7 @@ test.describe('XSS neutralization — server names in sidebar @security @xss @sm
 		await mockAuthEndpoints(page, authData);
 
 		// Override server list to inject payloads as server names
-		await page.route('**/api/v1/servers', async (route) => {
+		await page.route('**/api/v2/servers', async (route) => {
 			if (route.request().method() !== 'GET') {
 				await route.continue();
 				return;
@@ -289,7 +289,7 @@ test.describe('XSS neutralization — canvas poll question @security @xss @smoke
 		await mockExploreEndpoints(page);
 
 		// Override server list with a real-looking server
-		await page.route('**/api/v1/servers', async (route) => {
+		await page.route('**/api/v2/servers', async (route) => {
 			if (route.request().method() !== 'GET') {
 				await route.continue();
 				return;
@@ -326,7 +326,7 @@ test.describe('XSS neutralization — canvas poll question @security @xss @smoke
 		});
 
 		// Stub channels list
-		await page.route('**/api/v1/servers/*/channels', async (route) => {
+		await page.route('**/api/v2/servers/*/channels', async (route) => {
 			await route.fulfill({
 				status: 200,
 				contentType: 'application/json',

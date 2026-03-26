@@ -107,9 +107,7 @@ export function loadAuthData(): AuthData | null {
 }
 
 /**
- * Log in directly against the API, preferring v2 device-aware auth and
- * falling back to the legacy v1 login endpoint if the target backend has not
- * deployed v2 yet.
+ * Log in directly against the API using the v2 device-aware auth endpoint.
  */
 export async function loginViaApi(
 	email: string,
@@ -139,14 +137,6 @@ export async function loginViaApi(
 			},
 		}),
 	});
-
-	if (response.status === 404) {
-		response = await fetch(`${API_URL}/api/v1/auth/login`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ email, password }),
-		});
-	}
 
 	if (!response.ok) {
 		throw new Error(`loginViaApi failed: ${response.status} ${await response.text()}`);
@@ -205,7 +195,7 @@ export async function mockAuthEndpoints(
 		});
 	});
 
-	await page.route(`**/api/v1/users/me`, async (route) => {
+	await page.route(`**/api/v2/users/me`, async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',

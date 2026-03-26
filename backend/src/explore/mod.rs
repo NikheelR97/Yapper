@@ -1,11 +1,11 @@
 /**
- * Explore & Discovery — public server browsing + full-text search.
+ * Explore & Discovery â€” public server browsing + full-text search.
  *
- * Routes (all mounted directly under /api/v1 via Router::merge):
- *   GET /explore/communities     — public servers ranked by member count
- *   GET /explore/live-servers    — servers with activity in the last 30 min
- *   GET /explore/trending-tags   — most-used server tags (5-min in-memory cache)
- *   GET /search?q=               — full-text search across servers + users (pg_trgm)
+ * Routes (all mounted directly under /api/v2 via Router::merge):
+ *   GET /explore/communities     â€” public servers ranked by member count
+ *   GET /explore/live-servers    â€” servers with activity in the last 30 min
+ *   GET /explore/trending-tags   â€” most-used server tags (5-min in-memory cache)
+ *   GET /search?q=               â€” full-text search across servers + users (pg_trgm)
  */
 use axum::{
     extract::{Query, State},
@@ -36,7 +36,7 @@ pub fn router() -> Router<AppState> {
         .route("/search", get(search))
 }
 
-// ─── Simple in-memory cache for trending tags (5-min TTL) ────────────────────
+// â”€â”€â”€ Simple in-memory cache for trending tags (5-min TTL) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 struct TagCache {
     data: Vec<serde_json::Value>,
@@ -47,9 +47,9 @@ static TAG_CACHE: Mutex<Option<TagCache>> = Mutex::new(None);
 
 const TAG_CACHE_TTL: Duration = Duration::from_secs(5 * 60);
 
-// ─── Communities ──────────────────────────────────────────────────────────────
+// â”€â”€â”€ Communities â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-/// GET /explore/communities — public servers ranked by member count.
+/// GET /explore/communities â€” public servers ranked by member count.
 async fn get_communities(
     _auth: AuthUser,
     State(state): State<AppState>,
@@ -82,9 +82,9 @@ async fn get_communities(
     Ok(Json(serde_json::json!({ "communities": communities })))
 }
 
-// ─── Live servers ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ Live servers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-/// GET /explore/live-servers — servers with a message sent in the last 30 minutes.
+/// GET /explore/live-servers â€” servers with a message sent in the last 30 minutes.
 async fn get_live_servers(
     _auth: AuthUser,
     State(state): State<AppState>,
@@ -125,9 +125,9 @@ async fn get_live_servers(
     Ok(Json(serde_json::json!({ "servers": servers })))
 }
 
-// ─── Trending tags ────────────────────────────────────────────────────────────
+// â”€â”€â”€ Trending tags â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-/// GET /explore/trending-tags — most-used tags across public servers (cached 5 min).
+/// GET /explore/trending-tags â€” most-used tags across public servers (cached 5 min).
 async fn get_trending_tags(
     _auth: AuthUser,
     State(state): State<AppState>,
@@ -187,7 +187,7 @@ async fn get_trending_tags(
     Ok(Json(serde_json::json!({ "tags": tags })))
 }
 
-// ─── Full-text search ────────────────────────────────────────────────────────
+// â”€â”€â”€ Full-text search â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -195,7 +195,7 @@ struct SearchQuery {
     q: String,
 }
 
-/// GET /search?q= — find public servers and users matching the query (pg_trgm).
+/// GET /search?q= â€” find public servers and users matching the query (pg_trgm).
 async fn search(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -209,7 +209,7 @@ async fn search(
         return Err(AppError::BadRequest("Search query too long".into()));
     }
 
-    // Servers — similarity search on name + description
+    // Servers â€” similarity search on name + description
     let server_rows = sqlx::query(
         "SELECT id, name, slug, icon_url, description, tags,
                 similarity(name || ' ' || COALESCE(description, ''), $1) AS score
@@ -237,7 +237,7 @@ async fn search(
         })
         .collect();
 
-    // Users — similarity search on username + display_name, with privacy + friendship status
+    // Users â€” similarity search on username + display_name, with privacy + friendship status
     let user_rows = sqlx::query(
         "SELECT u.id, u.username, u.display_name, u.avatar_url,
                 similarity(u.username || ' ' || COALESCE(u.display_name, ''), $1) AS score,
@@ -288,9 +288,9 @@ async fn search(
     ))
 }
 
-// ─── Top yappers ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ Top yappers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-/// GET /explore/top-yappers — users ranked by follower count (top 20).
+/// GET /explore/top-yappers â€” users ranked by follower count (top 20).
 async fn get_top_yappers(
     _auth: AuthUser,
     State(state): State<AppState>,
@@ -330,7 +330,7 @@ async fn get_top_yappers(
 mod tests {
     use super::*;
 
-    // ── SearchQuery deserialization ───────────────────────────────────────
+    // â”€â”€ SearchQuery deserialization â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     #[test]
     fn search_query_deserializes_valid() {
@@ -364,7 +364,7 @@ mod tests {
         assert!(serde_json::from_value::<SearchQuery>(json).is_err());
     }
 
-    // ── Search query trimming + length validation (mirrors handler logic) ─
+    // â”€â”€ Search query trimming + length validation (mirrors handler logic) â”€
 
     #[test]
     fn search_trim_removes_whitespace() {
@@ -397,12 +397,12 @@ mod tests {
         // A 3-byte UTF-8 char repeated 86 times = 258 bytes > 255
         let unicode_heavy = "\u{2603}".repeat(86); // snowman = 3 bytes each
         assert!(unicode_heavy.len() > 255);
-        // 85 snowmen = 255 bytes — exactly at limit
+        // 85 snowmen = 255 bytes â€” exactly at limit
         let at_limit = "\u{2603}".repeat(85);
         assert_eq!(at_limit.len(), 255);
     }
 
-    // ── TAG_CACHE_TTL ─────────────────────────────────────────────────────
+    // â”€â”€ TAG_CACHE_TTL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     #[test]
     fn tag_cache_ttl_is_five_minutes() {
@@ -410,7 +410,7 @@ mod tests {
         assert_eq!(TAG_CACHE_TTL.as_secs(), 5 * 60);
     }
 
-    // ── TagCache struct behaviour ─────────────────────────────────────────
+    // â”€â”€ TagCache struct behaviour â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     #[test]
     fn tag_cache_fresh_entry_is_not_expired() {
@@ -447,7 +447,7 @@ mod tests {
         assert!(cache.data.is_empty());
     }
 
-    // ── TAG_CACHE mutex behaviour ─────────────────────────────────────────
+    // â”€â”€ TAG_CACHE mutex behaviour â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     #[test]
     fn tag_cache_mutex_starts_none() {
@@ -455,7 +455,7 @@ mod tests {
         // it should be Option<TagCache>. We cannot reset it between tests
         // since it is a static, but we can verify the lock is acquirable.
         let guard = TAG_CACHE.lock().unwrap();
-        // The initial value or a value set by a prior test — either way the lock works
+        // The initial value or a value set by a prior test â€” either way the lock works
         drop(guard);
     }
 
@@ -487,7 +487,7 @@ mod tests {
         }
     }
 
-    // ── JSON structure matching (mirrors handler output shapes) ───────────
+    // â”€â”€ JSON structure matching (mirrors handler output shapes) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     #[test]
     fn community_json_shape() {
@@ -542,7 +542,7 @@ mod tests {
         assert_eq!(tag["server_count"], 42);
     }
 
-    // ── Live server JSON includes last_active ─────────────────────────────
+    // â”€â”€ Live server JSON includes last_active â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     #[test]
     fn live_server_json_shape_with_last_active() {
@@ -565,7 +565,7 @@ mod tests {
         assert!((parsed - now).num_seconds().abs() <= 1);
     }
 
-    // ── User search result JSON shape ─────────────────────────────────────
+    // â”€â”€ User search result JSON shape â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     #[test]
     fn user_search_result_json_shape() {

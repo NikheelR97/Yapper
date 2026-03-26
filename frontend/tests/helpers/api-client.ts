@@ -48,7 +48,7 @@ export class E2EApiClient {
 	// ─── Servers ──────────────────────────────────────────────────────────────
 
 	async createServer(session: Session, name: string): Promise<{ serverId: string; channelId: string }> {
-		const res = await fetch(`${this.baseUrl}/api/v1/servers`, {
+		const res = await fetch(`${this.baseUrl}/api/v2/servers`, {
 			method: 'POST',
 			headers: this.authedHeaders(session),
 			body: JSON.stringify({ name }),
@@ -57,7 +57,7 @@ export class E2EApiClient {
 		const server = (await res.json()) as { id?: string };
 		if (!server.id) throw new Error('createServer: missing server id');
 
-		const chanRes = await fetch(`${this.baseUrl}/api/v1/servers/${server.id}/channels`, {
+		const chanRes = await fetch(`${this.baseUrl}/api/v2/servers/${server.id}/channels`, {
 			headers: { Authorization: `Bearer ${session.accessToken}` },
 		});
 		if (!chanRes.ok) throw new Error(`listChannels failed: ${chanRes.status}`);
@@ -69,7 +69,7 @@ export class E2EApiClient {
 	}
 
 	async createInvite(session: Session, serverId: string): Promise<string> {
-		const res = await fetch(`${this.baseUrl}/api/v1/servers/${serverId}/invite`, {
+		const res = await fetch(`${this.baseUrl}/api/v2/servers/${serverId}/invite`, {
 			method: 'POST',
 			headers: this.authedHeaders(session),
 			body: JSON.stringify({}),
@@ -82,7 +82,7 @@ export class E2EApiClient {
 	}
 
 	async joinByInvite(session: Session, code: string): Promise<void> {
-		const res = await fetch(`${this.baseUrl}/api/v1/servers/join/${code}`, {
+		const res = await fetch(`${this.baseUrl}/api/v2/servers/join/${code}`, {
 			method: 'POST',
 			headers: this.authedHeaders(session),
 			body: '{}',
@@ -93,7 +93,7 @@ export class E2EApiClient {
 	// ─── DMs ──────────────────────────────────────────────────────────────────
 
 	async createDmConversation(session: Session, peerId: string): Promise<string> {
-		const res = await fetch(`${this.baseUrl}/api/v1/conversations`, {
+		const res = await fetch(`${this.baseUrl}/api/v2/conversations`, {
 			method: 'POST',
 			headers: this.authedHeaders(session),
 			body: JSON.stringify({ peer_id: peerId }),
@@ -108,7 +108,7 @@ export class E2EApiClient {
 	// ─── Social ───────────────────────────────────────────────────────────────
 
 	async followUser(session: Session, username: string): Promise<void> {
-		const res = await fetch(`${this.baseUrl}/api/v1/users/by/${username}/follow`, {
+		const res = await fetch(`${this.baseUrl}/api/v2/users/by/${username}/follow`, {
 			method: 'POST',
 			headers: this.authedHeaders(session),
 		});
@@ -116,7 +116,7 @@ export class E2EApiClient {
 	}
 
 	async unfollowUser(session: Session, username: string): Promise<void> {
-		const res = await fetch(`${this.baseUrl}/api/v1/users/by/${username}/follow`, {
+		const res = await fetch(`${this.baseUrl}/api/v2/users/by/${username}/follow`, {
 			method: 'DELETE',
 			headers: this.authedHeaders(session),
 		});
@@ -124,7 +124,7 @@ export class E2EApiClient {
 	}
 
 	async sendFriendRequest(session: Session, username: string): Promise<void> {
-		const res = await fetch(`${this.baseUrl}/api/v1/users/by/${username}/friend-request`, {
+		const res = await fetch(`${this.baseUrl}/api/v2/users/by/${username}/friend-request`, {
 			method: 'POST',
 			headers: this.authedHeaders(session),
 			body: '{}',
@@ -133,7 +133,7 @@ export class E2EApiClient {
 	}
 
 	async getProfile(session: Session, username: string): Promise<Record<string, unknown>> {
-		const res = await fetch(`${this.baseUrl}/api/v1/users/by/${username}`, {
+		const res = await fetch(`${this.baseUrl}/api/v2/users/by/${username}`, {
 			headers: { Authorization: `Bearer ${session.accessToken}` },
 		});
 		if (!res.ok) throw new Error(`getProfile failed: ${res.status}`);

@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 // Mock WebSocket before importing ws module
 const mockSend = vi.fn();
 const mockClose = vi.fn();
+const mockInstances: MockWebSocket[] = [];
 
 class MockWebSocket {
 	static readonly OPEN = 1;
@@ -18,6 +19,10 @@ class MockWebSocket {
 	onclose: ((event: { code: number }) => void) | null = null;
 	send = mockSend;
 	close = mockClose;
+
+	constructor() {
+		mockInstances.push(this);
+	}
 }
 
 vi.stubGlobal('WebSocket', MockWebSocket);
@@ -36,10 +41,13 @@ vi.mock('$stores/auth.js', () => {
 		accessToken: 'test-token',
 		device: { id: 'device-1' },
 	});
-	return { authStore: store };
+	return {
+		authStore: store,
+		registerSessionResetter: vi.fn(() => vi.fn()),
+	};
 });
 
-import { onWsMessage, wsSend, sendChannelMessage, sendDmMessage, sendTypingStart, sendMarkRead } from './ws.js';
+import { onWsMessage, wsSend, sendChannelMessage, sendDmMessage, sendTypingStart, sendMarkRead, wsConnect, wsDisconnect } from './ws.js';
 
 describe('onWsMessage', () => {
 	it('registers and unregisters handlers', () => {
@@ -103,5 +111,26 @@ describe('sendMarkRead', () => {
 	it('constructs read message', () => {
 		const result = sendMarkRead('msg-1', 'channel-1');
 		expect(result).toBe(false);
+	});
+});
+
+describe('wsDisconnect', () => {
+	it('drops queued messages before the next reconnect', () => {
+		wsSend({ type: 'read', message_id: 'msg-queued', channel_id: 'channel-1' });
+
+		wsDisconnect();
+		wsConnect();
+
+		const socket = mockInstances.at(-1);
+		expect(socket).toBeDefined();
+		socket?.onopen?.();
+		socket?.onmessage?.({ data: JSON.stringify({ type: 'ready' }) });
+
+		expect(mockSend).toHaveBeenCalledWith(
+			JSON.stringify({ type: 'auth', token: 'test-token' })
+		);
+		expect(mockSend).not.toHaveBeenCalledWith(
+			JSON.stringify({ type: 'read', message_id: 'msg-queued', channel_id: 'channel-1' })
+		);
 	});
 });

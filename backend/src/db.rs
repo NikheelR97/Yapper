@@ -51,33 +51,6 @@ impl Database {
     }
 }
 
-/// Sets up a PostgreSQL LISTEN/NOTIFY listener for the given channel.
-/// The callback receives the payload string for each notification.
-#[allow(dead_code)]
-pub async fn listen_notify(
-    pool: &PgPool,
-    channel: &str,
-    mut callback: impl FnMut(String) + Send + 'static,
-) -> anyhow::Result<()> {
-    let mut listener = sqlx::postgres::PgListener::connect_with(pool).await?;
-    listener.listen(channel).await?;
-
-    tokio::spawn(async move {
-        loop {
-            match listener.recv().await {
-                Ok(notification) => callback(notification.payload().to_string()),
-                Err(e) => {
-                    tracing::error!("LISTEN/NOTIFY error: {e}");
-                    // Back off briefly then continue
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                }
-            }
-        }
-    });
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     // Integration tests use sqlx::test macro which provides a test transaction

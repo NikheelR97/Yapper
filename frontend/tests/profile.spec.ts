@@ -49,7 +49,7 @@ test.describe('Profile page — mocked rendering', () => {
 		await mockAuthEndpoints(page, authData);
 		await mockProfileEndpoints(page, mockProfile);
 		// App layout calls these on mount — mock to prevent 401s from live API
-		await page.route(`**/api/v1/servers`, async (route) => {
+		await page.route(`**/api/v2/servers`, async (route) => {
 			await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
 		});
 		await page.route(`**/api/v2/conversations`, async (route) => {
@@ -147,7 +147,7 @@ test.describe('Profile page — own profile', () => {
 			mutualFriends: [],
 		};
 		await mockProfileEndpoints(page, selfProfile);
-		await page.route(`**/api/v1/servers`, async (route) => {
+		await page.route(`**/api/v2/servers`, async (route) => {
 			await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
 		});
 		await page.route(`**/api/v2/conversations`, async (route) => {
@@ -182,7 +182,7 @@ test.describe('Profile page — live API follow action', () => {
 		const userB = sessionB.user;
 
 		// Ensure clean state — unfollow if already following
-		await fetch(`${API_URL}/api/v1/users/by/${String(userB.username)}/follow`, {
+		await fetch(`${API_URL}/api/v2/users/by/${String(userB.username)}/follow`, {
 			method: 'DELETE',
 			headers: {
 				Authorization: `Bearer ${sessionB.accessToken}`,
@@ -213,7 +213,7 @@ test.describe('Profile page — live API follow action', () => {
 		}
 
 		// Cleanup
-		await fetch(`${API_URL}/api/v1/users/by/${String(userB.username)}/follow`, {
+		await fetch(`${API_URL}/api/v2/users/by/${String(userB.username)}/follow`, {
 			method: 'DELETE',
 			headers: {
 				Authorization: `Bearer ${sessionB.accessToken}`,

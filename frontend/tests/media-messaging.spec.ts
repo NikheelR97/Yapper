@@ -178,7 +178,7 @@ test.describe('Media messaging — Yap cancel flow', () => {
 
 		// Track whether a message POST was issued
 		let messagePosted = false;
-		await page.route('**/api/v1/channels/*/messages', async (route) => {
+		await page.route('**/api/v2/channels/*/messages', async (route) => {
 			if (route.request().method() === 'POST') {
 				messagePosted = true;
 			}

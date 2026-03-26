@@ -745,7 +745,7 @@ export async function joinChannel(channelId: string): Promise<void> {
   });
 
   const members = await api.get<Array<{ user_id: string; username: string }>>(
-    "/api/v1/channels/" + channelId + "/members",
+    "/api/v2/channels/" + channelId + "/members",
   );
 
   const distPayload: SenderKeyDistPayload = signSenderKeyDistPayload(
@@ -804,7 +804,7 @@ export async function joinChannel(channelId: string): Promise<void> {
   }
 
   if (distributions.length > 0) {
-    await api.post("/api/v1/channels/" + channelId + "/sender-key-dist", {
+    await api.post("/api/v2/channels/" + channelId + "/sender-key-dist", {
       distributions,
       broadcast_request: true,
     });
@@ -835,7 +835,7 @@ async function fetchAndStorePendingDists(
         ciphertext: string;
         ek_public: string;
       }>
-    >("/api/v1/channels/" + channelId + "/sender-key-dist")
+    >("/api/v2/channels/" + channelId + "/sender-key-dist")
     .catch(
       () =>
         [] as Array<{
@@ -1196,7 +1196,7 @@ export async function handleKeyDistRequest(event: {
       identity.dhPublicKey,
     );
     await api.post(
-      "/api/v1/channels/" + event.channel_id + "/sender-key-dist",
+      "/api/v2/channels/" + event.channel_id + "/sender-key-dist",
       {
         distributions: [
           {

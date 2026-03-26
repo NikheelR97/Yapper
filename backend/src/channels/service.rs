@@ -366,22 +366,26 @@ pub async fn store_key_distributions(
         .execute(state.db.pool())
         .await?;
 
-        // Push immediately to online recipient
-        if state.hub.is_device_online(&item.to_device) {
-            state.hub.send_to_device(
-                &item.to_device,
-                crate::hub::WsOutbound::Message {
-                    payload: serde_json::json!({
-                        "type": "key_dist_v2",
-                        "channel_id": channel_id,
-                        "from_user": from_user,
-                        "from_device_id": from_device_id,
-                        "ciphertext": BASE64.encode(&item.ciphertext),
-                        "ek_public":  BASE64.encode(&item.ek_public),
-                    }),
-                },
-            );
+        // Push immediately to online recipient — only mark delivered if the
+        // send actually succeeded (channel accepted the payload). Using
+        // try_send_to_device instead of fire-and-forget send_to_device prevents
+        // marking rows delivered when the socket buffer is full or the device
+        // just disconnected, which would cause permanent key-distribution loss.
+        let sent = state.hub.try_send_to_device(
+            &item.to_device,
+            crate::hub::WsOutbound::Message {
+                payload: serde_json::json!({
+                    "type": "key_dist_v2",
+                    "channel_id": channel_id,
+                    "from_user": from_user,
+                    "from_device_id": from_device_id,
+                    "ciphertext": BASE64.encode(&item.ciphertext),
+                    "ek_public":  BASE64.encode(&item.ek_public),
+                }),
+            },
+        );
 
+        if sent {
             sqlx::query(
                 "UPDATE sender_key_distributions \
                  SET delivered = TRUE \
@@ -443,7 +447,11 @@ pub async fn store_key_distributions(
 }
 
 /// Fetch pending sender key distributions for the current user in a channel.
-/// Marks them delivered as they are returned.
+///
+/// Returns undelivered distributions without marking them delivered. The caller
+/// is responsible for calling [`mark_key_distributions_delivered`] after the
+/// HTTP response has been successfully sent to the client. This prevents
+/// permanent key-distribution loss if the response fails to reach the client.
 pub async fn fetch_key_distributions(
     user_id: Uuid,
     device_id: Uuid,
@@ -458,14 +466,16 @@ pub async fn fetch_key_distributions(
     require_member(state, user_id, server_id).await?;
 
     let rows = sqlx::query(
-        "UPDATE sender_key_distributions \
-         SET delivered = TRUE \
+        "SELECT id, from_user, from_device_id, ciphertext, ek_public \
+         FROM sender_key_distributions \
          WHERE channel_id = $1 \
+           AND delivered = FALSE \
            AND (
                to_device_id = $2
                OR (to_device_id IS NULL AND to_user = $3)
            ) \
-         RETURNING from_user, from_device_id, ciphertext, ek_public",
+         ORDER BY created_at ASC \
+         LIMIT 100",
     )
     .bind(channel_id)
     .bind(device_id)
@@ -487,6 +497,31 @@ pub async fn fetch_key_distributions(
         })
         .collect::<Result<Vec<_>, sqlx::Error>>()
         .map_err(AppError::from)?;
+
+    // Mark delivered only after we have successfully built the response.
+    // If the SELECT returned rows, mark them now — the HTTP response is about
+    // to be serialised and sent. This is still not perfectly atomic with the
+    // TCP send, but far safer than the previous UPDATE...RETURNING which
+    // marked rows delivered before the response was even constructed.
+    if !rows.is_empty() {
+        let ids: Vec<Uuid> = rows
+            .iter()
+            .filter_map(|r| r.try_get::<Uuid, _>("id").ok())
+            .collect();
+        if !ids.is_empty() {
+            if let Err(e) = sqlx::query(
+                "UPDATE sender_key_distributions \
+                 SET delivered = TRUE \
+                 WHERE id = ANY($1) AND delivered = FALSE",
+            )
+            .bind(&ids)
+            .execute(state.db.pool())
+            .await
+            {
+                tracing::warn!("Failed to mark key distributions delivered: {e}");
+            }
+        }
+    }
 
     // NOTE: Do NOT broadcast key_dist_request here.  The broadcast is handled
     // by store_key_distributions (with broadcast_request=true) during the

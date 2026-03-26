@@ -162,14 +162,18 @@
 				"yapper_recent_emojis",
 				JSON.stringify(recentEmojis),
 			);
-		} catch {}
+		} catch {
+			// localStorage may be full or unavailable (private browsing) — persisting recent emojis is non-critical
+		}
 	}
 
 	onMount(() => {
 		try {
 			const saved = localStorage.getItem("yapper_recent_emojis");
 			if (saved) recentEmojis = JSON.parse(saved);
-		} catch {}
+		} catch {
+			// localStorage unavailable or corrupted JSON — fall back to empty recent list
+		}
 	});
 </script>
 
@@ -192,6 +196,7 @@
 			class="tab"
 			class:active={activeTab === "recent"}
 			role="tab"
+			aria-label="Recent"
 			on:click={() => (activeTab = "recent")}>🕐</button
 		>
 
@@ -200,6 +205,7 @@
 				class="tab"
 				class:active={activeTab === "server"}
 				role="tab"
+				aria-label="Server emojis"
 				on:click={() => (activeTab = "server")}>🌐</button
 			>
 		{/if}

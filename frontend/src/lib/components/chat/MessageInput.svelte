@@ -2,12 +2,11 @@
 	import { createEventDispatcher } from "svelte";
 	import {
 		sendTypingStart,
-		sendChannelMessage,
 	} from "$stores/ws.js";
+	import { sendMessage as sendChannelMessageWithState } from "$stores/servers.js";
 	import YapRecorder from "./YapRecorder.svelte";
 	import ClipRecorder from "./ClipRecorder.svelte";
 	import EmojiPicker from "$lib/components/emoji/EmojiPicker.svelte";
-	import { encryptChannel } from "$lib/signal/index.js";
 
 	export let disabled = false;
 	export let placeholder = "Send a message…";
@@ -85,15 +84,10 @@
 
 		try {
 			if (channelId) {
-				const { wireCiphertext, iteration } = await encryptChannel(
+				await sendChannelMessageWithState(
 					channelId,
 					mediaPayloadJson,
-				);
-				sendChannelMessage(
-					channelId,
-					wireCiphertext,
-					iteration,
-					messageType,
+					{ messageType },
 				);
 			} else if (conversationId && recipientId) {
 				dispatch("send", mediaPayloadJson);

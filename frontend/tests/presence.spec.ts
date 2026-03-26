@@ -25,7 +25,7 @@ test.describe('Presence — online status', () => {
 		seedTrustedPrimaryDevice();
 	});
 
-	test('GET /api/v1/users/:id/presence returns online for a logged-in user', async () => {
+	test('GET /api/v2/users/:id/presence returns online for a logged-in user', async () => {
 		const session = await loginViaApi(TEST_EMAIL, TEST_PASSWORD, {
 			installationId: PRIMARY_INSTALLATION_ID,
 			label: 'Presence Test',
@@ -33,7 +33,7 @@ test.describe('Presence — online status', () => {
 
 		const userId = String(session.user.id);
 
-		const res = await fetch(`${API_URL}/api/v1/users/${userId}/presence`, {
+		const res = await fetch(`${API_URL}/api/v2/users/${userId}/presence`, {
 			headers: {
 				Authorization: `Bearer ${session.accessToken}`,
 			},
@@ -57,7 +57,7 @@ test.describe('Presence — online status', () => {
 
 		// Check own presence
 		const userId = String(sessionA.user.id);
-		const res = await fetch(`${API_URL}/api/v1/users/${userId}/presence`, {
+		const res = await fetch(`${API_URL}/api/v2/users/${userId}/presence`, {
 			headers: { Authorization: `Bearer ${sessionA.accessToken}` },
 		});
 

@@ -16,7 +16,7 @@ const MAX_PARENTS_PER_CHILD: usize = 10;
 /// Guard invite expiry so user input cannot trigger extreme duration math.
 const MAX_INVITE_EXPIRY_HOURS: i64 = 24 * 365;
 
-// ─── Response types ───────────────────────────────────────────────────────────
+// â”€â”€â”€ Response types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 #[derive(Serialize)]
 pub struct ServerResp {
@@ -39,7 +39,7 @@ pub struct InviteResp {
     pub expires_at: Option<chrono::DateTime<Utc>>,
 }
 
-// ─── Input types ──────────────────────────────────────────────────────────────
+// â”€â”€â”€ Input types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 pub struct UpdateServerInput {
     pub name: Option<String>,
@@ -54,7 +54,7 @@ pub struct CreateInviteInput {
     pub expires_in_hours: Option<i64>,
 }
 
-// ─── Service functions ────────────────────────────────────────────────────────
+// â”€â”€â”€ Service functions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 pub async fn create_server(
     user_id: Uuid,
@@ -69,7 +69,7 @@ pub async fn create_server(
     );
     debug_assert!(
         name.len() <= 100,
-        "name must be ≤100 chars (validated by handler)"
+        "name must be â‰¤100 chars (validated by handler)"
     );
 
     let base_slug = name
@@ -270,7 +270,7 @@ pub async fn leave_server(user_id: Uuid, server_id: Uuid, state: &AppState) -> A
             let role: String = r.try_get("role")?;
             if role == "owner" {
                 return Err(AppError::BadRequest(
-                    "Owner cannot leave — transfer ownership first".into(),
+                    "Owner cannot leave â€” transfer ownership first".into(),
                 ));
             }
         }
@@ -329,57 +329,39 @@ pub async fn join_by_invite(
     debug_assert!(user_id != Uuid::nil());
     debug_assert!(!code.is_empty(), "invite code must be non-empty");
 
-    let claimed_invite = sqlx::query(
-        "UPDATE server_invite_links \
-         SET uses = uses + 1 \
-         WHERE code = $1 \
-           AND (expires_at IS NULL OR expires_at > NOW()) \
-           AND (max_uses IS NULL OR uses < max_uses) \
-         RETURNING server_id",
+    let invite_row = sqlx::query(
+        "SELECT server_id, uses, max_uses, expires_at \
+         FROM server_invite_links \
+         WHERE code = $1",
     )
     .bind(&code)
     .fetch_optional(state.db.pool())
-    .await?;
+    .await?
+    .ok_or_else(|| AppError::NotFound("Invalid invite code".into()))?;
 
-    let server_id = if let Some(row) = claimed_invite {
-        row.try_get("server_id")?
-    } else {
-        let invite_row = sqlx::query(
-            "SELECT i.uses, i.max_uses, i.expires_at \
-             FROM server_invite_links i \
-             WHERE i.code = $1",
-        )
-        .bind(&code)
-        .fetch_optional(state.db.pool())
-        .await?
-        .ok_or_else(|| AppError::NotFound("Invalid invite code".into()))?;
-
-        let expires_at: Option<chrono::DateTime<Utc>> = invite_row.try_get("expires_at")?;
-        if let Some(exp) = expires_at {
-            if Utc::now() > exp {
-                return Err(AppError::BadRequest("Invite link has expired".into()));
-            }
+    let expires_at: Option<chrono::DateTime<Utc>> = invite_row.try_get("expires_at")?;
+    if let Some(exp) = expires_at {
+        if Utc::now() > exp {
+            return Err(AppError::BadRequest("Invite link has expired".into()));
         }
+    }
 
-        let uses: i32 = invite_row.try_get("uses")?;
-        let max_uses: Option<i32> = invite_row.try_get("max_uses")?;
-        if let Some(max) = max_uses {
-            if uses >= max {
-                return Err(AppError::BadRequest(
-                    "Invite link has reached its use limit".into(),
-                ));
-            }
+    let uses: i32 = invite_row.try_get("uses")?;
+    let max_uses: Option<i32> = invite_row.try_get("max_uses")?;
+    if let Some(max) = max_uses {
+        if uses >= max {
+            return Err(AppError::BadRequest(
+                "Invite link has reached its use limit".into(),
+            ));
         }
+    }
 
-        return Err(AppError::Conflict(
-            "Invite link is temporarily unavailable".into(),
-        ));
-    };
+    let server_id: Uuid = invite_row.try_get("server_id")?;
 
     do_join(user_id, server_id, Some(code), state).await
 }
 
-// ─── Internal helpers ─────────────────────────────────────────────────────────
+// â”€â”€â”€ Internal helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 pub(crate) async fn do_join(
     user_id: Uuid,
@@ -417,34 +399,16 @@ pub(crate) async fn do_join(
         return handle_parental_intercept(user_id, server_id, invite_code, state).await;
     }
 
-    // Enforce server member cap (Rule 3 — bounded allocation)
-    let member_count: i64 =
-        sqlx::query("SELECT COUNT(*) FROM server_memberships WHERE server_id = $1")
-            .bind(server_id)
-            .fetch_one(&mut *tx)
-            .await
-            .map(|r| r.try_get::<i64, _>(0).unwrap_or(0))
-            .unwrap_or(0);
-
-    if member_count >= constants::MAX_SERVER_MEMBERS_MVP {
-        tx.rollback().await.ok();
-        return Err(AppError::Forbidden);
+    let inserted = insert_server_member_with_cap(&mut tx, user_id, server_id).await?;
+    if inserted {
+        consume_invite_use(&mut tx, invite_code.as_deref()).await?;
     }
-
-    sqlx::query(
-        "INSERT INTO server_memberships (user_id, server_id, role) VALUES ($1, $2, 'member') \
-         ON CONFLICT (user_id, server_id) DO NOTHING",
-    )
-    .bind(user_id)
-    .bind(server_id)
-    .execute(&mut *tx)
-    .await?;
 
     tx.commit().await?;
 
     state.hub.invalidate_membership(user_id, server_id);
 
-    Ok(serde_json::json!({ "status": "joined" }))
+    Ok(serde_json::json!({ "status": if inserted { "joined" } else { "already_member" } }))
 }
 
 async fn handle_parental_intercept(
@@ -459,25 +423,136 @@ async fn handle_parental_intercept(
         .await?;
     let server_name: String = server_row.try_get("name")?;
 
-    let pending_id: Uuid = sqlx::query(
+    let inserted = sqlx::query(
         "INSERT INTO pending_server_joins (child_user_id, server_id, server_name, invite_code) \
          VALUES ($1, $2, $3, $4) \
+         ON CONFLICT (child_user_id, server_id) WHERE status = 'pending' DO NOTHING \
          RETURNING id",
     )
     .bind(user_id)
     .bind(server_id)
     .bind(&server_name)
     .bind(invite_code.as_deref())
-    .fetch_one(state.db.pool())
-    .await?
-    .try_get("id")?;
+    .fetch_optional(state.db.pool())
+    .await?;
+    let inserted_new_pending = inserted.is_some();
 
-    notify_parents(user_id, server_id, &server_name, pending_id, state).await?;
+    let pending_id: Uuid = if let Some(row) = inserted {
+        row.try_get("id")?
+    } else {
+        sqlx::query_scalar(
+            "SELECT id FROM pending_server_joins \
+             WHERE child_user_id = $1 AND server_id = $2 AND status = 'pending' \
+             ORDER BY created_at DESC LIMIT 1",
+        )
+        .bind(user_id)
+        .bind(server_id)
+        .fetch_one(state.db.pool())
+        .await?
+    };
+
+    if inserted_new_pending {
+        notify_parents(user_id, server_id, &server_name, pending_id, state).await?;
+    }
 
     Ok(serde_json::json!({
         "status": "pending_approval",
         "message": "A parent must approve this server join"
     }))
+}
+
+pub(crate) async fn insert_server_member_with_cap(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    user_id: Uuid,
+    server_id: Uuid,
+) -> AppResult<bool> {
+    let already =
+        sqlx::query("SELECT 1 FROM server_memberships WHERE user_id = $1 AND server_id = $2")
+            .bind(user_id)
+            .bind(server_id)
+            .fetch_optional(&mut **tx)
+            .await?;
+    if already.is_some() {
+        return Ok(false);
+    }
+
+    let server_row = sqlx::query("SELECT member_count FROM servers WHERE id = $1 FOR UPDATE")
+        .bind(server_id)
+        .fetch_optional(&mut **tx)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Server not found".into()))?;
+
+    let member_count: i64 = server_row.try_get("member_count")?;
+    if member_count >= constants::MAX_SERVER_MEMBERS_MVP {
+        return Err(AppError::Forbidden);
+    }
+
+    sqlx::query(
+        "INSERT INTO server_memberships (user_id, server_id, role) VALUES ($1, $2, 'member') \
+         ON CONFLICT (user_id, server_id) DO NOTHING",
+    )
+    .bind(user_id)
+    .bind(server_id)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(true)
+}
+
+pub(crate) async fn consume_invite_use(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    invite_code: Option<&str>,
+) -> AppResult<()> {
+    let Some(invite_code) = invite_code else {
+        return Ok(());
+    };
+
+    let claimed = sqlx::query(
+        "UPDATE server_invite_links \
+         SET uses = uses + 1 \
+         WHERE code = $1 \
+           AND (expires_at IS NULL OR expires_at > NOW()) \
+           AND (max_uses IS NULL OR uses < max_uses) \
+         RETURNING server_id",
+    )
+    .bind(invite_code)
+    .fetch_optional(&mut **tx)
+    .await?;
+
+    if claimed.is_some() {
+        return Ok(());
+    }
+
+    let invite_row = sqlx::query(
+        "SELECT uses, max_uses, expires_at \
+         FROM server_invite_links \
+         WHERE code = $1",
+    )
+    .bind(invite_code)
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or_else(|| AppError::NotFound("Invalid invite code".into()))?;
+
+    let expires_at: Option<chrono::DateTime<Utc>> = invite_row.try_get("expires_at")?;
+    if let Some(exp) = expires_at {
+        if Utc::now() > exp {
+            return Err(AppError::BadRequest("Invite link has expired".into()));
+        }
+    }
+
+    let uses: i32 = invite_row.try_get("uses")?;
+    let max_uses: Option<i32> = invite_row.try_get("max_uses")?;
+    if let Some(max) = max_uses {
+        if uses >= max {
+            return Err(AppError::BadRequest(
+                "Invite link has reached its use limit".into(),
+            ));
+        }
+    }
+
+    Err(AppError::Conflict(
+        "Invite link is temporarily unavailable".into(),
+    ))
 }
 
 async fn notify_parents(

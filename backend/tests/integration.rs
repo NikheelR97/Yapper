@@ -14,4 +14,4 @@ mod helpers;
 
 // Re-export test modules so they are discovered by the test harness.
 #[allow(unused_imports)]
-use helpers::{account, auth, devices, keys};
+use helpers::{account, auth, devices, identity, keys, messages, parental, server_caps, v1_absence};

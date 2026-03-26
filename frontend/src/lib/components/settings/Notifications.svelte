@@ -28,7 +28,7 @@
 				dndEnabled: boolean;
 				dndStart: string | null;
 				dndEnd: string | null;
-			}>('/api/v1/users/me/notifications');
+			}>('/api/v2/users/me/notifications');
 			pushEnabled = res.pushEnabled;
 			notifyDMs = res.notifyDMs;
 			notifyMentions = res.notifyMentions;
@@ -47,7 +47,7 @@
 	async function save() {
 		saving = true;
 		try {
-			await api.patch('/api/v1/users/me/notifications', {
+			await api.patch('/api/v2/users/me/notifications', {
 				pushEnabled,
 				notifyDMs,
 				notifyMentions,
@@ -59,8 +59,8 @@
 				dndEnd: dndEnabled ? dndEnd : null,
 			});
 			toast.success('Notification settings saved!');
-		} catch (e: any) {
-			toast.error(e.message ?? 'Failed to save');
+		} catch (e: unknown) {
+			toast.error(e instanceof Error ? e.message : 'Failed to save');
 		} finally {
 			saving = false;
 		}

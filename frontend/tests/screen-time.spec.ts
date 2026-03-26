@@ -28,14 +28,14 @@ async function setupParentAuth(
 	await setInstallationId(page, 'screentime-test-install');
 	await mockAuthEndpoints(page, authData);
 
-	await page.route(`**/api/v1/servers`, async (route) => {
+	await page.route(`**/api/v2/servers`, async (route) => {
 		await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
 	});
-	await page.route(`**/api/v1/conversations`, async (route) => {
+	await page.route(`**/api/v2/conversations`, async (route) => {
 		await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
 	});
 
-	await page.route(`**/api/v1/parental/children`, async (route) => {
+	await page.route(`**/api/v2/parental/children`, async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
@@ -47,11 +47,11 @@ async function setupParentAuth(
 		});
 	});
 
-	await page.route(`**/api/v1/parental/pending-alerts`, async (route) => {
+	await page.route(`**/api/v2/parental/pending-alerts`, async (route) => {
 		await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
 	});
 
-	await page.route(`**/api/v1/parental/activity**`, async (route) => {
+	await page.route(`**/api/v2/parental/activity**`, async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
@@ -59,7 +59,7 @@ async function setupParentAuth(
 		});
 	});
 
-	await page.route(`**/api/v1/parental/screen-time**`, async (route) => {
+	await page.route(`**/api/v2/parental/screen-time**`, async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
@@ -67,7 +67,7 @@ async function setupParentAuth(
 		});
 	});
 
-	await page.route(`**/api/v1/screentime/reports**`, async (route) => {
+	await page.route(`**/api/v2/screentime/reports**`, async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
@@ -132,7 +132,7 @@ test.describe('Screen Time — report ingestion stub', () => {
 		const authData = buildMockAuthData({ device });
 
 		let capturedBody: unknown = null;
-		await page.route(`**/api/v1/screentime/reports`, async (route) => {
+		await page.route(`**/api/v2/screentime/reports`, async (route) => {
 			if (route.request().method() === 'POST') {
 				capturedBody = route.request().postDataJSON();
 				await route.fulfill({ status: 201, contentType: 'application/json', body: '{}' });
@@ -143,7 +143,7 @@ test.describe('Screen Time — report ingestion stub', () => {
 
 		// Verify the mock endpoint accepts the expected shape
 		const response = await page.request.post(
-			`${process.env.VITE_API_URL ?? 'http://localhost:5173'}/api/v1/screentime/reports`,
+			`${process.env.VITE_API_URL ?? 'http://localhost:5173'}/api/v2/screentime/reports`,
 			{
 				data: {
 					child_id: 'child-1',

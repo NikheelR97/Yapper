@@ -1,11 +1,13 @@
 <script lang="ts">
 	import { page } from "$app/stores";
-	import { onMount, afterUpdate } from "svelte";
+	import { afterNavigate } from "$app/navigation";
+	import { afterUpdate } from "svelte";
 	import { get } from "svelte/store";
 	import {
 		conversationsStore,
 		getMessageStore,
 		loadMessages,
+		createDmHistoryLoader,
 		sendMessage,
 	} from "$stores/conversations.js";
 	import MessageList from "$lib/components/chat/MessageList.svelte";
@@ -31,6 +33,13 @@
 	let listEl: HTMLDivElement;
 	let showSafetyNumbers = false;
 	let keyChanged = false;
+	const dmHistoryLoader = createDmHistoryLoader(loadMessages);
+
+	// Force a fresh history fetch when navigating to this page (including
+	// navigating back to the same conversation after visiting another).
+	afterNavigate(() => {
+		dmHistoryLoader.invalidate();
+	});
 
 	$: if (conversation?.peerId) {
 		void loadPeerTrust(conversation.peerId);
@@ -38,16 +47,16 @@
 		keyChanged = false;
 	}
 
-	onMount(async () => {
-		if (!conversation) { loading = false; return; }
-		try {
-			await loadMessages(conversationId, conversation.peerId);
-		} catch {
-			loadError = true;
-		} finally {
-			loading = false;
-		}
-	});
+	$: void dmHistoryLoader.requestLoad(
+		conversationId,
+		conversation?.peerId ?? null,
+		(nextLoading) => {
+			loading = nextLoading;
+		},
+		(nextLoadError) => {
+			loadError = nextLoadError;
+		},
+	);
 
 	// Scroll to bottom whenever messages change
 	afterUpdate(() => {

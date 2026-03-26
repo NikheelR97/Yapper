@@ -15,7 +15,6 @@ pub enum AppError {
     Unauthorized,
 
     #[error("Forbidden")]
-    #[allow(dead_code)]
     Forbidden,
 
     #[error("Bad request: {0}")]

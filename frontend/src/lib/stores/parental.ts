@@ -1,5 +1,6 @@
 import { writable, get } from 'svelte/store';
 import { api } from '$api/client.js';
+import { registerSessionResetter } from '$stores/auth.js';
 
 export interface Child {
 	id: string;
@@ -67,10 +68,14 @@ const initial: ParentalState = {
 
 export const parentalStore = writable<ParentalState>(initial);
 
+registerSessionResetter(() => {
+	parentalStore.set({ ...initial });
+});
+
 export async function loadChildren() {
 	parentalStore.update((s) => ({ ...s, loading: true }));
 	try {
-		const res = await api.get<{ children: Child[] }>('/api/v1/parental/children');
+		const res = await api.get<{ children: Child[] }>('/api/v2/parental/children');
 		const children = res.children ?? [];
 		parentalStore.update((s) => ({
 			...s,
@@ -90,7 +95,7 @@ export async function loadAlerts() {
 	for (const child of children) {
 		try {
 			const res = await api.get<{ friend_requests: any[]; server_joins: any[] }>(
-				`/api/v1/parental/children/${child.id}/notifications`
+				`/api/v2/parental/children/${child.id}/notifications`
 			);
 			for (const fr of res.friend_requests ?? []) {
 				if (fr.status !== 'pending') continue;
@@ -126,14 +131,14 @@ export async function loadFeed(_childId: string) {
 	// Feed endpoint not yet implemented on backend; overview data is loaded via loadActivity
 }
 
-/** Maps to GET /api/v1/parental/children/:id/overview */
+/** Maps to GET /api/v2/parental/children/:id/overview */
 export async function loadActivity(childId: string) {
 	try {
 		const res = await api.get<{
 			pending_friend_requests: number;
 			pending_server_joins: number;
 			top_servers: any[];
-		}>(`/api/v1/parental/children/${childId}/overview`);
+		}>(`/api/v2/parental/children/${childId}/overview`);
 		const activity: ChildActivity = {
 			totalMinutesToday: 0,
 			limitMinutes: null,
@@ -149,8 +154,8 @@ export async function loadActivity(childId: string) {
 
 export async function approveAlert(alertId: string, type: 'friend_request' | 'server_join') {
 	const endpoint = type === 'friend_request'
-		? `/api/v1/parental/friend-requests/${alertId}/approve`
-		: `/api/v1/parental/server-joins/${alertId}/approve`;
+		? `/api/v2/parental/friend-requests/${alertId}/approve`
+		: `/api/v2/parental/server-joins/${alertId}/approve`;
 	await api.patch(endpoint);
 	parentalStore.update((s) => ({
 		...s,
@@ -160,8 +165,8 @@ export async function approveAlert(alertId: string, type: 'friend_request' | 'se
 
 export async function declineAlert(alertId: string, type: 'friend_request' | 'server_join') {
 	const endpoint = type === 'friend_request'
-		? `/api/v1/parental/friend-requests/${alertId}/decline`
-		: `/api/v1/parental/server-joins/${alertId}/decline`;
+		? `/api/v2/parental/friend-requests/${alertId}/decline`
+		: `/api/v2/parental/server-joins/${alertId}/decline`;
 	await api.patch(endpoint);
 	parentalStore.update((s) => ({
 		...s,
@@ -177,7 +182,7 @@ export async function createChild(data: {
 	dateOfBirth: string;
 	settings: ChildSettings;
 }): Promise<Child> {
-	const child = await api.post<Child>('/api/v1/parental/children', {
+	const child = await api.post<Child>('/api/v2/parental/children', {
 		username: data.username,
 		display_name: data.displayName,
 		email: data.email,

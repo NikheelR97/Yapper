@@ -15,6 +15,8 @@
 
 All production infra runs on free tiers. Monthly cost: $0 (plus ~$10/year domain).
 
+GitHub Actions does not currently auto-promote production deploys during the stabilization sprint. Treat Fly.io and Cloudflare Pages promotions as separate operational steps until the release gate is restored.
+
 ---
 
 ## Backend — Fly.io
@@ -54,7 +56,7 @@ flyctl deploy
 
 ### Subsequent deploys
 
-CI runs `flyctl deploy` directly in the `deploy-backend` job — no separate Docker push step is needed. Fly.io handles the remote build from the Dockerfile.
+Production deploy automation is paused in GitHub Actions during stabilization. Use `flyctl deploy` manually only after the release gate is reinstated.
 
 ```bash
 # Manual deploy (same as what CI does):
@@ -91,7 +93,7 @@ flyctl ssh console -a yapper-api
 
 ## Frontend — Cloudflare Pages
 
-The frontend is deployed automatically via GitHub Actions on push to `main`.
+The frontend is deployed automatically by Cloudflare Pages on push to `main`. That provider-side deploy is outside the GitHub release gate and should be treated as a separate production promotion path.
 
 **Project:** `yapper-app` → `app.yapperhq.com`
 
@@ -117,6 +119,8 @@ npx wrangler pages deploy build --project-name yapper-app
 ## Marketing Site — Cloudflare Pages
 
 **Project:** `yapper-marketing` → `yapperhq.com`
+
+Marketing Pages deploys are also provider-managed and are not part of the paused GitHub production promotion pipeline.
 
 ```bash
 make deploy-marketing   # cd marketing && npm run build && wrangler pages deploy dist

@@ -126,7 +126,7 @@ function apiHeaders(session: SessionBootstrap) {
 }
 
 async function createDmConversation(session: SessionBootstrap, peerId: string): Promise<string> {
-	const response = await fetch(`${API_URL}/api/v1/conversations`, {
+	const response = await fetch(`${API_URL}/api/v2/conversations`, {
 		method: 'POST',
 		headers: apiHeaders(session),
 		body: JSON.stringify({ peer_id: peerId }),

@@ -48,6 +48,7 @@ vi.mock('$signal/keystore.js', () => ({
 }));
 
 import { authStore } from '$stores/auth.js';
+import { clearAuth } from '$stores/auth.js';
 import { api } from '$api/client.js';
 import {
 	decryptChannel,
@@ -59,7 +60,8 @@ import {
 	storeChannelHistoryMessages,
 } from '$signal/keystore.js';
 import { sendChannelMessage } from '$stores/ws.js';
-import { getChannelMessageStore, registerChannelHandler, sendMessage } from './servers.js';
+import { getChannelMessageStore, registerChannelHandler, sendMessage, serversStore } from './servers.js';
+import { conversationsStore, getMessageStore } from './conversations.js';
 
 async function emitWs(type: string, payload: unknown): Promise<void> {
 	const handlers = [...(wsHandlers.get(type) ?? [])];
@@ -214,25 +216,174 @@ describe('registerChannelHandler', () => {
 			message_type: 'text',
 		});
 
-		await sendMessage('channel-1', 'hello over http');
+		const unregister = registerChannelHandler();
 
-		expect(api.post).toHaveBeenCalledWith('/api/v1/channels/channel-1/messages', {
-			ciphertext: 'ciphertext',
-			message_type: 'text',
-			msg_num: 7,
-		});
+		try {
+			await sendMessage('channel-1', 'hello over http');
 
-		const messages = get(getChannelMessageStore('channel-1'));
-		expect(messages).toEqual([
-			{
+			expect(api.post).toHaveBeenCalledWith('/api/v2/channels/channel-1/messages', {
+				ciphertext: 'ciphertext',
+				message_type: 'text',
+				msg_num: 7,
+			});
+
+			const messages = get(getChannelMessageStore('channel-1'));
+			expect(messages).toHaveLength(1);
+			expect(messages[0]).toMatchObject({
 				id: 'stored-message-1',
 				conversationId: 'channel-1',
 				senderId: 'viewer-user',
+				senderDeviceId: 'viewer-device',
 				text: 'hello over http',
 				decryptError: false,
 				createdAt: '2026-03-18T01:00:00.000Z',
 				messageType: 'text',
+				pendingMsgNum: 7,
+				deliveryState: 'sent',
+			});
+
+			await emitWs('channel', {
+				id: 'server-message-2',
+				channel_id: 'channel-1',
+				sender_id: 'viewer-user',
+				sender_device_id: 'viewer-device',
+				ciphertext: 'ciphertext',
+				message_type: 'text',
+				msg_num: 7,
+				created_at: '2026-03-18T01:00:01.000Z',
+			});
+
+			expect(get(getChannelMessageStore('channel-1'))).toEqual([
+				{
+					id: 'server-message-2',
+					conversationId: 'channel-1',
+					senderId: 'viewer-user',
+					senderDeviceId: 'viewer-device',
+					text: 'hello over http',
+					decryptError: false,
+					createdAt: '2026-03-18T01:00:01.000Z',
+					messageType: 'text',
+					pendingMsgNum: null,
+					deliveryState: 'sent',
+				},
+			]);
+		} finally {
+			unregister();
+		}
+	});
+
+	it('reconciles an optimistic channel send to the echoed server id', async () => {
+		vi.mocked(sendChannelMessage).mockReturnValue(true);
+
+		const unregister = registerChannelHandler();
+
+		try {
+			await sendMessage('channel-1', '{"mime_type":"video/mp4"}', { messageType: 'clip' });
+
+			let messages = get(getChannelMessageStore('channel-1'));
+			expect(messages).toHaveLength(1);
+			expect(messages[0]).toMatchObject({
+				conversationId: 'channel-1',
+				senderId: 'viewer-user',
+				senderDeviceId: 'viewer-device',
+				text: '{"mime_type":"video/mp4"}',
+				decryptError: false,
+				messageType: 'clip',
+				pendingMsgNum: 7,
+				deliveryState: 'pending',
+			});
+			const localId = messages[0]?.id;
+
+			await emitWs('channel', {
+				id: 'server-message-1',
+				channel_id: 'channel-1',
+				sender_id: 'viewer-user',
+				sender_device_id: 'viewer-device',
+				ciphertext: 'ciphertext',
+				message_type: 'clip',
+				msg_num: 7,
+				created_at: '2026-03-18T02:00:00.000Z',
+			});
+
+			messages = get(getChannelMessageStore('channel-1'));
+			expect(messages).toHaveLength(1);
+			expect(messages[0]).toMatchObject({
+				id: 'server-message-1',
+				conversationId: 'channel-1',
+				senderId: 'viewer-user',
+				senderDeviceId: 'viewer-device',
+				text: '{"mime_type":"video/mp4"}',
+				decryptError: false,
+				createdAt: '2026-03-18T02:00:00.000Z',
+				messageType: 'clip',
+				pendingMsgNum: null,
+				deliveryState: 'sent',
+			});
+			expect(messages[0]?.id).not.toBe(localId);
+		} finally {
+			unregister();
+		}
+	});
+
+	it('clears session-scoped channel and DM caches when auth is cleared', async () => {
+		serversStore.set({
+			servers: [
+				{
+					id: 'server-1',
+					name: 'Server 1',
+					slug: 'server-1',
+					iconUrl: null,
+					isOwner: false,
+					memberCount: 3,
+				},
+			],
+			loading: false,
+		});
+		conversationsStore.set({
+			conversations: [
+				{
+					id: 'conv-1',
+					peerId: 'peer-1',
+					peerUsername: 'peer',
+					peerDisplayName: 'Peer',
+					peerAvatarUrl: null,
+					lastMessageAt: null,
+				},
+			],
+			loading: false,
+			loadError: false,
+		});
+		getMessageStore('conv-1').set([
+			{
+				id: 'dm-msg-1',
+				conversationId: 'conv-1',
+				senderId: 'peer-1',
+				text: 'hello',
+				decryptError: false,
+				createdAt: '2026-03-18T03:00:00.000Z',
+				messageType: 'text',
 			},
 		]);
+		getChannelMessageStore('channel-1').set([
+			{
+				id: 'channel-msg-1',
+				conversationId: 'channel-1',
+				senderId: 'viewer-user',
+				senderDeviceId: 'viewer-device',
+				text: 'hello',
+				decryptError: false,
+				createdAt: '2026-03-18T03:05:00.000Z',
+				messageType: 'text',
+				pendingMsgNum: 1,
+				deliveryState: 'pending',
+			},
+		]);
+
+		clearAuth();
+
+		expect(get(serversStore).servers).toEqual([]);
+		expect(get(conversationsStore).conversations).toEqual([]);
+		expect(get(getMessageStore('conv-1'))).toEqual([]);
+		expect(get(getChannelMessageStore('channel-1'))).toEqual([]);
 	});
 });

@@ -11,6 +11,7 @@
 
 import { writable } from 'svelte/store';
 import { api } from '$api/client.js';
+import { registerSessionResetter } from '$stores/auth.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -74,7 +75,7 @@ export interface ExploreState {
 
 // ─── Store ────────────────────────────────────────────────────────────────────
 
-export const exploreStore = writable<ExploreState>({
+const exploreInitial: ExploreState = {
 	tags: [],
 	liveServers: [],
 	communities: [],
@@ -85,6 +86,12 @@ export const exploreStore = writable<ExploreState>({
 	loadingCommunities: false,
 	searching: false,
 	searchQuery: '',
+};
+
+export const exploreStore = writable<ExploreState>({ ...exploreInitial });
+
+registerSessionResetter(() => {
+	exploreStore.set({ ...exploreInitial });
 });
 
 // ─── Loaders ──────────────────────────────────────────────────────────────────
@@ -92,7 +99,7 @@ export const exploreStore = writable<ExploreState>({
 export async function loadTrendingTags(): Promise<void> {
 	exploreStore.update((s) => ({ ...s, loadingTags: true }));
 	try {
-		const res = await api.get<{ tags: Tag[] }>('/api/v1/explore/trending-tags');
+		const res = await api.get<{ tags: Tag[] }>('/api/v2/explore/trending-tags');
 		exploreStore.update((s) => ({ ...s, tags: res.tags ?? [], loadingTags: false }));
 	} catch {
 		exploreStore.update((s) => ({ ...s, loadingTags: false }));
@@ -102,7 +109,7 @@ export async function loadTrendingTags(): Promise<void> {
 export async function loadLiveServers(): Promise<void> {
 	exploreStore.update((s) => ({ ...s, loadingLive: true }));
 	try {
-		const res = await api.get<{ servers: LiveServer[] }>('/api/v1/explore/live-servers');
+		const res = await api.get<{ servers: LiveServer[] }>('/api/v2/explore/live-servers');
 		exploreStore.update((s) => ({ ...s, liveServers: res.servers ?? [], loadingLive: false }));
 	} catch {
 		exploreStore.update((s) => ({ ...s, loadingLive: false }));
@@ -112,7 +119,7 @@ export async function loadLiveServers(): Promise<void> {
 export async function loadCommunities(): Promise<void> {
 	exploreStore.update((s) => ({ ...s, loadingCommunities: true }));
 	try {
-		const res = await api.get<{ communities: Community[] }>('/api/v1/explore/communities');
+		const res = await api.get<{ communities: Community[] }>('/api/v2/explore/communities');
 		exploreStore.update((s) => ({
 			...s,
 			communities: res.communities ?? [],
@@ -137,7 +144,7 @@ export async function search(q: string): Promise<void> {
 	}
 	try {
 		const res = await api.get<{ servers: SearchServer[]; users: SearchUser[] }>(
-			`/api/v1/search?q=${encodeURIComponent(trimmed)}`
+			`/api/v2/search?q=${encodeURIComponent(trimmed)}`
 		);
 		exploreStore.update((s) => ({
 			...s,
@@ -152,5 +159,5 @@ export async function search(q: string): Promise<void> {
 
 /** Join a public server by id. */
 export async function joinServer(id: string): Promise<void> {
-	await api.post<{ status: string }>(`/api/v1/servers/${id}/join`);
+	await api.post<{ status: string }>(`/api/v2/servers/${id}/join`);
 }

@@ -2,9 +2,11 @@
 
 Base URL: `https://api.yapperhq.com`
 
+The documented HTTP API surface is `/api/v2/*`. OAuth browser redirects remain versionless under `/auth/oauth/*`.
+
 All authenticated endpoints require:
 - `Authorization: Bearer <access_token>` header
-- `X-CSRF-Token: <csrf_token>` header on mutating requests (POST, PUT, PATCH, DELETE)
+- `X-CSRF-Token: <csrf_token>` header on mutating requests
 
 ---
 
@@ -20,29 +22,18 @@ All authenticated endpoints require:
 
 | Path | Description |
 |------|-------------|
-| `wss://api.yapperhq.com/ws?token=<access_token>` | Real-time event stream |
+| `wss://api.yapperhq.com/ws` | Real-time event stream. First client frame must be `{"type":"auth","token":"<access_token>"}` |
 
 ---
 
-## Auth v1
+## Auth
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/api/v1/auth/register` | No | Create account |
-| POST | `/api/v1/auth/login` | No | Login (legacy single-device) |
-| POST | `/api/v1/auth/refresh` | Cookie | Refresh access token |
-| POST | `/api/v1/auth/logout` | Yes | Invalidate refresh token |
-| POST | `/api/v1/auth/verify-email` | No | Verify email with token |
-| POST | `/api/v1/auth/forgot-password` | No | Send reset email |
-| POST | `/api/v1/auth/reset-password` | No | Reset password with token |
-
-## Auth v2 (multi-device)
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
+| POST | `/api/v2/auth/register` | No | Create account and device-bound session |
 | POST | `/api/v2/auth/login` | No | Login with device bootstrap |
-| POST | `/api/v2/auth/refresh` | Cookie | Refresh with device context |
-| DELETE | `/api/v2/auth/logout` | Yes | Logout current device |
+| POST | `/api/v2/auth/refresh` | Cookie | Refresh access token |
+| DELETE | `/api/v2/auth/logout` | Yes | Invalidate current refresh-token family |
 
 ## OAuth
 
@@ -55,38 +46,6 @@ All authenticated endpoints require:
 
 ---
 
-## Users
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | `/api/v1/users/me` | Yes | Current user profile |
-| PATCH | `/api/v1/users/me` | Yes | Update profile |
-| POST | `/api/v1/users/me/avatar` | Yes | Upload avatar (WebP 256×256) |
-| POST | `/api/v1/users/me/banner` | Yes | Upload banner (WebP 1500×500) |
-| GET | `/api/v1/users/:id` | Yes | Public user profile |
-| GET | `/api/v1/users/:id/presence` | Yes | User presence status |
-| POST | `/api/v1/users/:id/follow` | Yes | Follow user |
-| DELETE | `/api/v1/users/:id/follow` | Yes | Unfollow user |
-| POST | `/api/v1/users/:id/friend-request` | Yes | Send friend request |
-| GET | `/api/v1/users/me/friend-requests` | Yes | List incoming friend requests |
-| PATCH | `/api/v1/users/me/friend-requests/:id` | Yes | Accept/decline friend request |
-| DELETE | `/api/v1/users/me/connections/:provider` | Yes | Unlink OAuth provider |
-
-## Account
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | `/api/v1/account/data-export` | Yes | Download GDPR data export (ZIP) |
-| DELETE | `/api/v1/account` | Yes | Soft-delete account |
-| GET | `/api/v1/account/settings/privacy` | Yes | Get privacy settings |
-| PATCH | `/api/v1/account/settings/privacy` | Yes | Update privacy settings |
-| GET | `/api/v1/account/settings/appearance` | Yes | Get appearance settings |
-| PATCH | `/api/v1/account/settings/appearance` | Yes | Update appearance settings |
-| GET | `/api/v1/account/settings/notifications` | Yes | Get notification preferences |
-| PATCH | `/api/v1/account/settings/notifications` | Yes | Update notification preferences |
-
----
-
 ## Devices
 
 | Method | Path | Auth | Description |
@@ -95,140 +54,83 @@ All authenticated endpoints require:
 | DELETE | `/api/v2/devices/:id` | Yes | Revoke device |
 | PATCH | `/api/v2/devices/:id/trust` | Yes | Approve pending device |
 
+## Users and Account
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/v2/users/me` | Yes | Current user profile |
+| PATCH | `/api/v2/users/me` | Yes | Update profile |
+| POST | `/api/v2/users/me/avatar` | Yes | Upload avatar |
+| POST | `/api/v2/users/me/banner` | Yes | Upload banner |
+| GET | `/api/v2/users/:id` | Yes | Public user profile |
+| GET | `/api/v2/users/:id/presence` | Yes | User presence status |
+| POST | `/api/v2/users/:id/follow` | Yes | Follow user |
+| DELETE | `/api/v2/users/:id/follow` | Yes | Unfollow user |
+| GET | `/api/v2/account/data-export` | Yes | Download data export |
+| DELETE | `/api/v2/account` | Yes | Delete account |
+| GET | `/api/v2/account/settings/privacy` | Yes | Get privacy settings |
+| PATCH | `/api/v2/account/settings/privacy` | Yes | Update privacy settings |
+| GET | `/api/v2/account/settings/appearance` | Yes | Get appearance settings |
+| PATCH | `/api/v2/account/settings/appearance` | Yes | Update appearance settings |
+| GET | `/api/v2/account/settings/notifications` | Yes | Get notification preferences |
+| PATCH | `/api/v2/account/settings/notifications` | Yes | Update notification preferences |
+
 ---
 
 ## Signal Keys
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/api/v1/keys/identity` | Yes | Upload identity + prekeys |
-| GET | `/api/v1/keys/bundle/:user_id` | Yes | Fetch key bundle for X3DH |
-| POST | `/api/v1/keys/one-time` | Yes | Upload one-time prekeys |
-| GET | `/api/v1/keys/opk-count` | Yes | Remaining OPK count |
-| GET | `/api/v1/keys/backup` | Yes | Fetch PIN-encrypted key backup |
-| PUT | `/api/v1/keys/backup` | Yes | Store PIN-encrypted key backup |
 | POST | `/api/v2/keys/device` | Yes | Upload device Signal keys |
-| GET | `/api/v2/keys/bundle/:user_id/:device_id` | Yes | Per-device key bundle |
+| GET | `/api/v2/keys/bundle/:user_id/:device_id` | Yes | Fetch per-device key bundle |
+| POST | `/api/v2/keys/backup` | Yes | Store PIN-encrypted key backup |
+| GET | `/api/v2/keys/backup` | Yes | Fetch PIN-encrypted key backup |
 
 ---
 
-## Servers
+## Messaging, Servers, Media
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/api/v1/servers` | Yes | List joined servers |
-| POST | `/api/v1/servers` | Yes | Create server |
-| GET | `/api/v1/servers/:id` | Yes | Get server details |
-| PATCH | `/api/v1/servers/:id` | Yes | Update server (owner only) |
-| DELETE | `/api/v1/servers/:id` | Yes | Delete server (owner only) |
-| POST | `/api/v1/servers/:id/invites` | Yes | Generate invite link |
-| POST | `/api/v1/servers/join/:code` | Yes | Join via invite code |
-| DELETE | `/api/v1/servers/:id/members/:user_id` | Yes | Kick member / leave |
-
-## Channels
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | `/api/v1/channels/:id` | Yes | Get channel |
-| POST | `/api/v1/servers/:id/channels` | Yes | Create channel |
-| PATCH | `/api/v1/channels/:id` | Yes | Update channel |
-| DELETE | `/api/v1/channels/:id` | Yes | Delete channel |
+| GET | `/api/v2/servers` | Yes | List joined servers |
+| POST | `/api/v2/servers` | Yes | Create server |
+| GET | `/api/v2/servers/:id` | Yes | Get server details |
+| PATCH | `/api/v2/servers/:id` | Yes | Update server |
+| DELETE | `/api/v2/servers/:id` | Yes | Delete server |
+| POST | `/api/v2/servers/:id/invites` | Yes | Generate invite link |
+| POST | `/api/v2/servers/join/:code` | Yes | Join via invite code |
+| GET | `/api/v2/channels/:id/messages` | Yes | Channel message history |
+| POST | `/api/v2/channels/:id/messages` | Yes | Send channel message |
+| GET | `/api/v2/conversations` | Yes | List DM conversations |
+| GET | `/api/v2/conversations/:id/messages` | Yes | DM history |
+| POST | `/api/v2/conversations` | Yes | Create DM conversation |
+| POST | `/api/v2/media/upload-url` | Yes | Get presigned R2 upload URL |
 
 ---
 
-## Messages
+## Discovery, Canvas, Premium, Parental, Support, Notifications
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/api/v1/channels/:id/messages` | Yes | Channel message history |
-| POST | `/api/v1/channels/:id/messages` | Yes | Send channel message (v1) |
-| POST | `/api/v2/conversations/:id/messages` | Yes | Send DM (v2 envelope) |
-| GET | `/api/v1/conversations` | Yes | List DM conversations |
-| GET | `/api/v1/conversations/:id/messages` | Yes | DM history |
-| POST | `/api/v1/conversations` | Yes | Create DM conversation |
-| POST | `/api/v1/channels/:id/typing` | Yes | Send typing start |
-| POST | `/api/v1/channels/:id/read` | Yes | Mark messages read |
-
----
-
-## Media
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| POST | `/api/v1/media/upload-url` | Yes | Get presigned R2 upload URL |
-
----
-
-## Explore
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | `/api/v1/explore/servers` | Yes | Search public servers |
-| GET | `/api/v1/explore/trending-tags` | Yes | Trending server tags (5-min cache) |
-| GET | `/api/v1/explore/communities` | Yes | Featured communities |
-| GET | `/api/v1/explore/live-servers` | Yes | Active live servers |
-
----
-
-## Canvas
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | `/api/v1/servers/:id/canvas` | Yes | Get canvas state + clips |
-| PATCH | `/api/v1/servers/:id/canvas/music` | Yes | Update music widget |
-| POST | `/api/v1/servers/:id/canvas/polls` | Yes | Create poll |
-| POST | `/api/v1/canvas/polls/:id/vote` | Yes | Vote on poll |
-
----
-
-## Premium
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | `/api/v1/premium/status` | Yes | Subscription status |
-| POST | `/api/v1/premium/promo` | Yes | Redeem promo code |
-| POST | `/api/v1/premium/webhook` | No | Stripe webhook endpoint |
-
----
-
-## Parental Controls
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| POST | `/api/v1/parental/children` | Yes | Create child account (COPPA) |
-| GET | `/api/v1/parental/children` | Yes | List managed children |
-| GET | `/api/v1/parental/children/:id/overview` | Yes | Child activity snapshot |
-| GET | `/api/v1/parental/children/:id/notifications` | Yes | Pending approval alerts |
-| PATCH | `/api/v1/parental/friend-requests/:id/approve` | Yes | Approve friend request |
-| PATCH | `/api/v1/parental/friend-requests/:id/decline` | Yes | Decline friend request |
-| PATCH | `/api/v1/parental/server-joins/:id/approve` | Yes | Approve server join |
-| PATCH | `/api/v1/parental/server-joins/:id/decline` | Yes | Decline server join |
-
----
-
-## Support
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| POST | `/api/v1/support/tickets` | Yes | Submit support ticket |
-| GET | `/api/v1/support/tickets` | Yes | List own tickets |
-
-### POST /api/v1/support/tickets
-
-```json
-{
-  "ticket_type": "bug",          // "bug" | "idea" | "improvement"
-  "subject": "Login fails",      // 1–200 chars
-  "description": "Steps to…",   // 1–2000 chars
-  "priority": "high"             // "low" | "medium" | "high" | "urgent"
-}
-```
-
----
-
-## Notifications
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| POST | `/api/v1/notifications/device-token` | Yes | Register FCM push token |
-| DELETE | `/api/v1/notifications/device-token` | Yes | Unregister FCM token |
+| GET | `/api/v2/explore/servers` | Yes | Search public servers |
+| GET | `/api/v2/explore/trending-tags` | Yes | Trending server tags |
+| GET | `/api/v2/explore/communities` | Yes | Featured communities |
+| GET | `/api/v2/explore/live-servers` | Yes | Active live servers |
+| GET | `/api/v2/servers/:id/canvas` | Yes | Get canvas state |
+| PATCH | `/api/v2/servers/:id/canvas/music` | Yes | Update music widget |
+| POST | `/api/v2/servers/:id/canvas/polls` | Yes | Create poll |
+| POST | `/api/v2/canvas/polls/:id/vote` | Yes | Vote on poll |
+| GET | `/api/v2/premium/status` | Yes | Subscription status |
+| POST | `/api/v2/premium/promo` | Yes | Redeem promo code |
+| POST | `/api/v2/parental/children` | Yes | Create child account |
+| GET | `/api/v2/parental/children` | Yes | List managed children |
+| GET | `/api/v2/parental/children/:id/overview` | Yes | Child activity snapshot |
+| GET | `/api/v2/parental/children/:id/notifications` | Yes | Pending approval alerts |
+| PATCH | `/api/v2/parental/friend-requests/:id/approve` | Yes | Approve friend request |
+| PATCH | `/api/v2/parental/friend-requests/:id/decline` | Yes | Decline friend request |
+| PATCH | `/api/v2/parental/server-joins/:id/approve` | Yes | Approve server join |
+| PATCH | `/api/v2/parental/server-joins/:id/decline` | Yes | Decline server join |
+| POST | `/api/v2/support/tickets` | Yes | Submit support ticket |
+| GET | `/api/v2/support/tickets` | Yes | List own tickets |
+| POST | `/api/v2/notifications/register-device` | Yes | Register push token |
+| DELETE | `/api/v2/notifications/register-device` | Yes | Unregister push token |

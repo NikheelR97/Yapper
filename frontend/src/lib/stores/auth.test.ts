@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { get } from 'svelte/store';
-import { authStore, setAuth, clearAuth } from './auth.js';
+import { authStore, setAuth, clearAuth, registerSessionResetter, resetAppState } from './auth.js';
 import type { AuthDevice, User } from './auth.js';
 
 const testUser: User = {
@@ -61,5 +61,31 @@ describe('authStore', () => {
 		expect(state.user).toBeNull();
 		expect(state.device).toBeNull();
 		expect(state.accessToken).toBeNull();
+	});
+
+	it('clearAuth runs registered session resetters before clearing auth state', () => {
+		const resetter = vi.fn();
+		const unregister = registerSessionResetter(resetter);
+
+		try {
+			setAuth(testUser, 'test-token', 'csrf-token', testDevice);
+			clearAuth();
+			expect(resetter).toHaveBeenCalledOnce();
+			expect(get(authStore).user).toBeNull();
+		} finally {
+			unregister();
+		}
+	});
+
+	it('resetAppState can be triggered directly for session-scoped caches', () => {
+		const resetter = vi.fn();
+		const unregister = registerSessionResetter(resetter);
+
+		try {
+			resetAppState();
+			expect(resetter).toHaveBeenCalledOnce();
+		} finally {
+			unregister();
+		}
 	});
 });

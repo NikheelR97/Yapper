@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { api, ApiError } from '$api/client.js';
-	import { setAuth, storeRefreshToken } from '$stores/auth.js';
+	import { setAuth, storeRefreshToken, resetAppState } from '$stores/auth.js';
+	import { toast } from '$stores/toast.js';
 	import type { User } from '$stores/auth.js';
 	import { getDeviceBootstrap, normalizeServerDevice } from '$lib/device/bootstrap.js';
 	import { API_URL } from '$lib/env.js';
@@ -62,8 +63,14 @@
 					device: await getDeviceBootstrap(),
 				}
 			);
-			if (res.refresh_token) storeRefreshToken(res.refresh_token);
+			const storageWarning = res.refresh_token
+				? await storeRefreshToken(res.refresh_token)
+				: null;
+			resetAppState();
 			setAuth(res.user, res.access_token, res.csrf_token, normalizeServerDevice(res.device));
+			if (storageWarning) {
+				toast.warning(storageWarning, 0);
+			}
 			await goto('/onboarding');
 		} catch (e) {
 			if (e instanceof ApiError) {

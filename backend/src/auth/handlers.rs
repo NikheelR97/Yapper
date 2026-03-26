@@ -13,15 +13,14 @@ use uuid::Uuid;
 use validator::Validate;
 
 use super::service::{
-    generate_access_token, generate_email_token, generate_refresh_token, hash_password_async,
-    validate_refresh_token, verify_password_async, REFRESH_TTL_SECS,
+    generate_email_token, hash_password_async, verify_password_async, REFRESH_TTL_SECS,
 };
 use crate::{
     error::{AppError, AppResult},
     AppState,
 };
 
-// ─── DTOs ─────────────────────────────────────────────────────────────────────
+// â”€â”€â”€ DTOs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 #[derive(Debug, Deserialize, Validate)]
 #[serde(deny_unknown_fields)]
@@ -37,7 +36,7 @@ pub struct RegisterRequest {
 
     pub display_name: Option<String>,
 
-    /// Date of birth (YYYY-MM-DD). Required for COPPA compliance —
+    /// Date of birth (YYYY-MM-DD). Required for COPPA compliance â€”
     /// users under 13 must be created through the parental child-account flow.
     pub date_of_birth: Option<String>,
 }
@@ -111,380 +110,17 @@ pub fn gc_auth_rate_limiters() {
     EMAIL_VERIFY_IP_LIMITER.retain_recent();
 }
 
-// ─── Register ─────────────────────────────────────────────────────────────────
-
-/// Register a new user account with email and password.
-///
-/// Validates the request, checks username format (`[a-zA-Z0-9_]+`), enforces
-/// COPPA age gating (under-13 accounts must go through the parental flow),
-/// hashes the password with Argon2id, inserts the user, and issues a JWT
-/// session (access + refresh tokens).
-///
-/// A verification email is sent asynchronously (fire-and-forget).
-///
-/// # Arguments
-/// * `state` — shared application state (DB pool, JWT keys)
-/// * `req` — registration payload (username, email, password, optional display_name and date_of_birth)
-///
-/// # Returns
-/// `201 Created` with [`AuthResponse`] (access token, CSRF token, user DTO) and
-/// `Set-Cookie` headers for the refresh token and CSRF cookie.
-///
-/// # Errors
-/// * `AppError::BadRequest` — validation failure, invalid username format, or COPPA age violation
-/// * `AppError::Conflict` — username or email already taken
-/// * `AppError::Internal` — password hashing or DB failure
-///
-/// # Security invariants
-/// * Passwords are hashed with Argon2id (64MB, 3 iterations, 4 lanes) via semaphore-gated async
-/// * Users under 13 are rejected; they must use `POST /api/v1/parental/children`
-pub async fn register(
-    State(state): State<AppState>,
-    Json(req): Json<RegisterRequest>,
-) -> AppResult<impl IntoResponse> {
-    req.validate()
-        .map_err(|e| AppError::BadRequest(e.to_string()))?;
-
-    if !USERNAME_RE.is_match(&req.username) {
-        return Err(AppError::BadRequest(
-            "Username may only contain letters, numbers and underscores".to_string(),
-        ));
-    }
-
-    // COPPA: block direct registration for users under 13.
-    // Under-13 accounts can only be created via POST /api/v1/parental/children.
-    if let Some(ref dob_str) = req.date_of_birth {
-        if let Ok(dob) = dob_str.parse::<chrono::NaiveDate>() {
-            let today = chrono::Utc::now().date_naive();
-            let age = today.years_since(dob).unwrap_or(0);
-            if age < 13 {
-                return Err(AppError::BadRequest(
-                    "Users under 13 require a parent-managed account".to_string(),
-                ));
-            }
-        }
-    }
-
-    let pool = state.db.pool();
-
-    // Check username + email uniqueness
-    let exists = sqlx::query_scalar!(
-        "SELECT EXISTS(SELECT 1 FROM users WHERE username = $1 OR email = $2)",
-        req.username,
-        req.email
-    )
-    .fetch_one(pool)
-    .await?
-    .unwrap_or(false);
-
-    if exists {
-        return Err(AppError::Conflict(
-            "Username or email already taken".to_string(),
-        ));
-    }
-
-    let password_hash = hash_password_async(req.password.clone()).await?;
-    let email_token = generate_email_token();
-    let display_name = req.display_name.unwrap_or_else(|| req.username.clone());
-
-    let user = sqlx::query_as!(
-        UserDto,
-        r#"
-        INSERT INTO users
-            (username, email, display_name, password_hash, email_verify_token,
-             email_verify_expires_at, gdpr_consent_at)
-        VALUES ($1, $2, $3, $4, $5, NOW() + INTERVAL '24 hours', NOW())
-        RETURNING id, username, display_name, avatar_url, account_type, is_premium
-        "#,
-        req.username,
-        req.email.to_lowercase(),
-        display_name,
-        password_hash,
-        email_token,
-    )
-    .fetch_one(pool)
-    .await?;
-
-    // Send verification email (fire-and-forget — don't fail register if email fails)
-    let email = req.email.clone();
-    let token = email_token.clone();
-    let resend_key = std::env::var("RESEND_API_KEY").unwrap_or_default();
-    tokio::spawn(async move {
-        let _ = send_verification_email(&email, &token, &resend_key).await;
-    });
-
-    let family_id = Uuid::new_v4();
-    let access_token = generate_access_token(user.id, &user.account_type, None, &state.jwt_keys)?;
-    let refresh_token = generate_refresh_token(user.id, family_id, None, &state.jwt_keys)?;
-
-    // Store refresh token session — use pre-known claims to skip redundant JWT decode
-    let exp = (Utc::now() + chrono::Duration::seconds(REFRESH_TTL_SECS)).timestamp();
-    store_session_with_claims(pool, user.id, &refresh_token, None, family_id, exp).await?;
-
-    let (cookies, csrf_token) = auth_cookies(&refresh_token);
-    Ok((
-        StatusCode::CREATED,
-        append_set_cookie_headers(&cookies),
-        Json(AuthResponse {
-            access_token,
-            csrf_token,
-            user,
-        }),
-    ))
-}
-
-// ─── Login ────────────────────────────────────────────────────────────────────
-
-/// POST /api/v1/auth/login — authenticate with email + password (legacy single-device).
-///
-/// # Security invariants
-///
-/// * Per-IP login rate limiting (5 attempts/15 min) to prevent credential stuffing.
-/// * Argon2id password verification via semaphore-gated async to cap CPU.
-/// * Constant-time error messages — does not reveal whether email exists.
-pub async fn login(
-    State(state): State<AppState>,
-    ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
-    headers: HeaderMap,
-    Json(req): Json<LoginRequest>,
-) -> AppResult<impl IntoResponse> {
-    req.validate()
-        .map_err(|e| AppError::BadRequest(e.to_string()))?;
-
-    // Extract client IP for rate limiting
-    let ip = extract_ip(&headers, Some(peer_addr.ip()), &state);
-
-    if state.login_limiter.is_locked(ip) {
-        return Err(AppError::RateLimited);
-    }
-
-    let pool = state.db.pool();
-
-    let row = sqlx::query!(
-        r#"
-        SELECT id, username, display_name, avatar_url, account_type, is_premium,
-               password_hash, email_verified
-        FROM users
-        WHERE email = $1 AND deleted_at IS NULL
-        "#,
-        req.email.to_lowercase(),
-    )
-    .fetch_optional(pool)
-    .await?;
-
-    let row = match row {
-        Some(r) => r,
-        None => {
-            // Use constant-time response to avoid user enumeration
-            state.login_limiter.record_failure(ip);
-            return Err(AppError::Unauthorized);
-        }
-    };
-
-    let Some(hash) = &row.password_hash else {
-        // OAuth-only account — no password set
-        state.login_limiter.record_failure(ip);
-        return Err(AppError::BadRequest(
-            "This account uses social login. Please sign in with Discord, Google, or Apple."
-                .to_string(),
-        ));
-    };
-
-    if !verify_password_async(req.password.clone(), hash.clone()).await? {
-        let locked = state.login_limiter.record_failure(ip);
-        if locked {
-            return Err(AppError::RateLimited);
-        }
-        return Err(AppError::Unauthorized);
-    }
-
-    state.login_limiter.record_success(ip);
-
-    let family_id = Uuid::new_v4();
-    let access_token = generate_access_token(row.id, &row.account_type, None, &state.jwt_keys)?;
-    let refresh_token = generate_refresh_token(row.id, family_id, None, &state.jwt_keys)?;
-
-    let exp = (Utc::now() + chrono::Duration::seconds(REFRESH_TTL_SECS)).timestamp();
-    store_session_with_claims(pool, row.id, &refresh_token, None, family_id, exp).await?;
-
-    let user = UserDto {
-        id: row.id,
-        username: row.username,
-        display_name: row.display_name,
-        avatar_url: row.avatar_url,
-        account_type: row.account_type,
-        is_premium: row.is_premium,
-    };
-
-    let (cookies, csrf_token) = refresh_cookie(&refresh_token);
-    Ok((
-        append_set_cookie_headers(&cookies),
-        Json(AuthResponse {
-            access_token,
-            csrf_token,
-            user,
-        }),
-    ))
-}
-
-// ─── Refresh ──────────────────────────────────────────────────────────────────
-
-/// POST /api/v1/auth/refresh — exchange a refresh token for a new access token.
-///
-/// The refresh token is read from the `refresh_token` HttpOnly cookie (browser)
-/// or the `X-Refresh-Token` header (native Tauri/Capacitor clients).
-///
-/// # Security invariants
-///
-/// * Atomic token rotation: the old refresh token is revoked in the same
-///   `UPDATE ... WHERE revoked_at IS NULL RETURNING` query that validates it,
-///   preventing TOCTOU race conditions.
-pub async fn refresh(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> AppResult<impl IntoResponse> {
-    let refresh_token = extract_refresh_cookie(&headers).ok_or(AppError::Unauthorized)?;
-
-    let claims = validate_refresh_token(&refresh_token, &state.jwt_keys)?.claims;
-
-    let pool = state.db.pool();
-
-    // Hash the presented refresh token and look it up
-    let token_hash = sha256_hex(&refresh_token);
-
-    // HIGH-003: Atomic UPDATE … WHERE revoked_at IS NULL RETURNING to prevent
-    // TOCTOU race conditions on concurrent refresh requests. Only one concurrent
-    // request can successfully match and atomically revoke the token.
-    let revoked = sqlx::query!(
-        r#"
-        UPDATE sessions
-        SET revoked_at = NOW()
-        WHERE token_hash = $1
-          AND user_id = $2
-          AND revoked_at IS NULL
-        RETURNING id, family_id
-        "#,
-        token_hash,
-        claims.sub,
-    )
-    .fetch_optional(pool)
-    .await?;
-
-    let family_id = match revoked {
-        Some(s) => s.family_id,
-        None => {
-            // Token was not found or was already revoked.
-            // Check if the token exists at all — if so, this is reuse detection.
-            let exists = sqlx::query!(
-                "SELECT family_id, revoked_at FROM sessions WHERE token_hash = $1 AND user_id = $2",
-                token_hash,
-                claims.sub,
-            )
-            .fetch_optional(pool)
-            .await?;
-
-            if let Some(row) = exists {
-                let is_recent_retry = row
-                    .revoked_at
-                    .map(|r| chrono::Utc::now().signed_duration_since(r).num_seconds() < 30)
-                    .unwrap_or(false);
-
-                if !is_recent_retry {
-                    // Reuse detected: revoked token presented → invalidate entire family
-                    sqlx::query!(
-                        "UPDATE sessions SET revoked_at = NOW() WHERE family_id = $1 AND revoked_at IS NULL",
-                        row.family_id,
-                    )
-                    .execute(pool)
-                    .await?;
-                    tracing::warn!(
-                        "Refresh token reuse detected for user {}. Family {} invalidated.",
-                        claims.sub,
-                        row.family_id
-                    );
-                }
-            }
-            return Err(AppError::Unauthorized);
-        }
-    };
-
-    // Fetch user for new token
-    let user = sqlx::query_as!(
-        UserDto,
-        "SELECT id, username, display_name, avatar_url, account_type, is_premium
-         FROM users WHERE id = $1 AND deleted_at IS NULL",
-        claims.sub,
-    )
-    .fetch_optional(pool)
-    .await?
-    .ok_or(AppError::Unauthorized)?;
-
-    let new_access = generate_access_token(
-        user.id,
-        &user.account_type,
-        claims.device_id,
-        &state.jwt_keys,
-    )?;
-    let new_refresh =
-        generate_refresh_token(user.id, family_id, claims.device_id, &state.jwt_keys)?;
-
-    let exp = (Utc::now() + chrono::Duration::seconds(REFRESH_TTL_SECS)).timestamp();
-    store_session_with_claims(
-        pool,
-        user.id,
-        &new_refresh,
-        claims.device_id,
-        family_id,
-        exp,
-    )
-    .await?;
-
-    let (cookies, csrf_token) = refresh_cookie(&new_refresh);
-    Ok((
-        append_set_cookie_headers(&cookies),
-        Json(serde_json::json!({ "access_token": new_access, "csrf_token": csrf_token })),
-    ))
-}
-
-// ─── Logout ───────────────────────────────────────────────────────────────────
-
-/// POST /api/v1/auth/logout — revoke the current refresh token and clear cookies.
-pub async fn logout(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> AppResult<impl IntoResponse> {
-    if let Some(refresh_token) = extract_refresh_cookie(&headers) {
-        if let Ok(claims) = validate_refresh_token(&refresh_token, &state.jwt_keys) {
-            let token_hash = sha256_hex(&refresh_token);
-            // Revoke entire family (logout from all devices in same session)
-            sqlx::query!(
-                r#"
-                UPDATE sessions SET revoked_at = NOW()
-                WHERE family_id = (
-                    SELECT family_id FROM sessions WHERE token_hash = $1 AND user_id = $2 LIMIT 1
-                )
-                "#,
-                token_hash,
-                claims.claims.sub,
-            )
-            .execute(state.db.pool())
-            .await?;
-        }
-    }
-
-    let cookies = clear_auth_cookies();
-    Ok((append_set_cookie_headers(&cookies), StatusCode::NO_CONTENT))
-}
-
-// ─── Email verification ───────────────────────────────────────────────────────
-
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct VerifyEmailQuery {
     pub token: String,
 }
 
-/// POST /api/v1/auth/verify-email — mark the account as email-verified using a one-time token.
+
+
+// â”€â”€â”€ Register â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+/// POST /api/v2/auth/verify-email â€” mark the account as email-verified using a one-time token.
 pub async fn verify_email(
     State(state): State<AppState>,
     ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
@@ -523,7 +159,7 @@ pub async fn verify_email(
     ))
 }
 
-// ─── Password reset request ───────────────────────────────────────────────────
+// â”€â”€â”€ Password reset request â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 #[derive(Deserialize, Validate)]
 #[serde(deny_unknown_fields)]
@@ -542,7 +178,7 @@ pub async fn request_password_reset(
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
 
     let ip = extract_ip(&headers, Some(peer_addr.ip()), &state);
-    let normalized_email = req.email.to_lowercase();
+    let normalized_email = req.email.trim().to_lowercase();
     if PASSWORD_RESET_IP_LIMITER.check_key(&ip).is_err()
         || PASSWORD_RESET_EMAIL_LIMITER
             .check_key(&normalized_email)
@@ -551,7 +187,7 @@ pub async fn request_password_reset(
         return Err(AppError::RateLimited);
     }
 
-    // Always return 200 — don't reveal whether email exists
+    // Always return 200 â€” don't reveal whether email exists
     let pool = state.db.pool();
     let token = generate_email_token();
 
@@ -581,7 +217,7 @@ pub async fn request_password_reset(
     })))
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /// Store a session row using pre-extracted claims, avoiding redundant JWT validation.
 pub(crate) async fn store_session_with_claims(
@@ -619,13 +255,6 @@ pub(crate) fn sha256_hex(input: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-/// Returns both the refresh cookie headers and the new CSRF token value.
-/// The CSRF token is included in the JSON response body so cross-origin frontends
-/// (Tauri, Capacitor) can read it — they can't access Set-Cookie from a different origin.
-pub(crate) fn auth_cookies(refresh_token: &str) -> ([String; 2], String) {
-    auth_cookies_for_path(refresh_token, "/api/v1/auth/refresh")
-}
-
 pub(crate) fn auth_cookies_for_path(
     refresh_token: &str,
     refresh_cookie_path: &str,
@@ -644,13 +273,8 @@ pub(crate) fn auth_cookies_for_path(
     (cookies, csrf_token)
 }
 
-/// Refresh endpoint: rotate refresh token, issue fresh CSRF token.
-fn refresh_cookie(token: &str) -> ([String; 2], String) {
-    auth_cookies(token)
-}
-
 fn clear_auth_cookies() -> [String; 2] {
-    clear_auth_cookies_for_path("/api/v1/auth/refresh")
+    clear_auth_cookies_for_path("/api/v2/auth/refresh")
 }
 
 pub(crate) fn clear_auth_cookies_for_path(refresh_cookie_path: &str) -> [String; 2] {
@@ -707,7 +331,7 @@ pub(crate) fn extract_ip(headers: &HeaderMap, peer_ip: Option<IpAddr>, state: &A
     let peer_ip = peer_ip.unwrap_or(IpAddr::from([127, 0, 0, 1]));
 
     if std::env::var("FLY_APP_NAME").is_ok() {
-        // Production: behind Fly.io load balancer — only trust Fly-Client-IP
+        // Production: behind Fly.io load balancer â€” only trust Fly-Client-IP
         // (set by Fly.io proxy; clients cannot forge it)
         return headers
             .get("Fly-Client-IP")
@@ -739,7 +363,7 @@ pub(crate) async fn send_verification_email(
     api_key: &str,
 ) -> anyhow::Result<()> {
     if api_key.is_empty() {
-        tracing::debug!("RESEND_API_KEY not set — skipping email to {to}");
+        tracing::debug!("RESEND_API_KEY not set â€” skipping email to {to}");
         return Ok(());
     }
 
@@ -796,7 +420,7 @@ async fn send_password_reset_email(to: &str, token: &str, api_key: &str) -> anyh
     Ok(())
 }
 
-// ─── Password reset confirm ───────────────────────────────────────────────────
+// â”€â”€â”€ Password reset confirm â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 #[derive(Deserialize, Validate)]
 #[serde(deny_unknown_fields)]
@@ -922,7 +546,7 @@ mod tests {
 
     #[test]
     fn refresh_cookie_header_omits_secure_flag_for_local_http() {
-        let header = refresh_cookie_header_for_path("token", 60, false, "/api/v1/auth/refresh");
+        let header = refresh_cookie_header_for_path("token", 60, false, "/api/v2/auth/refresh");
 
         assert!(header.contains("refresh_token=token"));
         assert!(header.contains("HttpOnly"));
@@ -932,7 +556,7 @@ mod tests {
 
     #[test]
     fn refresh_cookie_header_includes_secure_flag_for_https() {
-        let header = refresh_cookie_header_for_path("token", 60, true, "/api/v1/auth/refresh");
+        let header = refresh_cookie_header_for_path("token", 60, true, "/api/v2/auth/refresh");
 
         assert!(header.contains("refresh_token=token"));
         assert!(header.contains("HttpOnly"));

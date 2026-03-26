@@ -1,4 +1,4 @@
-﻿import { test, expect } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import {
 	buildMockAuthData,
 	buildMockDevice,
@@ -29,7 +29,7 @@ test.describe('Authenticated shell', () => {
 		await mockAuthEndpoints(page, deviceAwareAuthData, {
 			devices: [currentDevice, otherDevice],
 		});
-		await page.route(`**/api/v1/account/data-export`, async (route) => {
+		await page.route(`**/api/v2/account/data-export`, async (route) => {
 			await route.fulfill({
 				status: 200,
 				contentType: 'application/zip',

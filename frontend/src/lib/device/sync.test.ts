@@ -144,11 +144,11 @@ describe('device sync helpers', () => {
 							created_at: '2026-03-07T10:05:00Z',
 						},
 					];
-				case '/api/v1/servers':
+				case '/api/v2/servers':
 					return [{ id: 'server-1' }];
-				case '/api/v1/servers/server-1/channels':
+				case '/api/v2/servers/server-1/channels':
 					return [{ id: 'channel-1' }];
-				case '/api/v1/channels/channel-1/messages?limit=100':
+				case '/api/v2/channels/channel-1/messages?limit=100':
 					return [
 						{
 							id: 'channel-remote',
@@ -241,7 +241,7 @@ describe('device sync helpers', () => {
 					return [{ id: 'conv-1' }];
 				case '/api/v2/conversations/conv-1/messages?limit=100':
 					return latestPage;
-				case '/api/v1/servers':
+				case '/api/v2/servers':
 					return [];
 				default:
 					if (

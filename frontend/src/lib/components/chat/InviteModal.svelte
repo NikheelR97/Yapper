@@ -75,6 +75,7 @@
 			role="dialog"
 			aria-modal="true"
 			aria-label="Invite people"
+			tabindex="-1"
 			on:click|stopPropagation
 		>
 			<div class="modal-header">

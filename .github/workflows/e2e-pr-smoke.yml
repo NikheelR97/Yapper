@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'frontend/**'
+      - 'backend/**'
       - '.github/workflows/e2e-pr-smoke.yml'
 
 permissions:

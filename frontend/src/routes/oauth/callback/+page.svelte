@@ -3,7 +3,8 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { get } from 'svelte/store';
-	import { setAuth, storeRefreshToken } from '$stores/auth.js';
+	import { setAuth, storeRefreshToken, resetAppState } from '$stores/auth.js';
+	import { toast } from '$stores/toast.js';
 	import type { User } from '$stores/auth.js';
 	import { getDeviceBootstrap, normalizeServerDevice } from '$lib/device/bootstrap.js';
 	import { API_URL } from '$lib/env.js';
@@ -47,13 +48,19 @@
 
 			const attached = await exchangeRes.json();
 			const user: User = attached.user;
-			if (attached.refresh_token) storeRefreshToken(attached.refresh_token);
+			const storageWarning = attached.refresh_token
+				? await storeRefreshToken(attached.refresh_token)
+				: null;
+			resetAppState();
 			setAuth(
 				user,
 				attached.access_token,
 				attached.csrf_token,
 				normalizeServerDevice(attached.device),
 			);
+			if (storageWarning) {
+				toast.warning(storageWarning, 0);
+			}
 			await goto(isNew ? '/onboarding' : '/explore');
 		} catch {
 			error = 'Failed to load your account. Please try again.';

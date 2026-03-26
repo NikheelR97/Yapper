@@ -16,7 +16,7 @@ import {
 	type CachedDmHistoryMessage,
 } from '$signal/keystore.js';
 import { onWsMessage } from '$stores/ws.js';
-import { authStore } from '$stores/auth.js';
+import { authStore, registerSessionResetter } from '$stores/auth.js';
 
 export interface Conversation {
 	id: string;
@@ -31,6 +31,7 @@ export interface Message {
 	id: string;
 	conversationId: string;
 	senderId: string;
+	senderDeviceId?: string | null;
 	/** Decrypted plaintext. Null while decryption is in progress. */
 	text: string | null;
 	/** True if decryption failed. */
@@ -38,6 +39,10 @@ export interface Message {
 	createdAt: string;
 	/** 'text' | 'yap' | 'clip' */
 	messageType: string;
+	pendingMsgNum?: number | null;
+	deliveryState?: 'pending' | 'sent';
+	/** Client-generated nonce for optimistic send → server echo reconciliation. */
+	clientNonce?: string;
 }
 
 interface ConversationStore {
@@ -97,6 +102,76 @@ export const conversationsStore = writable<ConversationStore>({
 const MAX_MESSAGES_IN_MEMORY = 200;
 
 const messageStores = new Map<string, ReturnType<typeof writable<Message[]>>>();
+
+function resetConversationState(): void {
+	conversationsStore.set({
+		conversations: [],
+		loading: false,
+		loadError: false,
+	});
+	for (const store of messageStores.values()) {
+		store.set([]);
+	}
+	messageStores.clear();
+}
+
+registerSessionResetter(resetConversationState);
+
+export function createDmHistoryLoader(
+	loadMessagesFn: (conversationId: string, peerId: string) => Promise<void>
+) {
+	let loadSequence = 0;
+	let activeLoadKey = '';
+	let lastLoadedKey = '';
+
+	return {
+		async requestLoad(
+			conversationId: string,
+			peerId: string | null,
+			setLoading: (value: boolean) => void,
+			setLoadError: (value: boolean) => void
+		): Promise<void> {
+			const loadKey = conversationId && peerId ? `${conversationId}:${peerId}` : '';
+
+			if (!loadKey || !peerId) {
+				loadSequence += 1;
+				activeLoadKey = '';
+				lastLoadedKey = '';
+				setLoading(false);
+				setLoadError(false);
+				return;
+			}
+
+			if (loadKey === activeLoadKey || loadKey === lastLoadedKey) {
+				return;
+			}
+
+			const loadToken = ++loadSequence;
+			activeLoadKey = loadKey;
+			setLoading(true);
+			setLoadError(false);
+
+			try {
+				await loadMessagesFn(conversationId, peerId);
+			} catch {
+				if (loadToken !== loadSequence) return;
+				setLoadError(true);
+			} finally {
+				if (loadToken !== loadSequence) return;
+				setLoading(false);
+				lastLoadedKey = loadKey;
+				if (activeLoadKey === loadKey) {
+					activeLoadKey = '';
+				}
+			}
+		},
+
+		/** Clear cached load state so the next requestLoad() forces a fresh fetch. */
+		invalidate(): void {
+			lastLoadedKey = '';
+		},
+	};
+}
 
 export function getMessageStore(conversationId: string) {
 	if (!messageStores.has(conversationId)) {

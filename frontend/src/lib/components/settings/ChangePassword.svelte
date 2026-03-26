@@ -17,7 +17,7 @@
         if (!canSubmit || saving) return;
         saving = true;
         try {
-            await api.post("/api/v1/auth/change-password", {
+            await api.post("/api/v2/auth/change-password", {
                 current_password: currentPassword,
                 new_password: newPassword,
             });
@@ -25,8 +25,8 @@
             // Backend revokes all sessions — clear local state and redirect to login
             clearAuth();
             await goto("/login");
-        } catch (e: any) {
-            toast.error(e.message ?? "Failed to change password");
+        } catch (e: unknown) {
+            toast.error(e instanceof Error ? e.message : "Failed to change password");
         } finally {
             saving = false;
         }

@@ -22,7 +22,7 @@
 
 	onMount(async () => {
 		try {
-			const me = await api.get<{ connections: Record<string, boolean> }>('/api/v1/users/me');
+			const me = await api.get<{ connections: Record<string, boolean> }>('/api/v2/users/me');
 			const conns = me.connections ?? {};
 			accounts = accounts.map((a) => ({ ...a, connected: !!conns[a.provider] }));
 		} catch {
@@ -33,7 +33,7 @@
 	function connect(provider: string) {
 		if (provider === 'discord') {
 			// Profile import flow — requires existing session, links to current account
-			window.location.href = `${BASE_URL}/api/v1/discord/import-profile`;
+			window.location.href = `${BASE_URL}/api/v2/discord/import-profile`;
 		} else if (provider === 'google') {
 			// Google OAuth — will link to existing account if email matches
 			window.location.href = `${BASE_URL}/auth/oauth/google`;
@@ -44,14 +44,14 @@
 
 	async function unlink(provider: 'discord' | 'google' | 'apple') {
 		try {
-			await api.delete(`/api/v1/users/me/connections/${provider}`);
+			await api.delete(`/api/v2/users/me/connections/${provider}`);
 			accounts = accounts.map((a) =>
 				a.provider === provider ? { ...a, connected: false, username: null } : a
 			);
 			toast.success(`${providerNames[provider]} account unlinked.`);
 			unlinkConfirm = null;
-		} catch (e: any) {
-			toast.error(e.message ?? 'Failed to unlink');
+		} catch (e: unknown) {
+			toast.error(e instanceof Error ? e.message : 'Failed to unlink');
 		}
 	}
 

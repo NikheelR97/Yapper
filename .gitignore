@@ -1,5 +1,6 @@
 # Rust
 target/
+backend/target-integration/
 Cargo.lock
 !backend/Cargo.lock
 **/*.rs.bk
@@ -74,3 +75,4 @@ psi-result.json
 
 # Local planning and handoff docs
 /dev docs/
+wiki-repo/

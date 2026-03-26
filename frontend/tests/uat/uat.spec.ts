@@ -165,7 +165,7 @@ test.describe('UAT-17 · Security Headers & Hardening', () => {
 
 	// UAT-17-G
 	test('UAT-17-G  Mutating request without X-CSRF-Token returns 403', async () => {
-		const res = await fetch(`${API_URL}/api/v1/servers`, {
+		const res = await fetch(`${API_URL}/api/v2/servers`, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
@@ -312,7 +312,7 @@ test.describe('UAT-14 · Premium & GoPro', () => {
 
 	// UAT-14-A
 	test('UAT-14-A  Free user premium status returns is_premium:false', async () => {
-		const res = await fetch(`${API_URL}/api/v1/premium`, {
+		const res = await fetch(`${API_URL}/api/v2/premium`, {
 			headers: { Authorization: `Bearer ${session.accessToken}` },
 		});
 		expect(res.status).toBe(200);
@@ -322,7 +322,7 @@ test.describe('UAT-14 · Premium & GoPro', () => {
 
 	// UAT-14-B
 	test('UAT-14-B  Invalid promo code returns 400 or 404', async () => {
-		const res = await fetch(`${API_URL}/api/v1/premium/activate`, {
+		const res = await fetch(`${API_URL}/api/v2/premium/activate`, {
 			method: 'POST',
 			headers: authedHeaders(session),
 			body: JSON.stringify({ code: 'INVALID_CODE_XYZ_12345' }),
@@ -350,7 +350,7 @@ test.describe('UAT-16 · Push Notifications', () => {
 
 	// UAT-16-A
 	test('UAT-16-A  Register FCM device token returns 200/201', async () => {
-		const res = await fetch(`${API_URL}/api/v1/notifications/push-token`, {
+		const res = await fetch(`${API_URL}/api/v2/notifications/push-token`, {
 			method: 'PUT',
 			headers: authedHeaders(session),
 			body: JSON.stringify({ token: dummyToken, platform: 'web' }),
@@ -360,7 +360,7 @@ test.describe('UAT-16 · Push Notifications', () => {
 
 	// UAT-16-B
 	test('UAT-16-B  Unregister FCM device token returns 200', async () => {
-		const res = await fetch(`${API_URL}/api/v1/notifications/push-token`, {
+		const res = await fetch(`${API_URL}/api/v2/notifications/push-token`, {
 			method: 'DELETE',
 			headers: authedHeaders(session),
 			body: JSON.stringify({ token: dummyToken }),
@@ -386,7 +386,7 @@ test.describe('UAT-15 · Support Tickets — Validation', () => {
 
 	// UAT-15-A
 	test('UAT-15-A  Valid ticket creation returns 201', async () => {
-		const res = await fetch(`${API_URL}/api/v1/support/tickets`, {
+		const res = await fetch(`${API_URL}/api/v2/support/tickets`, {
 			method: 'POST',
 			headers: authedHeaders(session),
 			body: JSON.stringify({
@@ -408,7 +408,7 @@ test.describe('UAT-15 · Support Tickets — Validation', () => {
 
 	// UAT-15-B
 	test('UAT-15-B  GET /support/tickets returns ticket list', async () => {
-		const res = await fetch(`${API_URL}/api/v1/support/tickets`, {
+		const res = await fetch(`${API_URL}/api/v2/support/tickets`, {
 			headers: authedHeaders(session),
 		});
 		expect(res.status).toBe(200);
@@ -420,7 +420,7 @@ test.describe('UAT-15 · Support Tickets — Validation', () => {
 
 	// UAT-15-C
 	test('UAT-15-C  Invalid ticket type returns 400/422', async () => {
-		const res = await fetch(`${API_URL}/api/v1/support/tickets`, {
+		const res = await fetch(`${API_URL}/api/v2/support/tickets`, {
 			method: 'POST',
 			headers: authedHeaders(session),
 			body: JSON.stringify({
@@ -437,7 +437,7 @@ test.describe('UAT-15 · Support Tickets — Validation', () => {
 	// UAT-15-D
 	test('UAT-15-D  Subject over 200 characters returns 400/422', async () => {
 		const longSubject = 'x'.repeat(201);
-		const res = await fetch(`${API_URL}/api/v1/support/tickets`, {
+		const res = await fetch(`${API_URL}/api/v2/support/tickets`, {
 			method: 'POST',
 			headers: authedHeaders(session),
 			body: JSON.stringify({
@@ -470,7 +470,7 @@ test.describe('UAT-12 · Account Lifecycle', () => {
 	// UAT-12-A
 	test('UAT-12-A  PATCH /users/me updates display_name', async () => {
 		const newName = `UAT User ${Date.now()}`;
-		const patchRes = await fetch(`${API_URL}/api/v1/users/me`, {
+		const patchRes = await fetch(`${API_URL}/api/v2/users/me`, {
 			method: 'PATCH',
 			headers: authedHeaders(session),
 			body: JSON.stringify({ display_name: newName }),
@@ -478,7 +478,7 @@ test.describe('UAT-12 · Account Lifecycle', () => {
 		// Accept 200 or 204
 		expect([200, 204]).toContain(patchRes.status);
 
-		const getRes = await fetch(`${API_URL}/api/v1/users/me`, {
+		const getRes = await fetch(`${API_URL}/api/v2/users/me`, {
 			headers: { Authorization: `Bearer ${session.accessToken}` },
 		});
 		expect(getRes.status).toBe(200);
@@ -490,7 +490,7 @@ test.describe('UAT-12 · Account Lifecycle', () => {
 	// UAT-12-B
 	test('UAT-12-B  Username change cooldown — second change returns 409', async () => {
 		const newUsername = uid('uat');
-		const res1 = await fetch(`${API_URL}/api/v1/users/me/username`, {
+		const res1 = await fetch(`${API_URL}/api/v2/users/me/username`, {
 			method: 'PATCH',
 			headers: authedHeaders(session),
 			body: JSON.stringify({ username: newUsername }),
@@ -498,7 +498,7 @@ test.describe('UAT-12 · Account Lifecycle', () => {
 		// First change may succeed (200) or fail if cooldown already active (409)
 		if (res1.status === 200 || res1.status === 204) {
 			// Try changing again immediately — should be blocked by 30-day cooldown
-			const res2 = await fetch(`${API_URL}/api/v1/users/me/username`, {
+			const res2 = await fetch(`${API_URL}/api/v2/users/me/username`, {
 				method: 'PATCH',
 				headers: authedHeaders(session),
 				body: JSON.stringify({ username: uid('uat2') }),
@@ -513,7 +513,7 @@ test.describe('UAT-12 · Account Lifecycle', () => {
 
 	// UAT-12-E
 	test('UAT-12-E  Data export returns a ZIP file', async () => {
-		const res = await fetch(`${API_URL}/api/v1/account/data-export`, {
+		const res = await fetch(`${API_URL}/api/v2/account/data-export`, {
 			headers: { Authorization: `Bearer ${session.accessToken}` },
 		});
 		expect(res.status).toBe(200);
@@ -523,7 +523,7 @@ test.describe('UAT-12 · Account Lifecycle', () => {
 
 	// UAT-12-L
 	test('UAT-12-L  Change password with wrong current returns 400/401', async () => {
-		const res = await fetch(`${API_URL}/api/v1/users/me/password`, {
+		const res = await fetch(`${API_URL}/api/v2/users/me/password`, {
 			method: 'PUT',
 			headers: authedHeaders(session),
 			body: JSON.stringify({
@@ -550,7 +550,7 @@ test.describe('UAT-11 · Custom Emoji Limits', () => {
 		if (USER_EMAIL) {
 			session = await loginViaAPI(USER_EMAIL, USER_PASS);
 			// Create a server for emoji tests
-			const res = await fetch(`${API_URL}/api/v1/servers`, {
+			const res = await fetch(`${API_URL}/api/v2/servers`, {
 				method: 'POST',
 				headers: authedHeaders(session),
 				body: JSON.stringify({ name: `UAT Emoji ${Date.now()}` }),
@@ -580,7 +580,7 @@ test.describe('UAT-11 · Custom Emoji Limits', () => {
 		}
 
 		const sessionB = await loginViaAPI(USER_B_EMAIL, USER_B_PASS);
-		const res = await fetch(`${API_URL}/api/v1/servers/${serverId}/emojis`, {
+		const res = await fetch(`${API_URL}/api/v2/servers/${serverId}/emojis`, {
 			method: 'POST',
 			headers: {
 				...authedHeaders(sessionB),
@@ -610,7 +610,7 @@ test.describe('UAT-07 · Media Upload Validation', () => {
 
 	// UAT-07-A
 	test('UAT-07-A  Upload URL endpoint returns a presigned URL', async () => {
-		const res = await fetch(`${API_URL}/api/v1/media/upload-url`, {
+		const res = await fetch(`${API_URL}/api/v2/media/upload-url`, {
 			method: 'POST',
 			headers: authedHeaders(session),
 			body: JSON.stringify({
@@ -633,7 +633,7 @@ test.describe('UAT-07 · Media Upload Validation', () => {
 
 	// UAT-07-B
 	test('UAT-07-B  Presigned URL hostname matches R2 (not API)', async () => {
-		const res = await fetch(`${API_URL}/api/v1/media/upload-url`, {
+		const res = await fetch(`${API_URL}/api/v2/media/upload-url`, {
 			method: 'POST',
 			headers: authedHeaders(session),
 			body: JSON.stringify({ media_type: 'yap', content_length: 500_000 }),
@@ -653,7 +653,7 @@ test.describe('UAT-07 · Media Upload Validation', () => {
 
 	// UAT-07-D
 	test('UAT-07-D  Upload size exceeding limit returns 400/413', async () => {
-		const res = await fetch(`${API_URL}/api/v1/media/upload-url`, {
+		const res = await fetch(`${API_URL}/api/v2/media/upload-url`, {
 			method: 'POST',
 			headers: authedHeaders(session),
 			body: JSON.stringify({
@@ -687,7 +687,7 @@ test.describe('UAT-04 · Server API Validation', () => {
 
 	// UAT-04-E
 	test('UAT-04-E  Create server with no name returns 400/422', async () => {
-		const res = await fetch(`${API_URL}/api/v1/servers`, {
+		const res = await fetch(`${API_URL}/api/v2/servers`, {
 			method: 'POST',
 			headers: authedHeaders(session),
 			body: JSON.stringify({}),
@@ -698,7 +698,7 @@ test.describe('UAT-04 · Server API Validation', () => {
 
 	// UAT-04-F
 	test('UAT-04-F  Join with invalid invite code returns 404', async () => {
-		const res = await fetch(`${API_URL}/api/v1/servers/join/INVALID_CODE_XYZ`, {
+		const res = await fetch(`${API_URL}/api/v2/servers/join/INVALID_CODE_XYZ`, {
 			method: 'POST',
 			headers: authedHeaders(session),
 			body: '{}',
@@ -724,7 +724,7 @@ test.describe('UAT-10 · Profiles & Social API', () => {
 
 	// UAT-10-A
 	test('UAT-10-A  GET /users/me returns user with id and username', async () => {
-		const res = await fetch(`${API_URL}/api/v1/users/me`, {
+		const res = await fetch(`${API_URL}/api/v2/users/me`, {
 			headers: { Authorization: `Bearer ${session.accessToken}` },
 		});
 		expect(res.status).toBe(200);
@@ -738,13 +738,13 @@ test.describe('UAT-10 · Profiles & Social API', () => {
 	// UAT-10-B
 	test('UAT-10-B  GET /users/by/:username does not expose private fields', async () => {
 		// First get our username from /me
-		const meRes = await fetch(`${API_URL}/api/v1/users/me`, {
+		const meRes = await fetch(`${API_URL}/api/v2/users/me`, {
 			headers: { Authorization: `Bearer ${session.accessToken}` },
 		});
 		const me = (await meRes.json()) as Record<string, unknown>;
 		const username = me.username as string;
 
-		const res = await fetch(`${API_URL}/api/v1/users/by/${username}`, {
+		const res = await fetch(`${API_URL}/api/v2/users/by/${username}`, {
 			headers: { Authorization: `Bearer ${session.accessToken}` },
 		});
 		expect(res.status).toBe(200);
@@ -798,7 +798,7 @@ test.describe('UAT-08 · Live Canvas API', () => {
 	test.beforeAll(async () => {
 		if (USER_EMAIL) {
 			session = await loginViaAPI(USER_EMAIL, USER_PASS);
-			const res = await fetch(`${API_URL}/api/v1/servers`, {
+			const res = await fetch(`${API_URL}/api/v2/servers`, {
 				method: 'POST',
 				headers: authedHeaders(session),
 				body: JSON.stringify({ name: `UAT Canvas ${Date.now()}` }),
@@ -807,7 +807,7 @@ test.describe('UAT-08 · Live Canvas API', () => {
 				const body = (await res.json()) as { id: string };
 				serverId = body.id;
 				// Get default channel
-				const chRes = await fetch(`${API_URL}/api/v1/servers/${serverId}/channels`, {
+				const chRes = await fetch(`${API_URL}/api/v2/servers/${serverId}/channels`, {
 					headers: { Authorization: `Bearer ${session.accessToken}` },
 				});
 				if (chRes.ok) {
@@ -824,7 +824,7 @@ test.describe('UAT-08 · Live Canvas API', () => {
 			test.skip(true, 'No server/channel available');
 			return;
 		}
-		const res = await fetch(`${API_URL}/api/v1/canvas/servers/${serverId}/state?channel_id=${channelId}`, {
+		const res = await fetch(`${API_URL}/api/v2/canvas/servers/${serverId}/state?channel_id=${channelId}`, {
 			headers: { Authorization: `Bearer ${session.accessToken}` },
 		});
 		expect(res.status).toBe(200);
@@ -840,7 +840,7 @@ test.describe('UAT-08 · Live Canvas API', () => {
 			test.skip(true, 'No channel available');
 			return;
 		}
-		const res = await fetch(`${API_URL}/api/v1/canvas/channels/${channelId}/polls`, {
+		const res = await fetch(`${API_URL}/api/v2/canvas/channels/${channelId}/polls`, {
 			method: 'POST',
 			headers: authedHeaders(session),
 			body: JSON.stringify({
@@ -870,7 +870,7 @@ test.describe('UAT-09 · Explore API', () => {
 
 	// UAT-09-A
 	test('UAT-09-A  Trending tags returns an array', async () => {
-		const res = await fetch(`${API_URL}/api/v1/explore/trending-tags`, {
+		const res = await fetch(`${API_URL}/api/v2/explore/trending-tags`, {
 			headers: { Authorization: `Bearer ${session.accessToken}` },
 		});
 		expect(res.status).toBe(200);
@@ -882,7 +882,7 @@ test.describe('UAT-09 · Explore API', () => {
 
 	// UAT-09-B
 	test('UAT-09-B  Server search returns without error', async () => {
-		const res = await fetch(`${API_URL}/api/v1/search?q=general`, {
+		const res = await fetch(`${API_URL}/api/v2/search?q=general`, {
 			headers: { Authorization: `Bearer ${session.accessToken}` },
 		});
 		expect(res.status).toBe(200);
@@ -890,7 +890,7 @@ test.describe('UAT-09 · Explore API', () => {
 
 	// UAT-09-C
 	test('UAT-09-C  Live servers returns an array', async () => {
-		const res = await fetch(`${API_URL}/api/v1/explore/live-servers`, {
+		const res = await fetch(`${API_URL}/api/v2/explore/live-servers`, {
 			headers: { Authorization: `Bearer ${session.accessToken}` },
 		});
 		expect(res.status).toBe(200);

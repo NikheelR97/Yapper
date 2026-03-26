@@ -92,7 +92,7 @@ The sender key is distributed to each existing channel member individually, encr
 ```
 for each_member in channel_members:
     encrypt(sender_key, x3dh_session_key[each_member])
-    POST /api/v1/channels/{id}/sender-key-distribution
+    POST /api/v2/channels/{id}/sender-key-distribution
 ```
 
 New members receive pending distributions when they load the channel.
@@ -129,7 +129,7 @@ PIN  →  PBKDF2-SHA256 (100k iterations, device salt)  →  Wrap Key
                                                               ↓
 Key bundle (IK, ratchet state)  →  AES-256-GCM  →  Encrypted blob
                                                               ↓
-                                                    PUT /api/v1/keys/backup
+                                                    PUT /api/v2/keys/backup
 ```
 
 The server stores only the encrypted blob and the salt. The PIN and plaintext key material are never transmitted.

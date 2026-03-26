@@ -130,7 +130,7 @@ test.describe('Live Canvas — panel', () => {
 		});
 
 		// Override the vote route to capture the request (backend path is /canvas/polls/*)
-		await page.route(`**/api/v1/canvas/polls/*/vote`, async (route) => {
+		await page.route(`**/api/v2/canvas/polls/*/vote`, async (route) => {
 			voteRequested = true;
 			await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ vote_counts: {} }) });
 		});

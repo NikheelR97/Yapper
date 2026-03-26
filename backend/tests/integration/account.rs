@@ -19,7 +19,7 @@ async fn build_account_test_server() -> Option<(yapper_server::AppState, TestSer
 
 async fn delete_account(server: &TestServer, access_token: &str, csrf_token: &str) {
     let resp = server
-        .delete("/api/v1/account/")
+        .delete("/api/v2/account/")
         .add_header(
             authorization_header_name(),
             super::bearer_header(access_token),
@@ -30,7 +30,7 @@ async fn delete_account(server: &TestServer, access_token: &str, csrf_token: &st
     assert_eq!(
         resp.status_code().as_u16(),
         204,
-        "DELETE /api/v1/account failed: {}",
+        "DELETE /api/v2/account failed: {}",
         resp.text()
     );
 }

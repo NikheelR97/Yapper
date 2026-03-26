@@ -23,10 +23,10 @@ async function setupAuth(page: Parameters<typeof mockAuthEndpoints>[0]): Promise
 	await setInstallationId(page, 'session-expiry-install');
 	await mockAuthEndpoints(page, authData);
 
-	await page.route('**/api/v1/servers', async (route) => {
+	await page.route('**/api/v2/servers', async (route) => {
 		await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
 	});
-	await page.route('**/api/v1/conversations', async (route) => {
+	await page.route('**/api/v2/conversations', async (route) => {
 		await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
 	});
 }
@@ -39,7 +39,7 @@ test.describe('Session expiry @security @auth', () => {
 
 		// First GET /users/me succeeds (page loads), but PATCH returns 401.
 		let patchCalled = false;
-		await page.route(`**/api/v1/users/me`, async (route) => {
+		await page.route(`**/api/v2/users/me`, async (route) => {
 			if (route.request().method() === 'PATCH') {
 				patchCalled = true;
 				log('SESSION', 'INTERCEPT', '401 Unauthorized on PATCH /users/me — token expired');

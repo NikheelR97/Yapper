@@ -1,37 +1,100 @@
 name: Release Desktop
 
 on:
-  push:
-    tags:
-      - 'v*.*.*'   # e.g. v0.2.0, v1.0.0
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag name (e.g. v0.2.0) — for manual test builds'
+        description: "Existing git tag to build (for example v0.2.0)"
         required: true
+        type: string
+      release_channel:
+        description: "Target channel for this build"
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
+      api_url:
+        description: "API base URL compiled into the desktop build"
+        required: false
+        default: "https://staging-api.yapperhq.com"
+        type: string
+      sentry_dsn:
+        description: "Optional Sentry DSN for this release channel"
+        required: false
+        default: ""
+        type: string
+
+concurrency:
+  group: release-desktop-${{ inputs.release_channel }}-${{ inputs.tag }}
+  cancel-in-progress: false
 
 env:
-  VITE_API_URL: https://api.yapperhq.com
+  VITE_API_URL: ${{ inputs.api_url }}
   VITE_FIREBASE_VAPID_KEY: BOrz15S2L_kg0_R5Tam_gbtO_Zf3LzTVFwzQGbCsDFLZgi6fG5DUk3KjIMLs4N3oGeaGkJcbxfeBlHGzDF5k8Cc
-  VITE_SENTRY_DSN: https://2fe4d6f44e9985a1ac07cec40fb24e33@o4510987106123776.ingest.de.sentry.io/4510987113398352
+  VITE_SENTRY_DSN: ${{ inputs.sentry_dsn }}
 
 permissions:
   contents: read
 
 jobs:
-  # ─── Windows ─────────────────────────────────────────────────────────────────
+  validate-inputs:
+    name: Validate release inputs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Refuse production release automation
+        shell: bash
+        run: |
+          case "${{ inputs.release_channel }}" in
+            production)
+              echo "Production desktop release automation is paused until the documented quality bar is proven in a dedicated promotion pipeline." >&2
+              exit 1
+              ;;
+            staging)
+              if [[ "${VITE_API_URL}" == "https://api.yapperhq.com" ]]; then
+                echo "Staging releases must not target production." >&2
+                exit 1
+              fi
+              ;;
+            *)
+              echo "Unknown release channel: ${{ inputs.release_channel }}" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Write release posture summary
+        shell: bash
+        run: |
+          {
+            echo "## Desktop release posture"
+            echo ""
+            echo "This workflow is staging-only during stabilization."
+            echo "Production desktop release automation is paused until the documented quality bar can be enforced in CI."
+            echo ""
+            echo "| Setting | Value |"
+            echo "|---------|-------|"
+            echo "| Channel | ${{ inputs.release_channel }} |"
+            echo "| Tag | ${{ inputs.tag }} |"
+            echo "| API URL | ${VITE_API_URL} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   build-windows:
     name: Build Windows (NSIS)
     runs-on: windows-latest
+    needs: [validate-inputs]
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: refs/tags/${{ inputs.tag }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install Rust toolchain
@@ -53,26 +116,6 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
-      - name: Install Playwright browsers (for Tauri E2E)
-        run: npx playwright install --with-deps chromium
-        working-directory: frontend
-
-      - name: Run Tauri E2E tests (Windows)
-        run: npx playwright test --project=tauri-desktop
-        working-directory: frontend
-        env:
-          CI: true
-          TAURI_BINARY: src-tauri/target/release/yapper.exe
-        continue-on-error: true  # Don't block release on E2E failure
-
-      - name: Upload Tauri test results
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: tauri-e2e-results
-          path: frontend/playwright-report/
-          retention-days: 7
-
       - name: Upload Windows installer
         uses: actions/upload-artifact@v7
         with:
@@ -82,19 +125,68 @@ jobs:
             frontend/src-tauri/target/release/bundle/msi/*.msi
           retention-days: 30
 
-  # ─── macOS ───────────────────────────────────────────────────────────────────
-  build-macos:
-    name: Build macOS (DMG + universal)
-    runs-on: macos-latest
+  e2e-windows:
+    name: E2E Tests (Windows / Tauri)
+    runs-on: windows-latest
+    needs: [build-windows]
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: refs/tags/${{ inputs.tag }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Download Windows installer
+        uses: actions/download-artifact@v8
+        with:
+          name: yapper-windows
+          path: frontend/src-tauri/target/release/bundle/
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+        working-directory: frontend
+
+      - name: Run Tauri E2E tests
+        run: npx playwright test --project=tauri-desktop
+        working-directory: frontend
+        env:
+          CI: "true"
+          VITE_API_URL: ${{ env.VITE_API_URL }}
+          TAURI_BINARY: src-tauri/target/release/yapper.exe
+
+      - name: Upload Tauri test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: tauri-e2e-results
+          path: frontend/playwright-report/
+          retention-days: 7
+
+  build-macos:
+    name: Build macOS (DMG + universal)
+    runs-on: macos-latest
+    needs: [validate-inputs]
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+          cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install Rust toolchain (with Apple Silicon target)
@@ -131,13 +223,15 @@ jobs:
           path: frontend/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
           retention-days: 30
 
-  # ─── Linux ───────────────────────────────────────────────────────────────────
   build-linux:
     name: Build Linux (AppImage + deb)
     runs-on: ubuntu-22.04
+    needs: [validate-inputs]
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: refs/tags/${{ inputs.tag }}
 
       - name: Install Linux build dependencies
         run: |
@@ -153,8 +247,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install Rust toolchain
@@ -185,29 +279,31 @@ jobs:
             frontend/src-tauri/target/release/bundle/deb/*.deb
           retention-days: 30
 
-  # ─── GitHub Release ───────────────────────────────────────────────────────────
-  publish-release:
-    name: Publish GitHub Release
+  draft-release:
+    name: Create staging draft release
     runs-on: ubuntu-latest
-    needs: [build-windows, build-macos, build-linux]
-    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build-windows, build-macos, build-linux, e2e-windows]
     permissions:
       contents: write
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: refs/tags/${{ inputs.tag }}
 
-      - name: Download all artifacts
+      - name: Download all build artifacts
         uses: actions/download-artifact@v8
         with:
           path: dist/
+          pattern: yapper-*
 
-      - name: Create GitHub Release
+      - name: Create GitHub Release draft
         uses: softprops/action-gh-release@v2
         with:
-          name: Yapper ${{ github.ref_name }}
-          draft: true          # review before publishing
-          prerelease: ${{ contains(github.ref_name, '-') }}   # v0.2.0-beta → prerelease
+          tag_name: ${{ inputs.tag }}
+          name: Yapper ${{ inputs.tag }} (staging)
+          draft: true
+          prerelease: true
           generate_release_notes: true
           files: |
             dist/yapper-windows/**

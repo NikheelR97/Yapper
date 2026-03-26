@@ -1,15 +1,15 @@
-//! Integration tests — device trust state-machine.
+//! Integration tests - device trust state-machine.
 //!
-//! Tests the bootstrap → pending → trusted → revoked lifecycle.
+//! Tests the bootstrap -> pending -> trusted -> revoked lifecycle.
 
 use super::{
-    authorization_header_name, bearer_header, create_test_user, csrf_header_name,
-    csrf_header_value, spawn_test_server,
+    authorization_header_name, bearer_header, create_test_user, create_test_user_with_device,
+    csrf_header_name, csrf_header_value, spawn_test_server,
 };
 use serial_test::serial;
 use uuid::Uuid;
 
-/// Device bootstrap creates a device in pending_trust state.
+/// Device bootstrap creates a first device and a valid device-aware session.
 #[tokio::test]
 #[serial]
 async fn devices_bootstrap_creates_pending_device() {
@@ -17,55 +17,13 @@ async fn devices_bootstrap_creates_pending_device() {
         return;
     };
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
-    let email = format!("dev_boot_{suffix}@integration.test");
-    let username = format!("dev_boot_{suffix}");
-    let password = "TestPass123!";
+    let (_user_id, access_token, csrf_token, _device_id) =
+        create_test_user_with_device(&server, &suffix).await;
 
-    // Register via v1 so no device is created yet
-    server
-        .post("/api/v1/auth/register")
-        .json(&serde_json::json!({
-            "email": &email,
-            "username": &username,
-            "password": password,
-        }))
-        .await;
-
-    // Login via v2 (device-aware) to create a device
-    let resp = server
-        .post("/api/v2/auth/login")
-        .json(&serde_json::json!({
-            "email": &email,
-            "password": password,
-            "device": {
-                "installation_id": format!("install-{suffix}"),
-                "platform": "web",
-                "label": "Integration Test Browser",
-            }
-        }))
-        .await;
-
-    // v2 login may not be implemented yet — accept 200 or 404
-    if resp.status_code().as_u16() == 404 {
-        return; // v2 login not deployed — skip
-    }
-
-    assert!(
-        resp.status_code().is_success(),
-        "v2 login failed: {} — {}",
-        resp.status_code(),
-        resp.text()
-    );
-
-    let body: serde_json::Value = resp.json();
-    let access_token = body["access_token"].as_str().expect("missing access_token");
-    let csrf_token = body["csrf_token"].as_str().expect("missing csrf_token");
-
-    // List devices and verify the newly bootstrapped device exists
     let devices_resp = server
         .get("/api/v2/devices")
-        .add_header(authorization_header_name(), bearer_header(access_token))
-        .add_header(csrf_header_name(), csrf_header_value(csrf_token))
+        .add_header(authorization_header_name(), bearer_header(&access_token))
+        .add_header(csrf_header_name(), csrf_header_value(&csrf_token))
         .await;
 
     assert!(
@@ -79,10 +37,9 @@ async fn devices_bootstrap_creates_pending_device() {
     let devices_arr = devices.as_array().unwrap();
     assert!(
         !devices_arr.is_empty(),
-        "device list should not be empty after v2 login"
+        "device list should not be empty after v2 bootstrap"
     );
 
-    // The device's trust_state should be either 'trusted' (first device) or 'pending_trust'
     let trust_state = devices_arr[0]["trust_state"].as_str().unwrap_or("");
     assert!(
         trust_state == "trusted" || trust_state == "pending_trust",
@@ -120,7 +77,7 @@ async fn protected_endpoints_require_auth() {
         create_test_user(&server, &Uuid::new_v4().to_string().replace('-', "")[..8]).await;
     let _ = (at, ct); // suppress unused warning
 
-    let protected = ["/api/v1/users/me", "/api/v1/servers", "/api/v2/devices"];
+    let protected = ["/api/v2/users/me", "/api/v2/servers", "/api/v2/devices"];
 
     for path in &protected {
         let resp = server.get(path).await;
@@ -130,4 +87,109 @@ async fn protected_endpoints_require_auth() {
             "expected 401/403 for unauthenticated {path}, got {status}"
         );
     }
+}
+
+/// Sync events remain pending until the target device explicitly acknowledges them.
+#[tokio::test]
+#[serial]
+async fn sync_events_require_explicit_ack_before_delivery_is_committed() {
+    let Some(server) = spawn_test_server().await else {
+        return;
+    };
+    let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
+    let (_user_id, access_token, csrf_token, device_id) =
+        create_test_user_with_device(&server, &suffix).await;
+
+    let enqueue = server
+        .post("/api/v2/devices/sync-events")
+        .add_header(authorization_header_name(), bearer_header(&access_token))
+        .add_header(csrf_header_name(), csrf_header_value(&csrf_token))
+        .json(&serde_json::json!({
+            "target_device_id": device_id,
+            "event_type": "device_sync_chunk",
+            "payload": {
+                "chunk_index": 0,
+                "total_chunks": 1,
+                "chunk": "ZmFrZQ==",
+            },
+        }))
+        .await;
+
+    assert!(
+        enqueue.status_code().is_success(),
+        "enqueue sync event failed: {}",
+        enqueue.text()
+    );
+
+    let first_fetch = server
+        .get("/api/v2/devices/sync-events")
+        .add_header(authorization_header_name(), bearer_header(&access_token))
+        .add_header(csrf_header_name(), csrf_header_value(&csrf_token))
+        .await;
+    assert!(
+        first_fetch.status_code().is_success(),
+        "first sync-events fetch failed: {}",
+        first_fetch.text()
+    );
+    let first_events: serde_json::Value = first_fetch.json();
+    let first_events = first_events
+        .as_array()
+        .expect("sync-events response should be an array");
+    assert_eq!(first_events.len(), 1, "expected one pending sync event");
+    let event_id = first_events[0]["id"]
+        .as_str()
+        .expect("sync event id missing")
+        .to_string();
+
+    let second_fetch = server
+        .get("/api/v2/devices/sync-events")
+        .add_header(authorization_header_name(), bearer_header(&access_token))
+        .add_header(csrf_header_name(), csrf_header_value(&csrf_token))
+        .await;
+    assert!(
+        second_fetch.status_code().is_success(),
+        "second sync-events fetch failed: {}",
+        second_fetch.text()
+    );
+    let second_events: serde_json::Value = second_fetch.json();
+    let second_events = second_events
+        .as_array()
+        .expect("sync-events response should be an array");
+    assert_eq!(
+        second_events.len(),
+        1,
+        "fetching without ack must not consume sync events"
+    );
+
+    let ack = server
+        .post("/api/v2/devices/sync-events/ack")
+        .add_header(authorization_header_name(), bearer_header(&access_token))
+        .add_header(csrf_header_name(), csrf_header_value(&csrf_token))
+        .json(&serde_json::json!({ "event_ids": [event_id] }))
+        .await;
+    assert_eq!(
+        ack.status_code().as_u16(),
+        204,
+        "sync-events ack failed: {}",
+        ack.text()
+    );
+
+    let post_ack_fetch = server
+        .get("/api/v2/devices/sync-events")
+        .add_header(authorization_header_name(), bearer_header(&access_token))
+        .add_header(csrf_header_name(), csrf_header_value(&csrf_token))
+        .await;
+    assert!(
+        post_ack_fetch.status_code().is_success(),
+        "post-ack sync-events fetch failed: {}",
+        post_ack_fetch.text()
+    );
+    let post_ack_events: serde_json::Value = post_ack_fetch.json();
+    let post_ack_events = post_ack_events
+        .as_array()
+        .expect("sync-events response should be an array");
+    assert!(
+        post_ack_events.is_empty(),
+        "acknowledged sync events should no longer be returned"
+    );
 }

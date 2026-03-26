@@ -89,7 +89,7 @@ function responseCookies(apiUrl: string, response: Response): LoginResult['stora
 		.filter((cookie): cookie is NonNullable<typeof cookie> => cookie !== null);
 }
 
-async function loginWithFallback(apiUrl: string, email: string, password: string): Promise<LoginResult> {
+async function loginWithV2(apiUrl: string, email: string, password: string): Promise<LoginResult> {
 	let response = await fetch(`${apiUrl}/api/v2/auth/login`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
@@ -99,14 +99,6 @@ async function loginWithFallback(apiUrl: string, email: string, password: string
 			device: DEFAULT_DEVICE_BOOTSTRAP,
 		}),
 	});
-
-	if (response.status === 404) {
-		response = await fetch(`${apiUrl}/api/v1/auth/login`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ email, password }),
-		});
-	}
 
 	if (!response.ok) {
 		throw new Error(`global setup login failed: ${response.status} ${await response.text()}`);
@@ -138,7 +130,7 @@ async function loginWithFallback(apiUrl: string, email: string, password: string
 }
 
 async function fetchUser(apiUrl: string, accessToken: string): Promise<Record<string, unknown> | null> {
-	const response = await fetch(`${apiUrl}/api/v1/users/me`, {
+	const response = await fetch(`${apiUrl}/api/v2/users/me`, {
 		headers: { Authorization: `Bearer ${accessToken}` },
 	});
 
@@ -166,7 +158,7 @@ export default async function globalSetup(_config: FullConfig) {
 	}
 
 	const apiUrl = process.env.VITE_API_URL ?? 'https://api.yapperhq.com';
-	const result = await loginWithFallback(apiUrl, email, password);
+	const result = await loginWithV2(apiUrl, email, password);
 	const latestUser = await fetchUser(apiUrl, result.auth.accessToken);
 	if (latestUser) {
 		result.auth.user = latestUser;

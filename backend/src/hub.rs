@@ -7,6 +7,7 @@ use axum::{
     response::IntoResponse,
 };
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use chrono::Utc;
 use dashmap::DashMap;
 use futures::{SinkExt, StreamExt};
 use governor::{
@@ -17,6 +18,7 @@ use governor::{
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use std::{
+    collections::HashSet,
     net::IpAddr,
     num::NonZeroU32,
     sync::Arc,
@@ -25,7 +27,7 @@ use std::{
 use tokio::sync::{mpsc, watch};
 use uuid::Uuid;
 
-use crate::{constants, devices::DeviceTrustState, AppState};
+use crate::{constants, devices::DeviceTrustState, error::AppResult, AppState};
 
 /// Max frame size: 64KB (Rule 3).
 const MAX_WS_FRAME_SIZE: usize = 64 * 1024;
@@ -35,6 +37,11 @@ const MAX_FANOUT_MEMBERS: i64 = 500;
 const MAX_CONNECTIONS_PER_USER: usize = 5;
 /// Max queued outbound messages per socket before the connection is dropped.
 const MAX_OUTBOUND_QUEUE: usize = 256;
+/// Re-authenticate shortly before the access token expires.
+const WS_REAUTH_WARNING_LEAD: Duration = Duration::from_secs(60);
+/// Grace period after `re_auth_required` — if client hasn't reauthed by this
+/// deadline, the connection is forcibly closed.
+const WS_REAUTH_GRACE: Duration = Duration::from_secs(30);
 
 /// Per-user WebSocket message rate limiter (5 msg/sec, burst of 20).
 type MsgRateLimiter = Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>;
@@ -356,10 +363,19 @@ impl Hub {
 
     /// Send a message to all connections of a specific user.
     pub fn send_to_user(&self, user_id: &Uuid, msg: WsOutbound) {
+        let _ = self.try_send_to_user(user_id, msg);
+    }
+
+    /// Send a message to all connections of a specific user and report whether
+    /// at least one socket accepted the payload.
+    pub(crate) fn try_send_to_user(&self, user_id: &Uuid, msg: WsOutbound) -> bool {
+        let mut sent = false;
         if let Some(user_conns) = self.connections.get(user_id) {
             let mut stale = Vec::new();
             for entry in user_conns.iter() {
-                if entry.value().tx.try_send(msg.clone()).is_err() {
+                if entry.value().tx.try_send(msg.clone()).is_ok() {
+                    sent = true;
+                } else {
                     stale.push(entry.key().clone());
                 }
             }
@@ -368,13 +384,23 @@ impl Hub {
                 self.disconnect_connection(&conn_id);
             }
         }
+        sent
     }
 
     pub fn send_to_device(&self, device_id: &Uuid, msg: WsOutbound) {
+        let _ = self.try_send_to_device(device_id, msg);
+    }
+
+    /// Send a message to all connections of a specific device and report
+    /// whether at least one socket accepted the payload.
+    pub(crate) fn try_send_to_device(&self, device_id: &Uuid, msg: WsOutbound) -> bool {
+        let mut sent = false;
         if let Some(device_conns) = self.device_connections.get(device_id) {
             let mut stale = Vec::new();
             for entry in device_conns.iter() {
-                if entry.value().tx.try_send(msg.clone()).is_err() {
+                if entry.value().tx.try_send(msg.clone()).is_ok() {
+                    sent = true;
+                } else {
                     stale.push(entry.key().clone());
                 }
             }
@@ -383,6 +409,7 @@ impl Hub {
                 self.disconnect_connection(&conn_id);
             }
         }
+        sent
     }
 
     /// Fan out a message to multiple users (e.g. all members of a channel).
@@ -433,6 +460,7 @@ pub enum WsInbound {
         ciphertext: String,
         message_type: Option<String>,
         msg_num: Option<i32>,
+        client_nonce: Option<String>,
     },
     TypingStart {
         channel_id: Uuid,
@@ -576,7 +604,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
 
     let mut send_task = spawn_ws_send_task(sender, rx, close_rx);
 
-    let auth = match wait_for_auth(&mut receiver, &state).await {
+    let mut auth = match wait_for_auth(&mut receiver, &state).await {
         Some(auth) => auth,
         None => {
             send_task.abort();
@@ -606,15 +634,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     });
     deliver_on_connect(&auth, is_trusted, &state, &tx).await;
 
-    run_receive_loop(
-        &mut receiver,
-        &mut send_task,
-        auth.user_id,
-        auth.device_id,
-        &state,
-        &tx,
-    )
-    .await;
+    run_receive_loop(&mut receiver, &mut send_task, &mut auth, &state, &tx).await;
 
     state
         .hub
@@ -667,18 +687,49 @@ async fn deliver_on_connect(auth: &WsAuth, is_trusted: bool, state: &AppState, t
 async fn run_receive_loop(
     receiver: &mut futures::stream::SplitStream<WebSocket>,
     send_task: &mut tokio::task::JoinHandle<()>,
-    user_id: Uuid,
-    device_id: Option<Uuid>,
+    auth: &mut WsAuth,
     state: &AppState,
     tx: &ConnTx,
 ) {
     let mut processed = 0usize;
     loop {
+        let now = Instant::now();
+        let remaining = auth.auth_expires_at.saturating_duration_since(now);
+
+        // Emit re_auth_required once when nearing expiry, and set a hard grace deadline.
+        if !auth.reauth_required && remaining <= WS_REAUTH_WARNING_LEAD {
+            let _ = tx.try_send(WsOutbound::ReAuthRequired);
+            auth.reauth_required = true;
+            auth.reauth_deadline = Some(now + WS_REAUTH_GRACE);
+        }
+
+        // Enforce the reauth grace deadline — if the client hasn't reauthed in time, close.
+        if let Some(deadline) = auth.reauth_deadline {
+            if now >= deadline {
+                send_ws_error(tx, 4001, "Re-authentication grace period expired");
+                break;
+            }
+        }
+
+        if auth.auth_expires_at <= now {
+            send_ws_error(tx, 4001, "WebSocket session expired");
+            break;
+        }
+
+        // Sleep until the earliest of: token expiry or reauth grace deadline.
+        let sleep_until = match auth.reauth_deadline {
+            Some(deadline) => remaining.min(deadline.saturating_duration_since(now)),
+            None => remaining,
+        };
+        let expiry_sleep = tokio::time::sleep(sleep_until);
+        tokio::pin!(expiry_sleep);
         tokio::select! {
             msg = receiver.next() => {
                 match msg {
                     Some(Ok(Message::Text(text))) => {
-                        handle_inbound(text, user_id, device_id, state, tx).await;
+                        if handle_inbound(text, auth, state, tx).await {
+                            break;
+                        }
                         processed += 1;
                         if processed >= constants::MAX_MESSAGES_PER_TICK {
                             processed = 0;
@@ -689,6 +740,10 @@ async fn run_receive_loop(
                     Some(Ok(Message::Ping(_))) => { let _ = tx.try_send(WsOutbound::Pong); }
                     _ => {}
                 }
+            }
+            _ = &mut expiry_sleep => {
+                // The select fires on either token expiry or grace deadline;
+                // the next iteration's checks will emit the appropriate error.
             }
             _ = &mut *send_task => break,
         }
@@ -720,6 +775,23 @@ async fn broadcast_presence(
     state: &AppState,
 ) {
     debug_assert!(user_id != Uuid::nil());
+
+    let show_last_seen = match sqlx::query(
+        "SELECT COALESCE(show_last_seen, TRUE) AS show_last_seen \
+         FROM user_privacy_settings \
+         WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .fetch_optional(state.db.pool())
+    .await
+    {
+        Ok(Some(row)) => row.try_get::<bool, _>("show_last_seen").unwrap_or(false),
+        Ok(None) => true,
+        Err(e) => {
+            tracing::warn!(user_id = %user_id, "Failed to load last_seen privacy setting: {e}");
+            false
+        }
+    };
 
     // Collect unique peer IDs from:
     //  1. DM conversations
@@ -757,12 +829,16 @@ async fn broadcast_presence(
 
         let mut ids: Vec<Uuid> = dm_rows
             .iter()
-            .filter_map(|r| r.try_get::<Uuid, _>("user_id").ok())
-            .chain(
-                server_rows
-                    .iter()
-                    .filter_map(|r| r.try_get::<Uuid, _>("user_id").ok()),
-            )
+            .filter_map(|r| {
+                r.try_get::<Uuid, _>("user_id")
+                    .map_err(|e| tracing::warn!("Column extraction failed: {e}"))
+                    .ok()
+            })
+            .chain(server_rows.iter().filter_map(|r| {
+                r.try_get::<Uuid, _>("user_id")
+                    .map_err(|e| tracing::warn!("Column extraction failed: {e}"))
+                    .ok()
+            }))
             .collect();
         ids.sort();
         ids.dedup();
@@ -777,10 +853,22 @@ async fn broadcast_presence(
         user_id,
         online,
         away,
-        last_seen_at: last_seen_at.clone(),
+        last_seen_at: redact_last_seen_for_broadcast(show_last_seen, last_seen_at.clone()),
     };
 
     state.hub.broadcast(&peer_ids, msg);
+}
+
+/// Redact a presence timestamp for peer fanout when the author has disabled it.
+pub(crate) fn redact_last_seen_for_broadcast(
+    show_last_seen: bool,
+    last_seen_at: Option<String>,
+) -> Option<String> {
+    if show_last_seen {
+        last_seen_at
+    } else {
+        None
+    }
 }
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
@@ -789,7 +877,18 @@ async fn broadcast_presence(
 struct WsAuth {
     user_id: Uuid,
     device_id: Option<Uuid>,
+    account_type: String,
     trust_state: Option<DeviceTrustState>,
+    auth_expires_at: Instant,
+    reauth_required: bool,
+    /// Hard deadline by which the client must complete re-authentication.
+    /// Set to `now + WS_REAUTH_GRACE` when `re_auth_required` is emitted.
+    reauth_deadline: Option<Instant>,
+}
+
+fn ws_auth_expires_at(exp: i64) -> Instant {
+    let remaining = exp.saturating_sub(Utc::now().timestamp()).max(0) as u64;
+    Instant::now() + Duration::from_secs(remaining)
 }
 
 async fn wait_for_auth(
@@ -811,17 +910,39 @@ async fn wait_for_auth(
     }
 }
 
+/// # Security invariant — device-bound trust model
+///
+/// Non-bot WebSocket connections **must** carry a device-bound token
+/// (`device_id` present in JWT claims). Legacy non-device tokens are rejected
+/// here for non-bot accounts,
+/// preventing unauthenticated-device access to the real-time message hub.
+///
+/// The message loop (`handle_message`) further enforces trust via
+/// `live_device_trust_state`, which re-checks the device table on every
+/// message and treats `device_id = None` as untrusted for non-bot accounts.
 async fn validate_ws_token(token: &str, state: &AppState) -> Option<WsAuth> {
     let claims = crate::auth::service::validate_access_token(token, &state.jwt_keys)
         .ok()?
         .claims;
+
+    // Reject non-bot tokens without a bound device to keep the hub
+    // device-authenticated.
+    if claims.account_type != "bot" && claims.device_id.is_none() {
+        tracing::warn!(
+            user_id = %claims.sub,
+            "Rejected WS auth: non-bot token without device_id"
+        );
+        return None;
+    }
 
     let mut trust_state = None;
     if let Some(device_id) = claims.device_id {
         let device = crate::devices::get_device_for_user(claims.sub, device_id, state)
             .await
             .ok()?;
-        if device.revoked_at.is_some() || device.trust_state == DeviceTrustState::Revoked {
+        if device.revoked_at.is_some()
+            || device.trust_state != DeviceTrustState::Trusted
+        {
             return None;
         }
         trust_state = Some(device.trust_state);
@@ -830,7 +951,11 @@ async fn validate_ws_token(token: &str, state: &AppState) -> Option<WsAuth> {
     Some(WsAuth {
         user_id: claims.sub,
         device_id: claims.device_id,
+        account_type: claims.account_type,
         trust_state,
+        auth_expires_at: ws_auth_expires_at(claims.exp),
+        reauth_required: false,
+        reauth_deadline: None,
     })
 }
 
@@ -891,7 +1016,10 @@ async fn deliver_offline_envelopes(device_id: &Uuid, state: &AppState, tx: &Conn
                e.ciphertext,
                e.ek_public,
                e.opk_id,
-               e.msg_num
+               e.msg_num,
+               e.ratchet_pub,
+               e.previous_chain_len,
+               e.crypto_version
         FROM dm_message_envelopes e
         JOIN messages m ON m.id = e.message_id
         JOIN devices sd ON sd.id = m.sender_device_id
@@ -911,11 +1039,8 @@ async fn deliver_offline_envelopes(device_id: &Uuid, state: &AppState, tx: &Conn
         return;
     }
 
-    let mut delivered_ids: Vec<Uuid> = Vec::with_capacity(rows.len());
+    let mut delivered_targets: Vec<(Uuid, Uuid)> = Vec::with_capacity(rows.len());
     for row in &rows {
-        let Ok(envelope_id) = row.try_get::<Uuid, _>("envelope_id") else {
-            continue;
-        };
         let Ok(msg_id) = row.try_get::<Uuid, _>("id") else {
             continue;
         };
@@ -937,36 +1062,56 @@ async fn deliver_offline_envelopes(device_id: &Uuid, state: &AppState, tx: &Conn
         let Ok(cipher) = row.try_get::<Vec<u8>, _>("ciphertext") else {
             continue;
         };
-        let ek: Option<Vec<u8>> = row.try_get("ek_public").ok().flatten();
-        let opk_id: Option<i32> = row.try_get("opk_id").ok().flatten();
+        let ek: Option<Vec<u8>> = row
+            .try_get("ek_public")
+            .map_err(|e| tracing::warn!("Column extraction failed: {e}"))
+            .ok()
+            .flatten();
+        let opk_id: Option<i32> = row
+            .try_get("opk_id")
+            .map_err(|e| tracing::warn!("Column extraction failed: {e}"))
+            .ok()
+            .flatten();
         let msg_num: i32 = row.try_get("msg_num").unwrap_or(0);
+        let ratchet_pub: Option<Vec<u8>> = row
+            .try_get("ratchet_pub")
+            .map_err(|e| tracing::warn!("Column extraction failed: {e}"))
+            .ok()
+            .flatten();
+        let previous_chain_len: Option<i32> = row
+            .try_get("previous_chain_len")
+            .map_err(|e| tracing::warn!("Column extraction failed: {e}"))
+            .ok()
+            .flatten();
+        let crypto_version: i32 = row.try_get("crypto_version").unwrap_or(1);
 
-        let payload = serde_json::json!({
-            "type": "dm_v2",
-            "id": msg_id,
-            "conversation_id": conv_id,
-            "sender_id": sender_id,
-            "sender_device_id": sender_device_id,
-            "sender_signal_device_id": sender_signal_device_id,
-            "recipient_device_id": recipient_device_id,
-            "ciphertext": BASE64.encode(&cipher),
-            "ephemeral_key": ek.as_ref().map(|k| BASE64.encode(k)),
-            "opk_id": opk_id,
-            "msg_num": msg_num,
-        });
+        let payload = dm_v2_payload(
+            msg_id,
+            conv_id,
+            sender_id,
+            sender_device_id,
+            sender_signal_device_id,
+            recipient_device_id,
+            &BASE64.encode(&cipher),
+            ek.as_ref().map(|k| BASE64.encode(k)),
+            opk_id,
+            msg_num,
+            ratchet_pub.as_ref().map(|k| BASE64.encode(k)),
+            previous_chain_len,
+            crypto_version,
+            row.try_get("created_at").ok(),
+        );
 
         if tx.try_send(WsOutbound::Message { payload }).is_ok() {
-            delivered_ids.push(envelope_id);
+            delivered_targets.push((msg_id, recipient_device_id));
+        } else {
+            tracing::debug!("Recipient disconnected during DM v2 replay");
+            break;
         }
     }
 
-    if !delivered_ids.is_empty() {
-        if let Err(e) =
-            sqlx::query("UPDATE dm_message_envelopes SET delivered_at = NOW() WHERE id = ANY($1)")
-                .bind(&delivered_ids)
-                .execute(state.db.pool())
-                .await
-        {
+    if !delivered_targets.is_empty() {
+        if let Err(e) = mark_dm_delivered(&delivered_targets, state).await {
             tracing::warn!("Failed to mark DM envelopes delivered: {e}");
         }
     }
@@ -1006,8 +1151,16 @@ async fn deliver_offline_legacy(user_id: &Uuid, state: &AppState, tx: &ConnTx) {
         let Ok(cipher) = row.try_get::<Vec<u8>, _>("ciphertext") else {
             continue;
         };
-        let ek: Option<Vec<u8>> = row.try_get("ek_public").ok().flatten();
-        let opk_id: Option<i32> = row.try_get("opk_id").ok().flatten();
+        let ek: Option<Vec<u8>> = row
+            .try_get("ek_public")
+            .map_err(|e| tracing::warn!("Column extraction failed: {e}"))
+            .ok()
+            .flatten();
+        let opk_id: Option<i32> = row
+            .try_get("opk_id")
+            .map_err(|e| tracing::warn!("Column extraction failed: {e}"))
+            .ok()
+            .flatten();
 
         let payload = serde_json::json!({
             "type": "dm", "id": msg_id, "conversation_id": conv_id,
@@ -1017,6 +1170,9 @@ async fn deliver_offline_legacy(user_id: &Uuid, state: &AppState, tx: &ConnTx) {
 
         if tx.try_send(WsOutbound::Message { payload }).is_ok() {
             delivered_ids.push(msg_id);
+        } else {
+            tracing::debug!("Recipient disconnected during legacy DM replay");
+            break;
         }
     }
 
@@ -1043,11 +1199,12 @@ async fn deliver_pending_key_dists(
 
     let rows = if let Some(device_id) = device_id {
         sqlx::query(
-            "UPDATE sender_key_distributions \
-             SET delivered = TRUE \
+            "SELECT id, channel_id, from_user, from_device_id, ciphertext, ek_public \
+             FROM sender_key_distributions \
              WHERE delivered = FALSE \
                AND (to_device_id = $1 OR (to_device_id IS NULL AND to_user = $2)) \
-             RETURNING channel_id, from_user, from_device_id, ciphertext, ek_public",
+             ORDER BY created_at ASC \
+             LIMIT 100",
         )
         .bind(device_id)
         .bind(user_id)
@@ -1055,10 +1212,11 @@ async fn deliver_pending_key_dists(
         .await
     } else {
         sqlx::query(
-            "UPDATE sender_key_distributions \
-             SET delivered = TRUE \
+            "SELECT id, channel_id, from_user, from_device_id, ciphertext, ek_public \
+             FROM sender_key_distributions \
              WHERE to_user = $1 AND delivered = FALSE \
-             RETURNING channel_id, from_user, from_device_id, ciphertext, ek_public",
+             ORDER BY created_at ASC \
+             LIMIT 100",
         )
         .bind(user_id)
         .fetch_all(state.db.pool())
@@ -1067,14 +1225,22 @@ async fn deliver_pending_key_dists(
 
     let Ok(rows) = rows else { return };
 
+    let mut delivered_ids: Vec<Uuid> = Vec::with_capacity(rows.len());
     for row in &rows {
+        let Ok(id) = row.try_get::<Uuid, _>("id") else {
+            continue;
+        };
         let Ok(channel_id) = row.try_get::<uuid::Uuid, _>("channel_id") else {
             continue;
         };
         let Ok(from_user) = row.try_get::<uuid::Uuid, _>("from_user") else {
             continue;
         };
-        let from_device_id: Option<uuid::Uuid> = row.try_get("from_device_id").ok().flatten();
+        let from_device_id: Option<uuid::Uuid> = row
+            .try_get("from_device_id")
+            .map_err(|e| tracing::warn!("Column extraction failed: {e}"))
+            .ok()
+            .flatten();
         let Ok(ct) = row.try_get::<Vec<u8>, _>("ciphertext") else {
             continue;
         };
@@ -1090,8 +1256,25 @@ async fn deliver_pending_key_dists(
             "ciphertext": BASE64.encode(&ct),
             "ek_public":  BASE64.encode(&ek),
         });
-        if tx.try_send(WsOutbound::Message { payload }).is_err() {
+        if tx.try_send(WsOutbound::Message { payload }).is_ok() {
+            delivered_ids.push(id);
+        } else {
             tracing::debug!("Recipient disconnected during key dist delivery");
+            break;
+        }
+    }
+
+    if !delivered_ids.is_empty() {
+        if let Err(e) = sqlx::query(
+            "UPDATE sender_key_distributions \
+             SET delivered = TRUE \
+             WHERE id = ANY($1) AND delivered = FALSE",
+        )
+        .bind(&delivered_ids)
+        .execute(state.db.pool())
+        .await
+        {
+            tracing::warn!("Failed to mark sender key distributions delivered: {e}");
         }
     }
 }
@@ -1101,12 +1284,51 @@ async fn deliver_pending_sync_events(device_id: Option<&Uuid>, state: &AppState,
         return;
     };
 
-    let Ok(events) = crate::devices::take_sync_events(*device_id, state).await else {
+    let rows = sqlx::query(
+        r#"
+        SELECT id, event_type, source_device_id, payload, created_at
+        FROM device_sync_events
+        WHERE target_device_id = $1 AND delivered_at IS NULL
+        ORDER BY created_at ASC
+        LIMIT 100
+        "#,
+    )
+    .bind(device_id)
+    .fetch_all(state.db.pool())
+    .await;
+
+    let Ok(rows) = rows else {
         return;
     };
+    if rows.is_empty() {
+        return;
+    }
 
-    for event in &events {
-        let payload = crate::devices::sync_event_payload(event);
+    for row in &rows {
+        let Ok(event) = row.try_get::<Uuid, _>("id") else {
+            continue;
+        };
+        let Ok(sync_event) = row.try_get::<String, _>("event_type") else {
+            continue;
+        };
+        let payload_value: serde_json::Value = match row.try_get("payload") {
+            Ok(value) => value,
+            Err(e) => {
+                tracing::warn!("Column extraction failed: {e}");
+                continue;
+            }
+        };
+        let event = crate::devices::SyncEvent {
+            id: event,
+            event_type: sync_event,
+            source_device_id: row.try_get("source_device_id").ok().flatten(),
+            payload: payload_value,
+            created_at: row
+                .try_get("created_at")
+                .unwrap_or_else(|_| chrono::Utc::now()),
+        };
+
+        let payload = crate::devices::sync_event_payload(&event);
         if tx.try_send(WsOutbound::Message { payload }).is_err() {
             tracing::debug!("Device disconnected during sync event delivery");
             break;
@@ -1114,25 +1336,97 @@ async fn deliver_pending_sync_events(device_id: Option<&Uuid>, state: &AppState,
     }
 }
 
+fn dm_v2_payload(
+    message_id: Uuid,
+    conv_id: Uuid,
+    sender_id: Uuid,
+    sender_device_id: Uuid,
+    sender_signal_device_id: i32,
+    recipient_device_id: Uuid,
+    ciphertext: &str,
+    ephemeral_key: Option<String>,
+    opk_id: Option<i32>,
+    msg_num: i32,
+    ratchet_pub: Option<String>,
+    previous_chain_len: Option<i32>,
+    crypto_version: i32,
+    created_at: Option<chrono::DateTime<chrono::Utc>>,
+) -> serde_json::Value {
+    let mut payload = serde_json::json!({
+        "type": "dm_v2",
+        "id": message_id,
+        "conversation_id": conv_id,
+        "sender_id": sender_id,
+        "sender_device_id": sender_device_id,
+        "sender_signal_device_id": sender_signal_device_id,
+        "recipient_device_id": recipient_device_id,
+        "ciphertext": ciphertext,
+        "ephemeral_key": ephemeral_key,
+        "opk_id": opk_id,
+        "msg_num": msg_num,
+        "ratchet_pub": ratchet_pub,
+        "previous_chain_len": previous_chain_len,
+        "crypto_version": crypto_version,
+    });
+    if let Some(created_at) = created_at {
+        payload["created_at"] = serde_json::json!(created_at);
+    }
+    payload
+}
+
+pub(crate) async fn mark_dm_delivered(
+    delivery_targets: &[(Uuid, Uuid)],
+    state: &AppState,
+) -> AppResult<()> {
+    if delivery_targets.is_empty() {
+        return Ok(());
+    }
+
+    let mut tx = state.db.pool().begin().await?;
+
+    let mut delivered_messages = HashSet::with_capacity(delivery_targets.len());
+    for &(message_id, recipient_device_id) in delivery_targets {
+        sqlx::query(
+            "UPDATE dm_message_envelopes \
+             SET delivered_at = NOW() \
+             WHERE message_id = $1 \
+               AND recipient_device_id = $2 \
+               AND delivered_at IS NULL",
+        )
+        .bind(message_id)
+        .bind(recipient_device_id)
+        .execute(&mut *tx)
+        .await?;
+        delivered_messages.insert(message_id);
+    }
+
+    let delivered_message_ids: Vec<Uuid> = delivered_messages.into_iter().collect();
+    if !delivered_message_ids.is_empty() {
+        sqlx::query(
+            "UPDATE messages SET delivered = TRUE WHERE id = ANY($1) AND delivered = FALSE",
+        )
+        .bind(&delivered_message_ids)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
+    Ok(())
+}
+
 // ─── Inbound dispatch ────────────────────────────────────────────────────────
 
-async fn handle_inbound(
-    text: String,
-    user_id: Uuid,
-    device_id: Option<Uuid>,
-    state: &AppState,
-    tx: &ConnTx,
-) {
+async fn handle_inbound(text: String, auth: &mut WsAuth, state: &AppState, tx: &ConnTx) -> bool {
     if text.len() > MAX_WS_FRAME_SIZE {
         send_ws_error(tx, 4003, "Frame too large");
-        return;
+        return auth.reauth_required;
     }
 
     let msg: WsInbound = match serde_json::from_str(&text) {
         Ok(m) => m,
         Err(_) => {
             send_ws_error(tx, 4000, "Invalid message format");
-            return;
+            return auth.reauth_required;
         }
     };
 
@@ -1141,21 +1435,37 @@ async fn handle_inbound(
         WsInbound::Ping | WsInbound::Auth { .. } | WsInbound::Reauth { .. }
     );
 
-    let device_is_trusted = match device_id {
-        Some(device_id) => match live_device_trust_state(user_id, device_id, state).await {
+    if auth.reauth_required && !matches!(&msg, WsInbound::Ping | WsInbound::Reauth { .. }) {
+        send_ws_error(tx, 4001, "Re-authentication required");
+        return true;
+    }
+
+    let user_id = auth.user_id;
+    let device_id = auth.device_id;
+
+    // Device trust gate: only trusted devices (or bots) may send real messages.
+    // `device_id = None` is only reachable for bot accounts — `validate_ws_token`
+    // already rejected non-bot tokens without a device_id at connection time.
+    let device_is_trusted = match auth.device_id {
+        Some(device_id) => match live_device_trust_state(auth.user_id, device_id, state).await {
             Some(DeviceTrustState::Trusted) => true,
             Some(DeviceTrustState::PendingTrust) => false,
             Some(DeviceTrustState::Revoked) | None => {
                 send_ws_error(tx, 4001, "Device revoked");
-                return;
+                return true;
             }
         },
-        None => true,
+        // Only bots reach here (non-bot device-less tokens are rejected in
+        // `validate_ws_token`). Bots are trusted by definition.
+        None => {
+            debug_assert_eq!(auth.account_type, "bot", "non-bot token without device_id should have been rejected at WS auth");
+            auth.account_type == "bot"
+        }
     };
 
     if !device_is_trusted && !is_control_message {
         send_ws_error(tx, 4006, "Device approval required");
-        return;
+        return false;
     }
 
     // Reset the away timer on any real user activity. Pings and auth frames are
@@ -1194,6 +1504,7 @@ async fn handle_inbound(
             ciphertext,
             message_type,
             msg_num,
+            client_nonce,
         } => {
             if check_rate_limit(state, &user_id, tx) {
                 handle_send_channel(
@@ -1201,6 +1512,7 @@ async fn handle_inbound(
                     ciphertext,
                     message_type,
                     msg_num,
+                    client_nonce,
                     user_id,
                     device_id,
                     state,
@@ -1219,12 +1531,29 @@ async fn handle_inbound(
             handle_mark_read(message_id, channel_id, user_id, state).await;
         }
         WsInbound::Reauth { token } => {
-            if validate_ws_token(&token, state).await.is_none() {
+            let Some(next_auth) = validate_ws_reauth(&token, auth, state).await else {
                 send_ws_error(tx, 4001, "Invalid token");
-            }
+                return true;
+            };
+            *auth = next_auth;
+            auth.reauth_required = false;
+            auth.reauth_deadline = None;
         }
         WsInbound::Auth { .. } => {}
     }
+
+    false
+}
+
+async fn validate_ws_reauth(token: &str, current: &WsAuth, state: &AppState) -> Option<WsAuth> {
+    let next = validate_ws_token(token, state).await?;
+    if next.user_id != current.user_id
+        || next.device_id != current.device_id
+        || next.account_type != current.account_type
+    {
+        return None;
+    }
+    Some(next)
 }
 
 // ─── Send DM ─────────────────────────────────────────────────────────────────
@@ -1296,6 +1625,7 @@ async fn resolve_dm_recipient(
             .bind(sender_id)
             .fetch_optional(state.db.pool())
             .await
+            .map_err(|e| tracing::error!("DB query failed: {e}"))
             .ok()
             .flatten()
             .is_some();
@@ -1314,7 +1644,11 @@ async fn resolve_dm_recipient(
     .await;
 
     let recipient_id: Uuid = match recipient_row {
-        Ok(Some(row)) => match row.try_get("user_id").ok() {
+        Ok(Some(row)) => match row
+            .try_get("user_id")
+            .map_err(|e| tracing::warn!("Column extraction failed: {e}"))
+            .ok()
+        {
             Some(id) => id,
             None => return None,
         },
@@ -1326,9 +1660,14 @@ async fn resolve_dm_recipient(
         .bind(recipient_id)
         .fetch_optional(state.db.pool())
         .await
+        .map_err(|e| tracing::error!("DB query failed: {e}"))
         .ok()
         .flatten()
-        .and_then(|r| r.try_get::<String, _>("account_type").ok())
+        .and_then(|r| {
+            r.try_get::<String, _>("account_type")
+                .map_err(|e| tracing::warn!("Column extraction failed: {e}"))
+                .ok()
+        })
         .map(|t| t == "bot")
         .unwrap_or(false);
 
@@ -1367,7 +1706,6 @@ async fn store_and_route_dm(dm: DmContext<'_>, state: &AppState, tx: &ConnTx) {
         sender_id,
         recipient_id,
     } = dm;
-    let recipient_online = state.hub.is_online(&recipient_id);
     let msg_id = Uuid::new_v4();
 
     let store_result = sqlx::query(
@@ -1380,7 +1718,7 @@ async fn store_and_route_dm(dm: DmContext<'_>, state: &AppState, tx: &ConnTx) {
     .bind(cipher_bytes)
     .bind(ek_bytes)
     .bind(opk_id)
-    .bind(recipient_online)
+    .bind(false)
     .execute(state.db.pool())
     .await;
 
@@ -1395,12 +1733,23 @@ async fn store_and_route_dm(dm: DmContext<'_>, state: &AppState, tx: &ConnTx) {
         "sender_id": sender_id, "ciphertext": ciphertext_b64,
         "ephemeral_key": ephemeral_key, "opk_id": opk_id, "msg_num": msg_num,
     });
-    state
+    let delivered = state
         .hub
-        .send_to_user(&recipient_id, WsOutbound::Message { payload });
+        .try_send_to_user(&recipient_id, WsOutbound::Message { payload });
+
+    if delivered {
+        if let Err(e) =
+            sqlx::query("UPDATE messages SET delivered = TRUE WHERE id = $1 AND delivered = FALSE")
+                .bind(msg_id)
+                .execute(state.db.pool())
+                .await
+        {
+            tracing::warn!("Failed to mark DM delivered: {e}");
+        }
+    }
 
     // Push notification to offline devices (best-effort, fire-and-forget)
-    if !recipient_online {
+    if !delivered {
         let state = state.clone();
         tokio::spawn(async move {
             let mut meta = std::collections::HashMap::new();
@@ -1420,6 +1769,7 @@ async fn handle_send_channel(
     ciphertext: String,
     message_type: Option<String>,
     msg_num: Option<i32>,
+    client_nonce: Option<String>,
     sender_id: Uuid,
     sender_device_id: Option<Uuid>,
     state: &AppState,
@@ -1467,6 +1817,7 @@ async fn handle_send_channel(
             &cipher_bytes,
             msg_type,
             msg_num,
+            client_nonce.as_deref(),
             &ciphertext,
             sender_id,
             sender_device_id,
@@ -1482,9 +1833,14 @@ async fn is_bot_user(user_id: Uuid, state: &AppState) -> bool {
         .bind(user_id)
         .fetch_optional(state.db.pool())
         .await
+        .map_err(|e| tracing::error!("DB query failed: {e}"))
         .ok()
         .flatten()
-        .and_then(|r| r.try_get::<String, _>("account_type").ok())
+        .and_then(|r| {
+            r.try_get::<String, _>("account_type")
+                .map_err(|e| tracing::warn!("Column extraction failed: {e}"))
+                .ok()
+        })
         .map(|t| t == "bot")
         .unwrap_or(false)
 }
@@ -1503,10 +1859,15 @@ async fn resolve_channel_membership(
             .bind(channel_id)
             .fetch_optional(state.db.pool())
             .await
+            .map_err(|e| tracing::error!("DB query failed: {e}"))
             .ok()
             .flatten();
 
-        match server_row.and_then(|r| r.try_get("server_id").ok()) {
+        match server_row.and_then(|r| {
+            r.try_get("server_id")
+                .map_err(|e| tracing::warn!("Column extraction failed: {e}"))
+                .ok()
+        }) {
             Some(id) => {
                 state.hub.cache_channel_server(channel_id, id);
                 id
@@ -1528,6 +1889,7 @@ async fn resolve_channel_membership(
                 .bind(server_id)
                 .fetch_optional(state.db.pool())
                 .await
+                .map_err(|e| tracing::error!("DB query failed: {e}"))
                 .ok()
                 .flatten()
                 .is_some();
@@ -1592,6 +1954,7 @@ async fn store_and_fanout_channel(
     cipher_bytes: &[u8],
     msg_type: &str,
     msg_num: Option<i32>,
+    client_nonce: Option<&str>,
     ciphertext_b64: &str,
     sender_id: Uuid,
     sender_device_id: Option<Uuid>,
@@ -1628,6 +1991,7 @@ async fn store_and_fanout_channel(
             "server_id": server_id, "sender_id": sender_id,
             "sender_device_id": sender_device_id,
             "ciphertext": ciphertext_b64, "message_type": msg_type, "msg_num": msg_num,
+            "client_nonce": client_nonce,
         }),
         state,
     )
@@ -1684,20 +2048,29 @@ async fn fetch_channel_member_ids(channel_id: Uuid, state: &AppState) -> Option<
         .bind(channel_id)
         .fetch_optional(state.db.pool())
         .await
+        .map_err(|e| tracing::error!("DB query failed: {e}"))
         .ok()
         .flatten()?;
-    let server_id: Uuid = server_row.try_get("server_id").ok()?;
+    let server_id: Uuid = server_row
+        .try_get("server_id")
+        .map_err(|e| tracing::warn!("Column extraction failed: {e}"))
+        .ok()?;
 
     let rows = sqlx::query("SELECT user_id FROM server_memberships WHERE server_id = $1 LIMIT $2")
         .bind(server_id)
         .bind(MAX_FANOUT_MEMBERS)
         .fetch_all(state.db.pool())
         .await
+        .map_err(|e| tracing::error!("DB query failed: {e}"))
         .ok()?;
 
     Some(
         rows.iter()
-            .filter_map(|r| r.try_get::<Uuid, _>("user_id").ok())
+            .filter_map(|r| {
+                r.try_get::<Uuid, _>("user_id")
+                    .map_err(|e| tracing::warn!("Column extraction failed: {e}"))
+                    .ok()
+            })
             .collect(),
     )
 }
@@ -1762,13 +2135,12 @@ async fn handle_mark_read(message_id: Uuid, channel_id: Uuid, user_id: Uuid, sta
     debug_assert!(user_id != Uuid::nil());
     debug_assert!(message_id != Uuid::nil());
 
-    // Verify channel membership before processing read receipt
-    let Some(member_ids) = fetch_channel_member_ids(channel_id, state).await else {
+    // Verify the message belongs to the caller-supplied channel before processing read receipt.
+    let Some(member_ids) =
+        load_read_receipt_member_ids(message_id, channel_id, user_id, state).await
+    else {
         return;
     };
-    if !member_ids.contains(&user_id) {
-        return; // Silently drop — user is not a channel member
-    }
 
     let ok = sqlx::query(
         "INSERT INTO message_read_receipts (message_id, user_id) \
@@ -1794,9 +2166,138 @@ async fn handle_mark_read(message_id: Uuid, channel_id: Uuid, user_id: Uuid, sta
     }
 }
 
+/// Resolve the channel members eligible to receive a read receipt fanout.
+///
+/// Returns `None` when the message is missing, deleted, not a channel message,
+/// mapped to a different channel than the caller supplied, or when the caller
+/// is not a member of the real channel.
+pub async fn load_read_receipt_member_ids(
+    message_id: Uuid,
+    channel_id: Uuid,
+    user_id: Uuid,
+    state: &AppState,
+) -> Option<Vec<Uuid>> {
+    debug_assert!(message_id != Uuid::nil());
+    debug_assert!(channel_id != Uuid::nil());
+    debug_assert!(user_id != Uuid::nil());
+
+    let message_row = sqlx::query(
+        "SELECT channel_id \
+         FROM messages \
+         WHERE id = $1 AND deleted_at IS NULL",
+    )
+    .bind(message_id)
+    .fetch_optional(state.db.pool())
+    .await
+    .map_err(|e| tracing::error!("DB query failed: {e}"))
+    .ok()
+    .flatten()?;
+
+    let real_channel_id = message_row
+        .try_get::<Option<Uuid>, _>("channel_id")
+        .map_err(|e| tracing::warn!("Column extraction failed: {e}"))
+        .ok()
+        .flatten()?;
+    if real_channel_id != channel_id {
+        return None;
+    }
+
+    let member_ids = fetch_channel_member_ids(real_channel_id, state).await?;
+    if !member_ids.contains(&user_id) {
+        return None;
+    }
+
+    Some(member_ids)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        auth::{service::generate_access_token, JwtKeys, LoginRateLimiter, OAuthStateStore},
+        db::Database,
+        DiscordImportStateStore, IpRateLimiter,
+    };
+    use governor::{Quota, RateLimiter};
+    use serial_test::serial;
+    use std::{collections::HashSet, num::NonZeroU32, sync::Arc};
+    use tokio::sync::{mpsc, watch};
+
+    async fn build_test_state() -> Option<AppState> {
+        let db_url =
+            match std::env::var("TEST_DATABASE_URL").or_else(|_| std::env::var("DATABASE_URL")) {
+                Ok(value) => value,
+                Err(_) => return None,
+            };
+
+        let db = Database::connect(&db_url).await.ok()?;
+        db.run_migrations().await.ok()?;
+
+        let jwt_keys = match JwtKeys::from_env() {
+            Ok(keys) => Arc::new(keys),
+            Err(_) => return None,
+        };
+
+        let quota = Quota::per_minute(NonZeroU32::new(10_000).unwrap())
+            .allow_burst(NonZeroU32::new(5_000).unwrap());
+        let rate_limiter: IpRateLimiter = Arc::new(RateLimiter::keyed(quota));
+
+        Some(AppState {
+            db,
+            hub: Arc::new(Hub::new()),
+            rate_limiter,
+            trusted_proxy_ips: Arc::new(HashSet::new()),
+            jwt_keys,
+            login_limiter: Arc::new(LoginRateLimiter::new()),
+            oauth_states: Arc::new(OAuthStateStore::new()),
+            discord_import_states: Arc::new(DiscordImportStateStore::new()),
+            http_client: reqwest::Client::new(),
+        })
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn ws_auth_rejects_pending_trust_device() {
+        let Some(state) = build_test_state().await else {
+            return;
+        };
+
+        let user_id = Uuid::new_v4();
+        let device_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO users (id, username, email, display_name, gdpr_consent_at)
+             VALUES ($1, $2, $3, $4, NOW())",
+        )
+        .bind(user_id)
+        .bind("ws_pending_user")
+        .bind(format!("{user_id}@integration.test"))
+        .bind("WS Pending User")
+        .execute(state.db.pool())
+        .await
+        .expect("insert user");
+
+        sqlx::query(
+            "INSERT INTO devices
+                (id, user_id, signal_device_id, platform, label, trust_state, last_seen_at, approved_at)
+             VALUES ($1, $2, $3, $4, $5, 'pending_trust', NOW(), NULL)",
+        )
+        .bind(device_id)
+        .bind(user_id)
+        .bind(1_i32)
+        .bind("web")
+        .bind("Pending WS Device")
+        .execute(state.db.pool())
+        .await
+        .expect("insert device");
+
+        let token =
+            generate_access_token(user_id, "standard", Some(device_id), &state.jwt_keys).unwrap();
+
+        assert!(
+            validate_ws_token(&token, &state).await.is_none(),
+            "pending-trust devices must not authenticate to WS"
+        );
+    }
 
     #[test]
     fn test_hub_register_unregister() {
@@ -1855,7 +2356,460 @@ mod tests {
         hub.send_to_user(&user_id, WsOutbound::Pong);
     }
 
+    #[test]
+    fn test_hub_try_send_to_user_returns_false_when_queue_full() {
+        let hub = Hub::new();
+        let user_id = Uuid::new_v4();
+        let conn_id = ConnectionId::new();
+        let (tx, _rx) = mpsc::channel(1);
+        let (close_tx, _close_rx) = watch::channel(false);
+        assert!(hub.register(
+            user_id,
+            None,
+            true,
+            conn_id,
+            ConnectionHandle {
+                tx: tx.clone(),
+                close_tx,
+            },
+        ));
+        tx.try_send(WsOutbound::Pong).unwrap();
+
+        assert!(
+            !hub.try_send_to_user(&user_id, WsOutbound::Pong),
+            "queue-full user send should report failure"
+        );
+        assert!(
+            !hub.is_online(&user_id),
+            "stale user connection should be disconnected after send failure"
+        );
+    }
+
+    #[test]
+    fn test_hub_try_send_to_device_returns_false_when_queue_full() {
+        let hub = Hub::new();
+        let user_id = Uuid::new_v4();
+        let device_id = Uuid::new_v4();
+        let conn_id = ConnectionId::new();
+        let (tx, _rx) = mpsc::channel(1);
+        let (close_tx, _close_rx) = watch::channel(false);
+        assert!(hub.register(
+            user_id,
+            Some(device_id),
+            true,
+            conn_id,
+            ConnectionHandle {
+                tx: tx.clone(),
+                close_tx,
+            },
+        ));
+        tx.try_send(WsOutbound::Pong).unwrap();
+
+        assert!(
+            !hub.try_send_to_device(&device_id, WsOutbound::Pong),
+            "queue-full device send should report failure"
+        );
+        assert!(
+            !hub.is_device_online(&device_id),
+            "stale device connection should be disconnected after send failure"
+        );
+    }
+
+    #[test]
+    fn test_dm_v2_replay_payload_includes_ratchet_metadata() {
+        let payload = dm_v2_payload(
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            7,
+            Uuid::new_v4(),
+            "AQID",
+            Some("BAUG".to_string()),
+            Some(42),
+            9,
+            Some("BwgJ".to_string()),
+            Some(11),
+            2,
+            None,
+        );
+
+        assert_eq!(payload["type"], "dm_v2");
+        assert_eq!(payload["ciphertext"], "AQID");
+        assert_eq!(payload["ratchet_pub"], "BwgJ");
+        assert_eq!(payload["previous_chain_len"], 11);
+        assert_eq!(payload["crypto_version"], 2);
+    }
+
     // ─── Rate limiter tests ──────────────────────────────────────────────────
+
+    #[tokio::test]
+    #[serial]
+    async fn test_mark_dm_delivered_advances_state_after_success() {
+        let Some(state) = build_test_state().await else {
+            return;
+        };
+
+        let user_a = Uuid::new_v4();
+        let user_b = Uuid::new_v4();
+        let sender_device = Uuid::new_v4();
+        let recipient_device = Uuid::new_v4();
+        let conversation_id = Uuid::new_v4();
+        let message_id = Uuid::new_v4();
+
+        sqlx::query(
+            "INSERT INTO users (id, email, username, display_name, password_hash, gdpr_consent_at) \
+             VALUES ($1, $2, $3, $4, $5, NOW()), ($6, $7, $8, $9, $10, NOW())",
+        )
+        .bind(user_a)
+        .bind(format!("hub_a_{message_id}@integration.test"))
+        .bind(format!("hub_a_{message_id}"))
+        .bind("Hub A")
+        .bind("hash")
+        .bind(user_b)
+        .bind(format!("hub_b_{message_id}@integration.test"))
+        .bind(format!("hub_b_{message_id}"))
+        .bind("Hub B")
+        .bind("hash")
+        .execute(state.db.pool())
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO devices (id, user_id, signal_device_id, platform, label, trust_state, last_seen_at, approved_at) \
+             VALUES ($1, $2, 1001, 'web', 'sender', 'trusted', NOW(), NOW()), \
+                    ($3, $4, 1002, 'web', 'recipient', 'trusted', NOW(), NOW())",
+        )
+        .bind(sender_device)
+        .bind(user_a)
+        .bind(recipient_device)
+        .bind(user_b)
+        .execute(state.db.pool())
+        .await
+        .unwrap();
+
+        sqlx::query("INSERT INTO dm_conversations (id, created_at) VALUES ($1, NOW())")
+            .bind(conversation_id)
+            .execute(state.db.pool())
+            .await
+            .unwrap();
+
+        sqlx::query(
+            "INSERT INTO dm_participants (conversation_id, user_id) VALUES ($1, $2), ($1, $3)",
+        )
+        .bind(conversation_id)
+        .bind(user_a)
+        .bind(user_b)
+        .execute(state.db.pool())
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO messages (id, conversation_id, sender_id, sender_device_id, ciphertext, delivered, created_at) \
+             VALUES ($1, $2, $3, $4, $5, FALSE, NOW())",
+        )
+        .bind(message_id)
+        .bind(conversation_id)
+        .bind(user_a)
+        .bind(sender_device)
+        .bind(vec![1_u8, 2, 3])
+        .execute(state.db.pool())
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO dm_message_envelopes \
+             (message_id, recipient_user_id, recipient_device_id, sender_user_id, sender_device_id, \
+              ciphertext, ek_public, opk_id, msg_num, ratchet_pub, previous_chain_len, crypto_version, delivered_at, created_at) \
+             VALUES ($1, $2, $3, $4, $5, $6, NULL, NULL, 1, NULL, NULL, 1, NULL, NOW())",
+        )
+        .bind(message_id)
+        .bind(user_b)
+        .bind(recipient_device)
+        .bind(user_a)
+        .bind(sender_device)
+        .bind(vec![4_u8, 5, 6])
+        .execute(state.db.pool())
+        .await
+        .unwrap();
+
+        mark_dm_delivered(&[(message_id, recipient_device)], &state)
+            .await
+            .unwrap();
+
+        let msg_delivered: Option<bool> =
+            sqlx::query_scalar("SELECT delivered FROM messages WHERE id = $1")
+                .bind(message_id)
+                .fetch_one(state.db.pool())
+                .await
+                .unwrap();
+        assert_eq!(msg_delivered, Some(true));
+
+        let envelope_delivered_at: Option<chrono::DateTime<chrono::Utc>> =
+            sqlx::query_scalar(
+                "SELECT delivered_at FROM dm_message_envelopes WHERE message_id = $1 AND recipient_device_id = $2",
+            )
+            .bind(message_id)
+            .bind(recipient_device)
+            .fetch_one(state.db.pool())
+            .await
+            .unwrap();
+        assert!(
+            envelope_delivered_at.is_some(),
+            "envelope should be marked delivered"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_pending_sync_events_keep_state_on_queue_full() {
+        let Some(state) = build_test_state().await else {
+            return;
+        };
+
+        let user_id = Uuid::new_v4();
+        let device_id = Uuid::new_v4();
+        let conn_id = ConnectionId::new();
+        let (tx, _rx) = mpsc::channel(1);
+        let (close_tx, _close_rx) = watch::channel(false);
+        assert!(state.hub.register(
+            user_id,
+            Some(device_id),
+            true,
+            conn_id,
+            ConnectionHandle {
+                tx: tx.clone(),
+                close_tx,
+            },
+        ));
+        tx.try_send(WsOutbound::Pong).unwrap();
+
+        sqlx::query(
+            "INSERT INTO users (id, email, username, display_name, password_hash, gdpr_consent_at) \
+             VALUES ($1, $2, $3, $4, $5, NOW())",
+        )
+        .bind(user_id)
+        .bind(format!("sync_{user_id}@integration.test"))
+        .bind(format!("sync_{user_id}"))
+        .bind("Sync User")
+        .bind("hash")
+        .execute(state.db.pool())
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO devices (id, user_id, signal_device_id, platform, label, trust_state, last_seen_at, approved_at) \
+             VALUES ($1, $2, 2001, 'web', 'sync-device', 'trusted', NOW(), NOW())",
+        )
+        .bind(device_id)
+        .bind(user_id)
+        .execute(state.db.pool())
+        .await
+        .unwrap();
+
+        let event_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO device_sync_events \
+             (id, user_id, target_device_id, source_device_id, event_type, payload, delivered_at, created_at) \
+             VALUES ($1, $2, $3, NULL, 'device_sync_complete', '{}'::jsonb, NULL, NOW())",
+        )
+        .bind(event_id)
+        .bind(user_id)
+        .bind(device_id)
+        .execute(state.db.pool())
+        .await
+        .unwrap();
+
+        deliver_pending_sync_events(Some(&device_id), &state, &tx).await;
+
+        let delivered_at: Option<chrono::DateTime<chrono::Utc>> =
+            sqlx::query_scalar("SELECT delivered_at FROM device_sync_events WHERE id = $1")
+                .bind(event_id)
+                .fetch_one(state.db.pool())
+                .await
+                .unwrap();
+        assert!(
+            delivered_at.is_none(),
+            "sync event should remain pending on queue failure"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_pending_sync_events_require_ack_after_successful_ws_handoff() {
+        let Some(state) = build_test_state().await else {
+            return;
+        };
+
+        let user_id = Uuid::new_v4();
+        let device_id = Uuid::new_v4();
+        let conn_id = ConnectionId::new();
+        let (tx, mut rx) = mpsc::channel(2);
+        let (close_tx, _close_rx) = watch::channel(false);
+        assert!(state.hub.register(
+            user_id,
+            Some(device_id),
+            true,
+            conn_id,
+            ConnectionHandle { tx: tx.clone(), close_tx },
+        ));
+
+        sqlx::query(
+            "INSERT INTO users (id, email, username, display_name, password_hash, gdpr_consent_at) \
+             VALUES ($1, $2, $3, $4, $5, NOW())",
+        )
+        .bind(user_id)
+        .bind(format!("sync_ack_{user_id}@integration.test"))
+        .bind(format!("sync_ack_{user_id}"))
+        .bind("Sync Ack User")
+        .bind("hash")
+        .execute(state.db.pool())
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO devices (id, user_id, signal_device_id, platform, label, trust_state, last_seen_at, approved_at) \
+             VALUES ($1, $2, 2002, 'web', 'sync-device', 'trusted', NOW(), NOW())",
+        )
+        .bind(device_id)
+        .bind(user_id)
+        .execute(state.db.pool())
+        .await
+        .unwrap();
+
+        let event_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO device_sync_events \
+             (id, user_id, target_device_id, source_device_id, event_type, payload, delivered_at, created_at) \
+             VALUES ($1, $2, $3, NULL, 'device_sync_complete', '{}'::jsonb, NULL, NOW())",
+        )
+        .bind(event_id)
+        .bind(user_id)
+        .bind(device_id)
+        .execute(state.db.pool())
+        .await
+        .unwrap();
+
+        deliver_pending_sync_events(Some(&device_id), &state, &tx).await;
+
+        let next = rx.recv().await.expect("sync event should be enqueued");
+        match next {
+            WsOutbound::Message { payload } => {
+                let expected_id = event_id.to_string();
+                assert_eq!(payload["type"], "device_sync_event");
+                assert_eq!(payload["id"].as_str(), Some(expected_id.as_str()));
+            }
+            other => panic!("unexpected ws frame: {other:?}"),
+        }
+
+        let delivered_at: Option<chrono::DateTime<chrono::Utc>> =
+            sqlx::query_scalar("SELECT delivered_at FROM device_sync_events WHERE id = $1")
+                .bind(event_id)
+                .fetch_one(state.db.pool())
+                .await
+                .unwrap();
+        assert!(
+            delivered_at.is_none(),
+            "ws handoff alone must not mark sync events delivered"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_pending_key_dists_keep_state_on_queue_full() {
+        let Some(state) = build_test_state().await else {
+            return;
+        };
+
+        let sender_user = Uuid::new_v4();
+        let recipient_user = Uuid::new_v4();
+        let recipient_device = Uuid::new_v4();
+        let server_id = Uuid::new_v4();
+        let channel_id = Uuid::new_v4();
+        let (tx, _rx) = mpsc::channel(1);
+        let (close_tx, _close_rx) = watch::channel(false);
+        let conn_id = ConnectionId::new();
+
+        assert!(state.hub.register(
+            recipient_user,
+            Some(recipient_device),
+            true,
+            conn_id,
+            ConnectionHandle {
+                tx: tx.clone(),
+                close_tx,
+            },
+        ));
+        tx.try_send(WsOutbound::Pong).unwrap();
+
+        sqlx::query(
+            "INSERT INTO users (id, email, username, display_name, password_hash, gdpr_consent_at) \
+             VALUES ($1, $2, $3, $4, $5, NOW()), ($6, $7, $8, $9, $10, NOW())",
+        )
+        .bind(sender_user)
+        .bind(format!("skd_sender_{channel_id}@integration.test"))
+        .bind(format!("skd_sender_{channel_id}"))
+        .bind("SKD Sender")
+        .bind("hash")
+        .bind(recipient_user)
+        .bind(format!("skd_recipient_{channel_id}@integration.test"))
+        .bind(format!("skd_recipient_{channel_id}"))
+        .bind("SKD Recipient")
+        .bind("hash")
+        .execute(state.db.pool())
+        .await
+        .unwrap();
+
+        sqlx::query("INSERT INTO servers (id, name, slug, owner_id, created_at) VALUES ($1, $2, $3, $4, NOW())")
+            .bind(server_id)
+            .bind("SKD Server")
+            .bind(format!("skd-{channel_id}"))
+            .bind(sender_user)
+            .execute(state.db.pool())
+            .await
+            .unwrap();
+
+        sqlx::query(
+            "INSERT INTO channels (id, server_id, name, type, position, created_at) \
+             VALUES ($1, $2, $3, 'text', 0, NOW())",
+        )
+        .bind(channel_id)
+        .bind(server_id)
+        .bind("general")
+        .execute(state.db.pool())
+        .await
+        .unwrap();
+
+        let dist_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO sender_key_distributions \
+             (id, channel_id, from_user, from_device_id, to_user, to_device_id, ciphertext, ek_public, delivered, created_at) \
+             VALUES ($1, $2, $3, NULL, $4, $5, $6, $7, FALSE, NOW())",
+        )
+        .bind(dist_id)
+        .bind(channel_id)
+        .bind(sender_user)
+        .bind(recipient_user)
+        .bind(recipient_device)
+        .bind(vec![9_u8, 8, 7])
+        .bind(vec![6_u8, 5, 4])
+        .execute(state.db.pool())
+        .await
+        .unwrap();
+
+        deliver_pending_key_dists(&recipient_user, Some(&recipient_device), &state, &tx).await;
+
+        let delivered: bool =
+            sqlx::query_scalar("SELECT delivered FROM sender_key_distributions WHERE id = $1")
+                .bind(dist_id)
+                .fetch_one(state.db.pool())
+                .await
+                .unwrap();
+        assert!(
+            !delivered,
+            "sender-key dist should remain pending on queue failure"
+        );
+    }
 
     #[test]
     fn test_check_msg_rate_allows_burst() {
@@ -2026,7 +2980,8 @@ mod tests {
             "channel_id": ch_id,
             "ciphertext": "YWJj",
             "message_type": "text",
-            "msg_num": 5
+            "msg_num": 5,
+            "client_nonce": "abc-123"
         });
         let msg: WsInbound = serde_json::from_value(json).unwrap();
         match msg {
@@ -2035,11 +2990,13 @@ mod tests {
                 ciphertext,
                 message_type,
                 msg_num,
+                client_nonce,
             } => {
                 assert_eq!(channel_id, ch_id);
                 assert_eq!(ciphertext, "YWJj");
                 assert_eq!(message_type, Some("text".to_string()));
                 assert_eq!(msg_num, Some(5));
+                assert_eq!(client_nonce, Some("abc-123".to_string()));
             }
             other => panic!("Expected SendChannel, got {:?}", other),
         }
@@ -2058,10 +3015,12 @@ mod tests {
             WsInbound::SendChannel {
                 message_type,
                 msg_num,
+                client_nonce,
                 ..
             } => {
                 assert_eq!(message_type, None);
                 assert_eq!(msg_num, None);
+                assert_eq!(client_nonce, None);
             }
             other => panic!("Expected SendChannel, got {:?}", other),
         }
@@ -2191,6 +3150,21 @@ mod tests {
         assert_eq!(json["type"], "presence");
         assert_eq!(json["online"], true);
         assert_eq!(json["away"], true);
+    }
+
+    #[test]
+    fn test_redact_last_seen_for_broadcast_hides_when_disabled() {
+        let last_seen = Some("2026-03-21T12:00:00Z".to_string());
+        assert_eq!(redact_last_seen_for_broadcast(false, last_seen), None);
+    }
+
+    #[test]
+    fn test_redact_last_seen_for_broadcast_keeps_when_enabled() {
+        let last_seen = Some("2026-03-21T12:00:00Z".to_string());
+        assert_eq!(
+            redact_last_seen_for_broadcast(true, last_seen.clone()),
+            last_seen
+        );
     }
 
     #[test]

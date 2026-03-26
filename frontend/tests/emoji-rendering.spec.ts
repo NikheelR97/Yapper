@@ -23,7 +23,7 @@ async function setupAuthWithServer(
 	await setInstallationId(page, 'emoji-test-install');
 	await mockAuthEndpoints(page, authData);
 
-	await page.route(`**/api/v1/servers`, async (route) => {
+	await page.route(`**/api/v2/servers`, async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
@@ -39,12 +39,12 @@ async function setupAuthWithServer(
 		});
 	});
 
-	await page.route(`**/api/v1/conversations`, async (route) => {
+	await page.route(`**/api/v2/conversations`, async (route) => {
 		await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
 	});
 
 	// Mock server emojis
-	await page.route(`**/api/v1/servers/${serverId}/emojis`, async (route) => {
+	await page.route(`**/api/v2/servers/${serverId}/emojis`, async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
@@ -62,7 +62,7 @@ async function setupAuthWithServer(
 	});
 
 	// Mock channel messages containing emoji shortcodes
-	await page.route(`**/api/v1/channels/${channelId}/messages**`, async (route) => {
+	await page.route(`**/api/v2/channels/${channelId}/messages**`, async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
@@ -83,7 +83,7 @@ async function setupAuthWithServer(
 		});
 	});
 
-	await page.route(`**/api/v1/servers/${serverId}/members**`, async (route) => {
+	await page.route(`**/api/v2/servers/${serverId}/members**`, async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',

@@ -62,7 +62,7 @@
 			const { accessToken } = get(authStore);
 			const BASE_URL = API_URL;
 
-			const res = await fetch(`${BASE_URL}/api/v1/servers/${serverId}/emojis`, {
+			const res = await fetch(`${BASE_URL}/api/v2/servers/${serverId}/emojis`, {
 				method: 'POST',
 				body: formData,
 				headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
@@ -80,8 +80,8 @@
 			file = null;
 			preview = null;
 			name = '';
-		} catch (e: any) {
-			toast.error(e.message ?? 'Upload failed');
+		} catch (e: unknown) {
+			toast.error(e instanceof Error ? e.message : 'Upload failed');
 		} finally {
 			uploading = false;
 		}

@@ -45,7 +45,7 @@ async function setupTrustedDevice(
 	await setInstallationId(page, installId);
 	await mockAuthEndpoints(page, authData, { devices: [device] });
 
-	await page.route('**/api/v1/servers', async (route) => {
+	await page.route('**/api/v2/servers', async (route) => {
 		await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
 	});
 	await page.route('**/api/v2/conversations', async (route) => {
@@ -83,7 +83,7 @@ async function setupPendingDevice(
 	await mockAuthEndpoints(page, authData, { devices: [pendingDevice, trustedDevice] });
 
 	// Stub additional endpoints the layout may call
-	await page.route('**/api/v1/servers', async (route) => {
+	await page.route('**/api/v2/servers', async (route) => {
 		await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
 	});
 	await page.route('**/api/v2/conversations', async (route) => {
@@ -268,7 +268,7 @@ test.describe('Multi-device — sync-events retry on 500 @multidevice', () => {
 				}),
 			});
 		});
-		await page.route('**/api/v1/users/me', async (route) => {
+		await page.route('**/api/v2/users/me', async (route) => {
 			await route.fulfill({
 				status: 200,
 				contentType: 'application/json',
@@ -285,7 +285,7 @@ test.describe('Multi-device — sync-events retry on 500 @multidevice', () => {
 		await page.route('**/api/v2/devices/trust-requests', async (route) => {
 			await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
 		});
-		await page.route('**/api/v1/servers', async (route) => {
+		await page.route('**/api/v2/servers', async (route) => {
 			await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
 		});
 		await page.route('**/api/v2/conversations', async (route) => {

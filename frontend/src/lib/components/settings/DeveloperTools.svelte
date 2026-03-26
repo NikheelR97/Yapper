@@ -15,15 +15,15 @@
 		}
 		importing = true;
 		try {
-			const res = await api.post<{ token: string; botName: string }>('/api/v1/bots/import-discord', {
+			const res = await api.post<{ token: string; botName: string }>('/api/v2/bots/import-discord', {
 				discordToken: tokenInput.trim(),
 			});
 			yapperToken = res.token;
 			botName = res.botName;
 			step = 'success';
 			tokenInput = '';
-		} catch (e: any) {
-			toast.error(e.message ?? 'Failed to import bot');
+		} catch (e: unknown) {
+			toast.error(e instanceof Error ? e.message : 'Failed to import bot');
 		} finally {
 			importing = false;
 		}
@@ -37,7 +37,7 @@
 
 	const migrationGuide = [
 		{ from: "client.on('messageCreate')", to: "ws.on('message')" },
-		{ from: "client.channels.send()", to: "POST /api/v1/channels/.." },
+		{ from: "client.channels.send()", to: "POST /api/v2/channels/.." },
 		{ from: "Discord.js Client", to: "yapper-bot-sdk (coming soon)" },
 	];
 </script>

@@ -14,7 +14,7 @@
     clearAuth,
     setAuth,
     storeRefreshToken,
-    getStoredRefreshToken,
+    syncNativeRefreshTokenToSecureStorage,
     type AuthDevice,
   } from "$stores/auth.js";
   import { ApiError, api } from "$api/client.js";
@@ -268,16 +268,34 @@
     }
   }
 
+  async function ackDeviceSyncEvents(eventIds: string[]): Promise<boolean> {
+    if (!eventIds.length) {
+      return true;
+    }
+
+    try {
+      await api.post("/api/v2/devices/sync-events/ack", {
+        event_ids: eventIds,
+      });
+      return true;
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        await recoverAfterDeviceApiUnauthorized();
+      }
+      return false;
+    }
+  }
+
+  function markDeviceSyncEventsSeen(eventIds: string[]): void {
+    for (const eventId of eventIds) {
+      seenDeviceSyncEventIds.add(eventId);
+    }
+  }
+
   function dedupeDeviceSyncEvents(
     events: DeviceSyncEvent[],
   ): DeviceSyncEvent[] {
-    return events.filter((event) => {
-      if (seenDeviceSyncEventIds.has(event.id)) {
-        return false;
-      }
-      seenDeviceSyncEventIds.add(event.id);
-      return true;
-    });
+    return events.filter((event) => !seenDeviceSyncEventIds.has(event.id));
   }
 
   async function queuePendingTrustRequest(): Promise<void> {
@@ -351,17 +369,28 @@
 
   async function processTrustedSyncEvents(): Promise<void> {
     const events = dedupeDeviceSyncEvents(await fetchDeviceSyncEvents());
+    const handledEventIds: string[] = [];
     for (const event of events) {
-      await handleTrustedRealtimeSyncEvent(event);
+      if (await handleTrustedRealtimeSyncEvent(event)) {
+        handledEventIds.push(event.id);
+      }
+    }
+    if (await ackDeviceSyncEvents(handledEventIds)) {
+      markDeviceSyncEventsSeen(handledEventIds);
     }
   }
 
   async function processPendingSyncEvents(
     events: DeviceSyncEvent[],
     deviceId: string,
-  ): Promise<{ trustApproved: boolean; importedSnapshot: boolean }> {
+  ): Promise<{
+    trustApproved: boolean;
+    importedSnapshot: boolean;
+    handledEventIds: string[];
+  }> {
     let trustApproved = false;
     let importedSnapshot = false;
+    const handledEventIds: string[] = [];
 
     const chunkEvents = events.filter(
       (event) => event.event_type === "device_sync_chunk",
@@ -410,6 +439,7 @@
         transfer.total = total;
         transfer.chunks[index] = new TextDecoder().decode(plaintext);
         incomingSyncTransfers.set(transferId, transfer);
+        handledEventIds.push(event.id);
       } catch (e) {
         console.warn("[DeviceSync] Failed to decrypt sync chunk:", e);
       }
@@ -418,6 +448,7 @@
     for (const event of events) {
       if (event.event_type === "device_trust_approved") {
         trustApproved = true;
+        handledEventIds.push(event.id);
         continue;
       }
 
@@ -450,14 +481,15 @@
       incomingSyncTransfers.delete(transferId);
       await clearPendingDeviceSyncRequest(deviceId);
       importedSnapshot = true;
+      handledEventIds.push(event.id);
     }
 
-    return { trustApproved, importedSnapshot };
+    return { trustApproved, importedSnapshot, handledEventIds };
   }
 
   async function handleTrustedRealtimeSyncEvent(
     event: DeviceSyncEvent,
-  ): Promise<void> {
+  ): Promise<boolean> {
     if (event.event_type === "device_trust_request") {
       const targetDeviceId =
         typeof event.payload.target_device_id === "string"
@@ -468,7 +500,7 @@
           ? event.payload.sync_public_key
           : null;
       if (!targetDeviceId || !syncPublicKey) {
-        return;
+        return false;
       }
 
       trustedSyncPublicKeys.set(targetDeviceId, syncPublicKey);
@@ -482,7 +514,7 @@
           console.warn("[DeviceSync] Failed to replay trusted sync:", e);
         }
       }
-      return;
+      return true;
     }
 
     if (event.event_type === "device_trust_approved") {
@@ -491,7 +523,7 @@
           ? event.payload.target_device_id
           : null;
       if (!targetDeviceId) {
-        return;
+        return false;
       }
 
       approvedUnsyncedDeviceIds.add(targetDeviceId);
@@ -506,7 +538,7 @@
           console.warn("[DeviceSync] Failed to send sync after approval:", e);
         }
       }
-      return;
+      return true;
     }
 
     if (event.event_type === "device_revoked") {
@@ -515,12 +547,15 @@
           ? event.payload.device_id
           : null;
       if (!revokedDeviceId) {
-        return;
+        return false;
       }
       trustedSyncPublicKeys.delete(revokedDeviceId);
       approvedUnsyncedDeviceIds.delete(revokedDeviceId);
       saveApprovedUnsyncedDeviceIds(approvedUnsyncedDeviceIds);
+      return true;
     }
+
+    return false;
   }
 
   async function maybeActivateTrustedDevice(
@@ -610,7 +645,11 @@
     }
 
     if (currentDeviceTrusted()) {
-      await handleTrustedRealtimeSyncEvent(nextEvent);
+      if (await handleTrustedRealtimeSyncEvent(nextEvent)) {
+        if (await ackDeviceSyncEvents([nextEvent.id])) {
+          markDeviceSyncEventsSeen([nextEvent.id]);
+        }
+      }
       return;
     }
 
@@ -619,10 +658,13 @@
       return;
     }
 
-    const { trustApproved, importedSnapshot } = await processPendingSyncEvents(
+    const { trustApproved, importedSnapshot, handledEventIds } = await processPendingSyncEvents(
       [nextEvent],
       deviceId,
     );
+    if (await ackDeviceSyncEvents(handledEventIds)) {
+      markDeviceSyncEventsSeen(handledEventIds);
+    }
     if (trustApproved || importedSnapshot) {
       await maybeActivateTrustedDevice(deviceId, importedSnapshot);
     }
@@ -709,13 +751,18 @@
           revoked_at: string | null;
         };
       }>("/api/v2/auth/refresh");
-      if (res.refresh_token) storeRefreshToken(res.refresh_token);
+      const storageWarning = res.refresh_token
+        ? await storeRefreshToken(res.refresh_token)
+        : null;
       setAuth(
         res.user,
         res.access_token,
         res.csrf_token,
         normalizeServerDevice(res.device),
       );
+      if (storageWarning) {
+        toast.warning(storageWarning, 0);
+      }
       return true;
     } catch {
       return false;
@@ -816,8 +863,11 @@
         const syncEvents = dedupeDeviceSyncEvents(
           await fetchDeviceSyncEvents(),
         );
-        const { trustApproved, importedSnapshot } =
+        const { trustApproved, importedSnapshot, handledEventIds } =
           await processPendingSyncEvents(syncEvents, state.device.id);
+        if (await ackDeviceSyncEvents(handledEventIds)) {
+          markDeviceSyncEventsSeen(handledEventIds);
+        }
         if (trustApproved || importedSnapshot) {
           if (
             await maybeActivateTrustedDevice(state.device.id, importedSnapshot)
@@ -965,6 +1015,7 @@
     desktopVaultError = null;
     try {
       await unlockDesktopVault(passphrase);
+      await syncNativeRefreshTokenToSecureStorage();
       desktopVaultMode = null;
       await bootAppLayout();
     } catch (e: any) {

@@ -1,7 +1,7 @@
 # YAPPER — Developer Handover Document
 
 **Last updated:** 2026-03-22 (rev 5)
-**Project status:** Active development — S0–S16 complete; Canvas Expansion + E2EE Media deployed; CI/CD fully green (flyctl deploy, trivy-action, clippy clean)
+**Project status:** Active development — S0-S16 complete; stabilization in progress; Canvas Expansion + E2EE Media deployed; CI/CD production deploy/release automation is paused until the documented release gates are proven
 **Full implementation plan:** `C:\Users\rajma\.claude\plans\quizzical-yawning-starfish.md`
 
 ---
@@ -451,13 +451,13 @@ Mitigations for Neon cold starts (500ms–2s):
 | 11 | Screen Time | FE ✅ — BE Pending | `ScreenTimeDashboard.svelte` built; iOS/Android plugins + BE ingestion API pending |
 | 12 | Discord Integration | FE ✅ — BE Pending | `DiscordImport.svelte` + bot migration tool UI built; BE importer + bots/ module pending |
 | 13 | Custom Emojis | ✅ Complete (BE + FE) | `EmojiPicker`, `EmojiUploader`, `CustomEmojiManager` built; BE emojis/ complete; emoji rendering in MessageList (XSS-safe `:shortcode:` → `<img>`), emoji picker in MessageInput wired end-to-end |
-| 14 | User Settings | ✅ Complete (Appearance + Notifications) — Partial | Appearance + Notifications: DB tables created, `GET/PATCH /api/v1/users/me/appearance|notifications` implemented, FE loads/saves live. Still pending: GDPR data export, profile avatar/banner upload, soft-delete |
+| 14 | User Settings | ✅ Complete (Appearance + Notifications) — Partial | Appearance + Notifications: DB tables created, `GET/PATCH /api/v2/users/me/appearance|notifications` implemented, FE loads/saves live. Still pending: GDPR data export, profile avatar/banner upload, soft-delete |
 | 15 | Tauri Polish | FE Partial | `TitleBar.svelte` + `KeyboardShortcutsModal.svelte` done; system tray, auto-updater, deep links pending |
 | 16 | Security Audit | Pending | Pre-launch hardening, GDPR/COPPA compliance verification, `SECURITY_AUDIT.md` |
 | 17 | Premium Placeholder | FE ✅ — BE Pending | `Premium.svelte`, `GoproLock.svelte`, settings GoPro promo card built; BE `is_premium` flag pending |
-| 18 | Launch Prep | Pending | Fly.io production deploy, Sentry, E2E test suite, app store submissions |
-| 19 | Support Tickets | ✅ Complete | `POST/GET /api/v1/support/tickets`, HubSpot CRM integration, `Support.svelte` settings page |
-| 20 | Build Pipeline | ✅ Complete | GHA Docker layer cache, `flyctl deploy --image`, Cargo profile tuning (~90s deploys) |
+| 18 | Launch Prep | Paused | Fly.io production deploy, Sentry, E2E test suite, app store submissions |
+| 19 | Support Tickets | ✅ Complete | `POST/GET /api/v2/support/tickets`, HubSpot CRM integration, `Support.svelte` settings page |
+| 20 | Build Pipeline | Partial | CI build/lint/test/checks and docs parity; production promotion paused during stabilization |
 
 ### Global UI Infrastructure (Complete — 2026-03-03)
 
@@ -647,7 +647,7 @@ For any developer picking up this project:
 
 **S0–S16 complete. Canvas Expansion + E2EE Media deployed. Code review remediation done.** Priority order:
 
-1. **E2E Testing** — Run 45 Playwright specs against staging (`e2e-nightly.yml` configured, test accounts needed)
+1. **E2E Testing** — Run 45 Playwright specs against staging (`e2e-nightly.yml` is manual and defaults to staging, test accounts needed)
 2. **macOS DMG build** — Run on Mac: `cargo tauri build --target universal-apple-darwin`
 3. **iOS build** — Run on Mac: `cd frontend/ios && pod install`, then Xcode archive + App Store Connect upload
 4. **Google Play submission** — Build AAB, create Play Console listing ($25 one-time)
@@ -660,10 +660,10 @@ For any developer picking up this project:
 - Code review remediation (HANDOVER compliance): HIGH-001 (DB error propagation in media/handlers.rs), HIGH-002 (15+ silent `catch(() => {})` fixed with logging/toasts), HIGH-003 (LiveCanvas admin role wired to serversStore), MED-001 (WS reconnect data refresh), MED-003/004 (hub.rs error logging + SAFETY comments), LOW-002 (NonZeroU32 SAFETY comment)
 - CI/CD pipeline fixes: cargo fmt (nightly parity), 9 clippy errors fixed, MSRV 1.78→1.80, backup test passphrase strengthened
 - Security scans fixed: setup-trivy→trivy-action@v0.35.0, RUSTSEC-2026-0049 ignored (transitive rustls-webpki via reqwest 0.11)
-- Backend deploy simplified: removed Docker build-push-action → `flyctl deploy` direct
+- Backend production deploy automation paused during stabilization; manual Fly.io promotion only after the release gate is reinstated
 - Canvas Expansion deployed (migrations 000028-000030 applied)
 - Marketing site updated: live CTAs, download links, FAQ/pricing for launch status
-- Documentation updated: api.md (23 canvas endpoints, media, support), architecture.md (new modules), deployment.md (CI/CD), Database.md (migrations 027-030)
+- Documentation updated: api.md (live router surface, v2 auth/devices), architecture.md (new modules), deployment.md (paused production promotion, staging split), Database.md (migrations 027-030)
 
 **Completed in rev 4:**
 - Canvas Expansion (S16): Full-stack implementation — migration `000029`, 23 new API endpoints, 13 WS events, 7 FE components

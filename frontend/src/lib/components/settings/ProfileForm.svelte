@@ -33,7 +33,7 @@
 				about_me: string | null;
 				profile_theme_color: string | null;
 				banner_url: string | null;
-			}>("/api/v1/users/me");
+			}>("/api/v2/users/me");
 			if (profile.display_name) displayName = profile.display_name;
 			if (profile.about_me) aboutMe = profile.about_me;
 			if (profile.profile_theme_color) {
@@ -74,7 +74,7 @@
 			if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
 			if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
 
-			const res = await fetch(`${BASE_URL}/api/v1/users/me/${kind}`, {
+			const res = await fetch(`${BASE_URL}/api/v2/users/me/${kind}`, {
 				method: "POST",
 				body: formData,
 				headers,
@@ -132,7 +132,7 @@
 		if (saving) return;
 		saving = true;
 		try {
-			await api.patch("/api/v1/users/me", {
+			await api.patch("/api/v2/users/me", {
 				display_name: displayName.trim() || undefined,
 				about_me: aboutMe.trim() || undefined,
 				profile_theme_color: selectedTheme,

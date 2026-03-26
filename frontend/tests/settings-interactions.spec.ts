@@ -39,7 +39,7 @@ async function setupAuthAndNavigate(page: Parameters<typeof mockAuthEndpoints>[0
 	});
 
 	// Mock profile update endpoint
-	await page.route(`**/api/v1/users/me`, async (route) => {
+	await page.route(`**/api/v2/users/me`, async (route) => {
 		if (route.request().method() === 'PATCH' || route.request().method() === 'PUT') {
 			await route.fulfill({
 				status: 200,
@@ -52,12 +52,12 @@ async function setupAuthAndNavigate(page: Parameters<typeof mockAuthEndpoints>[0
 	});
 
 	// Mock avatar/banner upload
-	await page.route(`**/api/v1/users/me/avatar`, async (route) => {
+	await page.route(`**/api/v2/users/me/avatar`, async (route) => {
 		await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ avatarUrl: 'https://cdn.example.com/avatar.webp' }) });
 	});
 
 	// Mock password change endpoint
-	await page.route(`**/api/v1/auth/change-password`, async (route) => {
+	await page.route(`**/api/v2/auth/change-password`, async (route) => {
 		await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
 	});
 
@@ -95,7 +95,7 @@ test.describe('Settings — My Profile', () => {
 		await setupAuthAndNavigate(page);
 
 		// Mock the PATCH specifically to return success
-		await page.route(`**/api/v1/users/me`, async (route) => {
+		await page.route(`**/api/v2/users/me`, async (route) => {
 			if (route.request().method() === 'PATCH') {
 				await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ displayName: 'New Name' }) });
 			} else {
@@ -148,7 +148,7 @@ test.describe('Settings — Appearance', () => {
 		await setupAuthAndNavigate(page);
 
 		// Mock the appearance PATCH so Save succeeds
-		await page.route(`**/api/v1/users/me/appearance`, async (route) => {
+		await page.route(`**/api/v2/users/me/appearance`, async (route) => {
 			await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
 		});
 
@@ -257,7 +257,7 @@ test.describe('Settings — Support', () => {
 		await setupAuthAndNavigate(page);
 		// mockSupportEndpoints returns a bare array, but Support.svelte's loadTickets()
 		// expects { tickets: [...] }. Override with the correct server-side field names.
-		await page.route(`**/api/v1/support/tickets`, async (route) => {
+		await page.route(`**/api/v2/support/tickets`, async (route) => {
 			if (route.request().method() === 'GET') {
 				await route.fulfill({
 					status: 200,

@@ -37,7 +37,7 @@
 		error = '';
 		loading = true;
 		try {
-			await api.post('/api/v1/auth/password-reset/confirm', {
+			await api.post('/api/v2/auth/password-reset/confirm', {
 				token,
 				new_password: password,
 			});

@@ -42,7 +42,7 @@
 
 	async function load() {
 		try {
-			const res = await api.get<ServerData>(`/api/v1/servers/${serverId}`);
+			const res = await api.get<ServerData>(`/api/v2/servers/${serverId}`);
 			server = res;
 			name = res.name;
 			description = res.description ?? '';
@@ -58,7 +58,7 @@
 		if (!name.trim()) return;
 		saving = true;
 		try {
-			await api.patch(`/api/v1/servers/${serverId}`, {
+			await api.patch(`/api/v2/servers/${serverId}`, {
 				name: name.trim(),
 				description: description.trim() || null,
 				is_public: isPublic
@@ -77,7 +77,7 @@
 		if (!n) return;
 		creatingChannel = true;
 		try {
-			await api.post(`/api/v1/servers/${serverId}/channels`, { name: n });
+			await api.post(`/api/v2/servers/${serverId}/channels`, { name: n });
 			toast.success(`#${n} created`);
 			newChannelName = '';
 		} catch (e: any) {
@@ -90,7 +90,7 @@
 	async function generateInvite() {
 		inviteLoading = true;
 		try {
-			const res = await api.post<{ code: string }>(`/api/v1/servers/${serverId}/invite`, {});
+			const res = await api.post<{ code: string }>(`/api/v2/servers/${serverId}/invite`, {});
 			inviteCode = res.code;
 		} catch (e: any) {
 			toast.error(e.message ?? 'Failed to generate invite');
@@ -107,7 +107,7 @@
 
 	async function leaveServer() {
 		try {
-			await api.delete(`/api/v1/servers/${serverId}/leave`);
+			await api.delete(`/api/v2/servers/${serverId}/leave`);
 			toast.success('Left server');
 			await goto('/explore');
 		} catch (e: any) {

@@ -130,7 +130,7 @@
 				throw new Error("You are not logged in.");
 			}
 
-			const res = await fetch(`${BASE_URL}/api/v1/account/data-export`, {
+			const res = await fetch(`${BASE_URL}/api/v2/account/data-export`, {
 				method: "GET",
 				headers: { Authorization: `Bearer ${accessToken}` },
 				credentials: "include",
@@ -162,7 +162,7 @@
 	async function deleteAccount() {
 		deleting = true;
 		try {
-			await api.delete("/api/v1/account");
+			await api.delete("/api/v2/account");
 			clearAuth();
 			await goto("/login");
 		} catch (e: any) {
@@ -899,4 +899,3 @@
 		line-height: 1.4;
 	}
 </style>
-

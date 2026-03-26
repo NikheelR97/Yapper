@@ -40,7 +40,7 @@ async function setupAuth(page: Page, installId = 'a11y-install'): Promise<void> 
 	await setInstallationId(page, installId);
 	await mockAuthEndpoints(page, authData, { devices: [device] });
 
-	await page.route('**/api/v1/servers', async (route) => {
+	await page.route('**/api/v2/servers', async (route) => {
 		await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
 	});
 	await page.route('**/api/v2/conversations', async (route) => {

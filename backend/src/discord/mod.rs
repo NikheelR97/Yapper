@@ -1,12 +1,12 @@
 /**
- * Discord — import a Discord profile into an already-authenticated Yapper account.
+ * Discord Ã¢â‚¬â€ import a Discord profile into an already-authenticated Yapper account.
  *
- * Routes (mounted under /api/v1/discord):
- *   GET  /import-profile            — initiates Discord OAuth (scope: identify) for profile import
- *   GET  /import-profile/callback   — exchanges code, downloads avatar, re-uploads to R2,
- *                                     updates users row with discord_id + avatar_url
+ * Routes (mounted under /api/v2/discord):
+ *   GET  /import-profile            Ã¢â‚¬â€ initiates Discord OAuth (scope: identify) for profile import
+ *   GET  /import-profile/callback   Ã¢â‚¬â€ exchanges code, downloads avatar, re-uploads to R2,
+ *                                     updates users row with normalized linked identity + avatar_url
  *
- * This flow is separate from the new-user OAuth in auth/ — it requires an existing session.
+ * This flow is separate from the new-user OAuth in auth/ Ã¢â‚¬â€ it requires an existing session.
  */
 use axum::{
     extract::{Query, State},
@@ -19,7 +19,7 @@ use std::time::Instant;
 use uuid::Uuid;
 
 use crate::{
-    auth::AuthUser,
+    auth::{oauth::ensure_linked_identity, AuthUser},
     error::{AppError, AppResult},
     AppState,
 };
@@ -27,7 +27,7 @@ use crate::{
 /// Discord import states older than this are considered expired.
 const IMPORT_STATE_TTL_SECS: u64 = 600; // 10 minutes
 
-// ─── Router ───────────────────────────────────────────────────────────────────
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Router Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -35,18 +35,18 @@ pub fn router() -> Router<AppState> {
         .route("/import-profile/callback", get(import_profile_callback))
 }
 
-// ─── Config ───────────────────────────────────────────────────────────────────
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Config Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 /// Discord OAuth2 endpoints and required scope for profile import.
 const DISCORD_AUTH_URL: &str = "https://discord.com/api/oauth2/authorize";
 const DISCORD_TOKEN_URL: &str = "https://discord.com/api/oauth2/token";
 const DISCORD_API_ME: &str = "https://discord.com/api/users/@me";
 /// Import flow redirects to a dedicated path so auth/ callback isn't polluted.
-const REDIRECT_SUFFIX: &str = "/api/v1/discord/import-profile/callback";
+const REDIRECT_SUFFIX: &str = "/api/v2/discord/import-profile/callback";
 
-// ─── Step 1: Initiate OAuth ───────────────────────────────────────────────────
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Step 1: Initiate OAuth Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
-/// GET /api/v1/discord/import-profile
+/// GET /api/v2/discord/import-profile
 ///
 /// Redirects the logged-in user to Discord's OAuth consent screen.
 /// An opaque CSRF token is used as the `state` param; the corresponding
@@ -67,8 +67,8 @@ async fn import_profile_start(
         .map_err(|e| AppError::Internal(anyhow::anyhow!("RNG error: {e}")))?;
     let csrf_token: String = crate::hex_encode(&csrf_bytes);
 
-    // Store csrf_token → (user_id, timestamp) server-side.
-    // The URL state param is the opaque token only — user_id never appears in the URL.
+    // Store csrf_token Ã¢â€ â€™ (user_id, timestamp) server-side.
+    // The URL state param is the opaque token only Ã¢â‚¬â€ user_id never appears in the URL.
     state
         .discord_import_states
         .insert(csrf_token.clone(), (auth.user_id, Instant::now()));
@@ -82,7 +82,7 @@ async fn import_profile_start(
     Ok(Redirect::to(&auth_url))
 }
 
-// ─── Step 2: Handle callback ──────────────────────────────────────────────────
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Step 2: Handle callback Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 #[derive(Deserialize)]
 struct DiscordCallbackQuery {
@@ -91,13 +91,13 @@ struct DiscordCallbackQuery {
     error: Option<String>,
 }
 
-/// GET /api/v1/discord/import-profile/callback
+/// GET /api/v2/discord/import-profile/callback
 ///
 /// 1. Validate state token (CSRF guard)
 /// 2. Exchange code for Discord access token
 /// 3. Fetch Discord profile (id, username, avatar hash)
-/// 4. Download avatar PNG from Discord CDN → re-upload to R2
-/// 5. Update users row (discord_id, avatar_url)
+/// 4. Download avatar PNG from Discord CDN Ã¢â€ â€™ re-upload to R2
+/// 5. Update users row (linked identity, avatar_url)
 async fn import_profile_callback(
     State(state): State<AppState>,
     Query(query): Query<DiscordCallbackQuery>,
@@ -165,22 +165,6 @@ async fn import_profile_callback(
         .ok_or_else(|| AppError::Internal(anyhow::anyhow!("No id in Discord profile")))?
         .to_string();
 
-    // Check if this Discord account is already linked to a different Yapper user
-    let already_linked = sqlx::query(
-        "SELECT id FROM users WHERE discord_id = $1 AND id != $2 AND deleted_at IS NULL",
-    )
-    .bind(&discord_id)
-    .bind(user_id)
-    .fetch_optional(state.db.pool())
-    .await?
-    .is_some();
-
-    if already_linked {
-        return Err(AppError::Conflict(
-            "This Discord account is already linked to another Yapper account".into(),
-        ));
-    }
-
     // Download and re-upload Discord avatar to R2 (Discord CDN URLs are not permanent)
     let avatar_url = if let (Some(avatar_hash), Some(discord_id_str)) =
         (profile["avatar"].as_str(), profile["id"].as_str())
@@ -199,19 +183,44 @@ async fn import_profile_callback(
         None
     };
 
-    // Update user record
-    sqlx::query(
-        "UPDATE users SET discord_id = $2, avatar_url = COALESCE($3, avatar_url)
-         WHERE id = $1 AND deleted_at IS NULL",
+    let mut tx = state.db.pool().begin().await?;
+
+    let already_linked = sqlx::query_scalar::<_, Uuid>(
+        r#"
+        SELECT uli.user_id
+        FROM user_linked_identities uli
+        JOIN users u ON u.id = uli.user_id
+        WHERE uli.provider = 'discord'
+          AND uli.provider_subject = $1
+          AND u.deleted_at IS NULL
+        "#,
     )
-    .bind(user_id)
     .bind(&discord_id)
-    .bind(avatar_url.as_deref())
-    .execute(state.db.pool())
+    .fetch_optional(&mut *tx)
     .await?;
 
-    tracing::info!(user_id = %user_id, discord_id = %discord_id, "Discord profile imported");
+    if let Some(linked_user_id) = already_linked {
+        if linked_user_id != user_id {
+            tx.rollback().await.ok();
+            return Err(AppError::Conflict(
+                "This Discord account is already linked to another Yapper account".into(),
+            ));
+        }
+    }
 
+    ensure_linked_identity(&mut tx, user_id, "discord", &discord_id).await?;
+
+    sqlx::query(
+        "UPDATE users SET avatar_url = COALESCE($2, avatar_url) WHERE id = $1 AND deleted_at IS NULL",
+    )
+    .bind(user_id)
+    .bind(avatar_url.as_deref())
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    tracing::info!(user_id = %user_id, discord_id = %discord_id, "Discord profile imported");
     Ok(Json(serde_json::json!({
         "status":     "ok",
         "discord_id": discord_id,
@@ -219,7 +228,7 @@ async fn import_profile_callback(
     })))
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Helpers Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 
 fn validate_import_state(csrf_token: &str, state: &AppState) -> AppResult<Uuid> {
     // Consume the stored entry (one-time use).
@@ -236,7 +245,7 @@ fn validate_import_state(csrf_token: &str, state: &AppState) -> AppResult<Uuid> 
     Ok(user_id)
 }
 
-/// Downloads an image from a URL, converts it to a 256×256 WebP, and uploads it to R2.
+/// Downloads an image from a URL, converts it to a 256Ãƒâ€”256 WebP, and uploads it to R2.
 /// Returns the public URL of the uploaded image.
 async fn download_and_reupload_avatar(
     client: &reqwest::Client,
@@ -268,14 +277,14 @@ async fn download_and_reupload_avatar(
             .into_dimensions()
             .map_err(|e| anyhow::anyhow!("Cannot read image dimensions: {e}"))?;
         if w > crate::constants::MAX_IMAGE_DIMENSION || h > crate::constants::MAX_IMAGE_DIMENSION {
-            anyhow::bail!("Discord avatar dimensions {w}×{h} exceed limit");
+            anyhow::bail!("Discord avatar dimensions {w}Ãƒâ€”{h} exceed limit");
         }
         if w.saturating_mul(h) > crate::constants::MAX_DECODED_PIXELS {
             anyhow::bail!("Discord avatar pixel count exceeds limit");
         }
     }
 
-    // Resize to 256×256 WebP in a blocking thread
+    // Resize to 256Ãƒâ€”256 WebP in a blocking thread
     let webp_bytes = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<u8>> {
         use image::{imageops::FilterType, ImageFormat};
         use std::io::Cursor;

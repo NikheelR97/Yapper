@@ -31,8 +31,8 @@ describe('api client', () => {
 
 		setAuth(testUser, 'access-token', 'csrf-token');
 
-		await expect(api.get('/api/v1/me')).resolves.toEqual({ ok: true });
-		expect(fetchMock).toHaveBeenCalledWith('http://localhost:8080/api/v1/me', {
+		await expect(api.get('/api/v2/me')).resolves.toEqual({ ok: true });
+		expect(fetchMock).toHaveBeenCalledWith('http://localhost:8080/api/v2/me', {
 			headers: {
 				'Content-Type': 'application/json',
 				Authorization: 'Bearer access-token',
@@ -52,11 +52,11 @@ describe('api client', () => {
 
 		setAuth(testUser, 'access-token', 'csrf-token');
 
-		await expect(api.post('/api/v1/channels', { name: 'General' })).resolves.toEqual({
+		await expect(api.post('/api/v2/channels', { name: 'General' })).resolves.toEqual({
 			saved: true,
 		});
 
-		expect(fetchMock).toHaveBeenCalledWith('http://localhost:8080/api/v1/channels', {
+		expect(fetchMock).toHaveBeenCalledWith('http://localhost:8080/api/v2/channels', {
 			method: 'POST',
 			body: JSON.stringify({ name: 'General' }),
 			headers: {
@@ -78,11 +78,11 @@ describe('api client', () => {
 
 		// storeRefreshToken is a no-op in browser context (isNative() returns false),
 		// so the refresh token is sent only via HttpOnly cookie (credentials: 'include').
-		storeRefreshToken('refresh-token');
+		await storeRefreshToken('refresh-token');
 
-		await expect(api.post('/api/v1/auth/refresh')).resolves.toEqual({ refreshed: true });
+		await expect(api.post('/api/v2/auth/refresh')).resolves.toEqual({ refreshed: true });
 
-		expect(fetchMock).toHaveBeenCalledWith('http://localhost:8080/api/v1/auth/refresh', {
+		expect(fetchMock).toHaveBeenCalledWith('http://localhost:8080/api/v2/auth/refresh', {
 			method: 'POST',
 			body: undefined,
 			headers: {
@@ -100,7 +100,7 @@ describe('api client', () => {
 		});
 		vi.stubGlobal('fetch', fetchMock);
 
-		await expect(api.delete('/api/v1/messages/message-1')).resolves.toBeUndefined();
+		await expect(api.delete('/api/v2/messages/message-1')).resolves.toBeUndefined();
 	});
 
 	it('throws ApiError using the response error message when available', async () => {
@@ -112,7 +112,7 @@ describe('api client', () => {
 		});
 		vi.stubGlobal('fetch', fetchMock);
 
-		await expect(api.get('/api/v1/admin')).rejects.toEqual(new ApiError(403, 'Denied'));
+		await expect(api.get('/api/v2/admin')).rejects.toEqual(new ApiError(403, 'Denied'));
 	});
 
 	it('falls back to a generic error message when the response body is not JSON', async () => {
@@ -124,6 +124,6 @@ describe('api client', () => {
 		});
 		vi.stubGlobal('fetch', fetchMock);
 
-		await expect(api.get('/api/v1/fail')).rejects.toEqual(new ApiError(500, 'Unknown error'));
+		await expect(api.get('/api/v2/fail')).rejects.toEqual(new ApiError(500, 'Unknown error'));
 	});
 });

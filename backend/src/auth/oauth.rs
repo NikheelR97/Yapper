@@ -5,6 +5,7 @@ use axum::{
 };
 use chrono::Utc;
 use serde::{Deserialize, Deserializer};
+use sqlx::Row;
 use std::time::Instant;
 use uuid::Uuid;
 
@@ -13,7 +14,7 @@ use crate::{
     AppState,
 };
 
-// ─── Discord user info ────────────────────────────────────────────────────────
+// â”€â”€â”€ Discord user info â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 #[derive(Debug, Deserialize)]
 struct DiscordUser {
@@ -25,7 +26,7 @@ struct DiscordUser {
     verified: Option<bool>,
 }
 
-// ─── Google user info ─────────────────────────────────────────────────────────
+// â”€â”€â”€ Google user info â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 #[derive(Debug, Deserialize)]
 struct GoogleUser {
@@ -36,7 +37,7 @@ struct GoogleUser {
     verified_email: Option<bool>,
 }
 
-// ─── OAuth state store ────────────────────────────────────────────────────────
+// â”€â”€â”€ OAuth state store â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /// Short-lived state tokens keyed by the random state value.
 pub type OAuthStateStore = dashmap::DashMap<String, Instant>;
@@ -119,7 +120,7 @@ fn validate_oauth_state(
     cookie_state.as_deref() == Some(expected_state) && state_store.remove(expected_state).is_some()
 }
 
-// ─── Redirect + Callback query params ─────────────────────────────────────────
+// â”€â”€â”€ Redirect + Callback query params â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /// Optional query params on the initial redirect endpoint (e.g. `?platform=desktop`).
 #[derive(Debug, Deserialize, Default)]
@@ -146,7 +147,7 @@ pub struct OAuthErrorParams {
     error_description: Option<String>,
 }
 
-// ─── Discord OAuth ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ Discord OAuth â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 pub async fn discord_redirect(
     State(state): State<AppState>,
@@ -290,7 +291,7 @@ pub async fn discord_callback(
     }
 }
 
-// ─── Google OAuth ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ Google OAuth â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 pub async fn google_redirect(
     State(state): State<AppState>,
@@ -423,7 +424,7 @@ pub async fn google_callback(
     }
 }
 
-// ─── Shared OAuth helpers ─────────────────────────────────────────────────────
+// â”€â”€â”€ Shared OAuth helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 struct OAuthUserInfo {
     provider_id: String,
@@ -435,16 +436,57 @@ struct OAuthUserInfo {
     provider_email_verified: bool,
 }
 
-/// User DTO for OAuth queries.
-#[derive(sqlx::FromRow)]
-struct OAuthUserRow {
-    id: Uuid,
-    #[allow(dead_code)]
-    is_new: bool,
-}
-
 pub struct ConsumedOAuthCode {
     pub user_id: Uuid,
+}
+
+pub(crate) async fn ensure_linked_identity(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    user_id: Uuid,
+    provider: &str,
+    provider_subject: &str,
+) -> AppResult<()> {
+    let existing_subject = sqlx::query_scalar::<_, String>(
+        "SELECT provider_subject \
+         FROM user_linked_identities \
+         WHERE user_id = $1 AND provider = $2 \
+         FOR UPDATE",
+    )
+    .bind(user_id)
+    .bind(provider)
+    .fetch_optional(&mut **tx)
+    .await?;
+
+    if let Some(existing_subject) = existing_subject {
+        if existing_subject == provider_subject {
+            return Ok(());
+        }
+
+        return Err(AppError::Conflict(format!(
+            "This account already has a different {provider} identity linked"
+        )));
+    }
+
+    sqlx::query(
+        r#"
+        INSERT INTO user_linked_identities (user_id, provider, provider_subject)
+        VALUES ($1, $2, $3)
+        "#,
+    )
+    .bind(user_id)
+    .bind(provider)
+    .bind(provider_subject)
+    .execute(&mut **tx)
+    .await
+    .map_err(|error| {
+        if is_unique_violation(&error) {
+            AppError::Conflict("That OAuth account is already linked elsewhere".into())
+        } else {
+            AppError::Database(error)
+        }
+    })?;
+
+    Ok(())
 }
 
 async fn issue_oauth_code(
@@ -452,106 +494,117 @@ async fn issue_oauth_code(
     frontend: &str,
     info: OAuthUserInfo,
 ) -> AppResult<axum::response::Response> {
-    let pool = state.db.pool();
-    let email = info.email.to_lowercase();
-
     if !info.provider_email_verified {
         return Ok(oauth_error_redirect("email_unverified"));
     }
 
     // Sanitize username: keep alphanumeric + underscore, max 32 chars
     let clean_username = sanitize_username(&info.username_hint);
+    let provider = info.provider;
+    let provider_subject = info.provider_id.trim().to_string();
+    let email = info.email.trim().to_lowercase();
+    let pool = state.db.pool();
+    let mut tx = pool.begin().await?;
 
-    // Upsert user: find by discord_id/google_id (stored in discord_id for discord,
-    // or by email for Google), or create new.
-    // We use a single discord_id column for all OAuth provider IDs prefixed by provider.
-    let provider_key = format!("{}:{}", info.provider, info.provider_id);
-
-    // Try find by provider key (stored in discord_id column for now)
-    let existing = sqlx::query_as!(
-        OAuthUserRow,
+    let existing_user_id = sqlx::query_scalar::<_, Uuid>(
         r#"
-        SELECT id, FALSE AS "is_new!"
-        FROM users
-        WHERE discord_id = $1 AND deleted_at IS NULL
+        SELECT uli.user_id
+        FROM user_linked_identities uli
+        JOIN users u ON u.id = uli.user_id
+        WHERE uli.provider = $1
+          AND uli.provider_subject = $2
+          AND u.deleted_at IS NULL
         "#,
-        provider_key,
     )
-    .fetch_optional(pool)
+    .bind(provider)
+    .bind(&provider_subject)
+    .fetch_optional(&mut *tx)
     .await?;
 
-    let (user_id, is_new) = if let Some(u) = existing {
-        // Known user — update avatar/display_name if changed
+    let (user_id, is_new) = if let Some(user_id) = existing_user_id {
         if let Some(ref avatar) = info.avatar_url {
-            sqlx::query!(
-                "UPDATE users SET avatar_url = $1, last_seen_at = NOW() WHERE id = $2",
-                avatar,
-                u.id,
-            )
-            .execute(pool)
-            .await?;
+            sqlx::query("UPDATE users SET avatar_url = $1, last_seen_at = NOW() WHERE id = $2")
+                .bind(avatar)
+                .bind(user_id)
+                .execute(&mut *tx)
+                .await?;
         }
-        (u.id, false)
+        (user_id, false)
     } else {
-        // Try find by email (link existing account)
-        let by_email = sqlx::query!(
-            "SELECT id, account_type, email_verified FROM users WHERE email = $1 AND deleted_at IS NULL",
-            email,
+        let by_email = sqlx::query(
+            "SELECT id, email_verified FROM users WHERE email = $1 AND deleted_at IS NULL",
         )
-        .fetch_optional(pool)
+        .bind(&email)
+        .fetch_optional(&mut *tx)
         .await?;
 
-        if let Some(u) = by_email {
-            if !u.email_verified {
+        if let Some(row) = by_email {
+            let email_verified: bool = row.try_get("email_verified")?;
+            if !email_verified {
+                tx.rollback().await.ok();
                 return Ok(oauth_error_redirect("email_verification_required"));
             }
-            // Link OAuth to existing email account
-            sqlx::query!(
-                "UPDATE users SET discord_id = $1, last_seen_at = NOW() WHERE id = $2",
-                provider_key,
-                u.id,
-            )
-            .execute(pool)
-            .await?;
-            (u.id, false)
+
+            let user_id: Uuid = row.try_get("id")?;
+            ensure_linked_identity(&mut tx, user_id, provider, &provider_subject).await?;
+
+            if let Some(ref avatar) = info.avatar_url {
+                sqlx::query("UPDATE users SET avatar_url = $1, last_seen_at = NOW() WHERE id = $2")
+                    .bind(avatar)
+                    .bind(user_id)
+                    .execute(&mut *tx)
+                    .await?;
+            }
+
+            (user_id, false)
         } else {
-            // Create new user
             let username = unique_username(pool, &clean_username).await?;
-            let user = sqlx::query!(
+            let row = sqlx::query(
                 r#"
                 INSERT INTO users
-                    (email, email_verified, username, display_name, avatar_url,
-                     discord_id, gdpr_consent_at)
-                VALUES ($1, TRUE, $2, $3, $4, $5, NOW())
-                RETURNING id, account_type
+                    (email, email_verified, username, display_name, avatar_url, gdpr_consent_at)
+                VALUES ($1, TRUE, $2, $3, $4, NOW())
+                RETURNING id
                 "#,
-                email,
-                username,
-                info.display_name,
-                info.avatar_url,
-                provider_key,
             )
-            .fetch_one(pool)
-            .await?;
-            (user.id, true)
+            .bind(&email)
+            .bind(&username)
+            .bind(&info.display_name)
+            .bind(&info.avatar_url)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|error| {
+                if is_unique_violation(&error) {
+                    AppError::Conflict("Email or username already taken".into())
+                } else {
+                    AppError::Database(error)
+                }
+            })?;
+
+            let user_id: Uuid = row.try_get("id")?;
+            ensure_linked_identity(&mut tx, user_id, provider, &provider_subject).await?;
+
+            (user_id, true)
         }
     };
 
     let oauth_code = new_oauth_login_code();
     let code_hash = super::handlers::sha256_hex(&oauth_code);
 
-    sqlx::query!(
+    sqlx::query(
         r#"
         INSERT INTO oauth_login_codes (code_hash, user_id, provider, is_new, expires_at)
         VALUES ($1, $2, $3, $4, NOW() + INTERVAL '5 minutes')
         "#,
-        code_hash,
-        user_id,
-        info.provider,
-        is_new,
     )
-    .execute(pool)
+    .bind(code_hash)
+    .bind(user_id)
+    .bind(provider)
+    .bind(is_new)
+    .execute(&mut *tx)
     .await?;
+
+    tx.commit().await?;
 
     let redirect_url = url::Url::parse_with_params(
         &format!("{}/oauth/callback", frontend),
@@ -567,6 +620,14 @@ async fn issue_oauth_code(
         Redirect::to(redirect_url.as_str()),
     )
         .into_response())
+}
+
+fn is_unique_violation(error: &sqlx::Error) -> bool {
+    error
+        .as_database_error()
+        .and_then(|database_error| database_error.code())
+        .map(|code| code == "23505")
+        .unwrap_or(false)
 }
 
 pub async fn consume_oauth_login_code(
@@ -612,7 +673,7 @@ async fn unique_username(pool: &sqlx::PgPool, base: &str) -> AppResult<String> {
     // Try appending 4 random digits up to 10 times
     for _ in 0..10 {
         let mut bytes = [0u8; 2];
-        getrandom::getrandom(&mut bytes).unwrap();
+        getrandom::getrandom(&mut bytes).expect("getrandom failed to generate random bytes");
         let suffix = (u16::from_le_bytes(bytes) % 9000 + 1000) as u32;
         let with_suffix = format!("{base}{suffix}");
         let taken = sqlx::query_scalar!(
@@ -650,7 +711,7 @@ fn sanitize_username(input: &str) -> String {
     }
 }
 
-// ─── Apple OAuth ──────────────────────────────────────────────────────────────
+// â”€â”€â”€ Apple OAuth â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const APPLE_AUTH_URL: &str = "https://appleid.apple.com/auth/authorize";
 const APPLE_TOKEN_URL: &str = "https://appleid.apple.com/auth/token";
@@ -734,7 +795,7 @@ pub struct AppleCallbackForm {
     code: Option<String>,
     state: Option<String>,
     id_token: Option<String>,
-    /// JSON string with name info — only present on the VERY FIRST authorization.
+    /// JSON string with name info â€” only present on the VERY FIRST authorization.
     user: Option<String>,
     error: Option<String>,
 }
@@ -924,4 +985,78 @@ fn oauth_error_redirect(reason: &str) -> axum::response::Response {
         Redirect::to(url.as_str()),
     )
         .into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ensure_linked_identity;
+    use sqlx::postgres::PgPoolOptions;
+    use sqlx::{PgPool, Row};
+    use uuid::Uuid;
+
+    async fn test_pool() -> Option<PgPool> {
+        let url = std::env::var("DATABASE_URL").ok()?;
+        let pool = PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&url)
+            .await
+            .ok()?;
+        if sqlx::migrate!("./migrations").run(&pool).await.is_err() {
+            return None;
+        }
+        Some(pool)
+    }
+
+    async fn insert_user(pool: &PgPool, suffix: &str) -> Uuid {
+        let row = sqlx::query(
+            "INSERT INTO users (email, username, display_name, account_type, parental_controls_enabled) \
+             VALUES ($1, $2, $3, 'standard', FALSE) RETURNING id",
+        )
+        .bind(format!("oauth_link_{suffix}@example.com"))
+        .bind(format!("oauth_link_{suffix}"))
+        .bind(format!("OAuth Link {suffix}"))
+        .fetch_one(pool)
+        .await
+        .expect("insert user");
+        row.try_get("id").expect("id")
+    }
+
+    #[tokio::test]
+    async fn linked_identity_allows_same_subject_reuse() {
+        let Some(pool) = test_pool().await else {
+            return;
+        };
+        let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
+        let user_id = insert_user(&pool, &suffix).await;
+        let mut tx = pool.begin().await.expect("begin");
+
+        ensure_linked_identity(&mut tx, user_id, "google", "same-subject")
+            .await
+            .expect("initial link");
+        ensure_linked_identity(&mut tx, user_id, "google", "same-subject")
+            .await
+            .expect("same subject should be idempotent");
+
+        tx.rollback().await.expect("rollback");
+    }
+
+    #[tokio::test]
+    async fn linked_identity_rejects_subject_mismatch_for_same_provider() {
+        let Some(pool) = test_pool().await else {
+            return;
+        };
+        let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
+        let user_id = insert_user(&pool, &suffix).await;
+        let mut tx = pool.begin().await.expect("begin");
+
+        ensure_linked_identity(&mut tx, user_id, "discord", "discord-old")
+            .await
+            .expect("initial link");
+        let err = ensure_linked_identity(&mut tx, user_id, "discord", "discord-new")
+            .await
+            .expect_err("subject mismatch should conflict");
+
+        assert!(matches!(err, crate::error::AppError::Conflict(_)));
+        tx.rollback().await.expect("rollback");
+    }
 }

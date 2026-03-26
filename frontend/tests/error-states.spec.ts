@@ -12,10 +12,10 @@ async function setupAuth(page: Parameters<typeof mockAuthEndpoints>[0]): Promise
 	const authData = buildMockAuthData({ device });
 	await setInstallationId(page, 'error-test-install');
 	await mockAuthEndpoints(page, authData);
-	await page.route(`**/api/v1/servers`, async (route) => {
+	await page.route(`**/api/v2/servers`, async (route) => {
 		await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
 	});
-	await page.route(`**/api/v1/conversations`, async (route) => {
+	await page.route(`**/api/v2/conversations`, async (route) => {
 		await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
 	});
 }
@@ -36,7 +36,7 @@ test.describe('Error states — 404', () => {
 
 	test('non-existent profile route shows error state', async ({ page }) => {
 		await setupAuth(page);
-		await page.route(`**/api/v1/users/by/nonexistent_user_xyz`, async (route) => {
+		await page.route(`**/api/v2/users/by/nonexistent_user_xyz`, async (route) => {
 			await route.fulfill({
 				status: 404,
 				contentType: 'application/json',
@@ -64,7 +64,7 @@ test.describe('Error states — network failure', () => {
 		await setupAuth(page);
 
 		// Simulate all explore API calls failing
-		await page.route(`**/api/v1/explore/**`, async (route) => {
+		await page.route(`**/api/v2/explore/**`, async (route) => {
 			await route.fulfill({
 				status: 503,
 				contentType: 'application/json',
@@ -92,7 +92,7 @@ test.describe('Error states — loading skeletons', () => {
 		await setupAuth(page);
 
 		// Delay the profile response
-		await page.route(`**/api/v1/users/by/slow_user`, async (route) => {
+		await page.route(`**/api/v2/users/by/slow_user`, async (route) => {
 			await new Promise((r) => setTimeout(r, 2_000));
 			await route.fulfill({
 				status: 200,

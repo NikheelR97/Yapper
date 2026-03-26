@@ -1,17 +1,17 @@
 /**
- * Support — user-submitted tickets forwarded to HubSpot CRM.
+ * Support â€” user-submitted tickets forwarded to HubSpot CRM.
  *
- * Routes (mounted under /api/v1/support):
- *   POST  /tickets          — create a ticket (DB insert + HubSpot ticket creation)
- *   GET   /tickets          — list the authenticated user's own tickets
- *   POST  /webhooks/hubspot — inbound webhook for HubSpot ticket status updates
+ * Routes (mounted under /api/v2/support):
+ *   POST  /tickets          â€” create a ticket (DB insert + HubSpot ticket creation)
+ *   GET   /tickets          â€” list the authenticated user's own tickets
+ *   POST  /webhooks/hubspot â€” inbound webhook for HubSpot ticket status updates
  *
  * HubSpot integration:
  *   - Requires HUBSPOT_ACCESS_TOKEN env var (Private App token).
  *   - If the var is absent the ticket is still saved locally; a warning is logged.
  *   - The HubSpot ticket ID is stored in support_tickets.hubspot_ticket_id.
  *   - Pipeline: default (0), Stage: New (1).
- *   - Priority mapping: low→LOW, medium→MEDIUM, high→HIGH, urgent→URGENT.
+ *   - Priority mapping: lowâ†’LOW, mediumâ†’MEDIUM, highâ†’HIGH, urgentâ†’URGENT.
  *   - Ticket type is prefixed in the subject: "[Bug]", "[Idea]", "[Improvement]".
  *   - Inbound webhooks verified via HMAC-SHA256 (HUBSPOT_CLIENT_SECRET).
  */
@@ -36,7 +36,7 @@ use crate::{
     AppState,
 };
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const HUBSPOT_TICKETS_API: &str = "https://api.hubapi.com/crm/v3/objects/tickets";
 const MAX_TICKETS_PER_USER: i64 = 50;
@@ -63,7 +63,7 @@ static SSN_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\b\d{3}-\d{2}-\d{4}\b").e
 static PAN_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"\b(?:\d[ -]*?){13,19}\b").expect("pan regex"));
 
-// ─── Router ───────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Router â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -72,18 +72,18 @@ pub fn router() -> Router<AppState> {
         .route("/webhooks/hubspot", post(hubspot_webhook))
 }
 
-// ─── Input / Output types ─────────────────────────────────────────────────────
+// â”€â”€â”€ Input / Output types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct CreateTicketInput {
     /// "bug" | "idea" | "improvement"
     ticket_type: String,
-    /// Short summary (1–200 chars)
+    /// Short summary (1â€“200 chars)
     subject: String,
-    /// Full description (1–2000 chars)
+    /// Full description (1â€“2000 chars)
     description: String,
-    /// "low" | "medium" | "high" | "urgent" — only meaningful for bugs
+    /// "low" | "medium" | "high" | "urgent" â€” only meaningful for bugs
     #[serde(default = "default_priority")]
     priority: String,
 }
@@ -92,7 +92,7 @@ fn default_priority() -> String {
     "medium".to_string()
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 fn validate_ticket_type(t: &str) -> bool {
     matches!(t, "bug" | "idea" | "improvement")
@@ -176,18 +176,18 @@ fn validate_input(body: &CreateTicketInput) -> AppResult<()> {
     }
     if body.subject.is_empty() || body.subject.len() > MAX_SUBJECT_LEN {
         return Err(AppError::BadRequest(format!(
-            "subject must be 1–{MAX_SUBJECT_LEN} characters"
+            "subject must be 1â€“{MAX_SUBJECT_LEN} characters"
         )));
     }
     if body.description.is_empty() || body.description.len() > MAX_DESCRIPTION_LEN {
         return Err(AppError::BadRequest(format!(
-            "description must be 1–{MAX_DESCRIPTION_LEN} characters"
+            "description must be 1â€“{MAX_DESCRIPTION_LEN} characters"
         )));
     }
     Ok(())
 }
 
-// ─── POST /tickets ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ POST /tickets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /// Creates a support ticket, stores it locally, and forwards it to HubSpot.
 async fn create_ticket(
@@ -246,7 +246,7 @@ async fn create_ticket(
     .execute(state.db.pool())
     .await?;
 
-    // Forward to HubSpot (best-effort — log and continue if it fails)
+    // Forward to HubSpot (best-effort â€” log and continue if it fails)
     let hubspot_id = forward_to_hubspot(HubspotTicketForward {
         local_id: ticket_id,
         ticket_type: &body.ticket_type,
@@ -303,7 +303,7 @@ async fn create_ticket(
     ))
 }
 
-// ─── GET /tickets ──────────────────────────────────────────────────────────────
+// â”€â”€â”€ GET /tickets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /// Returns the authenticated user's own submitted tickets (newest first, max 50).
 async fn list_tickets(
@@ -341,7 +341,7 @@ async fn list_tickets(
     Ok(Json(serde_json::json!({ "tickets": tickets })))
 }
 
-// ─── HubSpot forwarding ───────────────────────────────────────────────────────
+// â”€â”€â”€ HubSpot forwarding â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /// Sends the ticket to HubSpot CRM and returns the created HubSpot ticket ID.
 /// Returns an error string if HUBSPOT_ACCESS_TOKEN is not set or the API call fails.
@@ -414,7 +414,7 @@ async fn forward_to_hubspot(ticket: HubspotTicketForward<'_>) -> Result<String, 
         .ok_or_else(|| "HubSpot response missing id field".to_string())
 }
 
-// ─── HubSpot inbound webhook ─────────────────────────────────────────────────
+// â”€â”€â”€ HubSpot inbound webhook â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /// Maximum age of a HubSpot webhook timestamp before we reject it (5 minutes).
 const HUBSPOT_TIMESTAMP_MAX_AGE_SECS: i64 = 300;
@@ -467,7 +467,7 @@ async fn hubspot_webhook(
     body: Bytes,
 ) -> AppResult<impl IntoResponse> {
     let client_secret = std::env::var("HUBSPOT_CLIENT_SECRET").map_err(|_| {
-        tracing::warn!("HUBSPOT_CLIENT_SECRET not configured — rejecting webhook");
+        tracing::warn!("HUBSPOT_CLIENT_SECRET not configured â€” rejecting webhook");
         AppError::Forbidden
     })?;
 

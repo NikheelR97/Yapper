@@ -16,10 +16,10 @@ async function setupAuth(page: Parameters<typeof mockAuthEndpoints>[0]): Promise
 	const authData = buildMockAuthData({ device });
 	await setInstallationId(page, 'toast-test-install');
 	await mockAuthEndpoints(page, authData);
-	await page.route(`**/api/v1/servers`, async (route) => {
+	await page.route(`**/api/v2/servers`, async (route) => {
 		await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
 	});
-	await page.route(`**/api/v1/conversations`, async (route) => {
+	await page.route(`**/api/v2/conversations`, async (route) => {
 		await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
 	});
 }
@@ -29,7 +29,7 @@ async function setupAuth(page: Parameters<typeof mockAuthEndpoints>[0]): Promise
 test.describe('Toast notifications — success', () => {
 	test('export data action shows a success toast @smoke', async ({ page }) => {
 		await setupAuth(page);
-		await page.route(`**/api/v1/account/data-export`, async (route) => {
+		await page.route(`**/api/v2/account/data-export`, async (route) => {
 			await route.fulfill({
 				status: 200,
 				contentType: 'application/zip',
@@ -55,7 +55,7 @@ test.describe('Toast notifications — error', () => {
 	test('failed action shows an error toast or error state', async ({ page }) => {
 		await setupAuth(page);
 		// Make the export fail
-		await page.route(`**/api/v1/account/data-export`, async (route) => {
+		await page.route(`**/api/v2/account/data-export`, async (route) => {
 			await route.fulfill({
 				status: 500,
 				contentType: 'application/json',

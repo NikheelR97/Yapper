@@ -23,7 +23,7 @@ test.describe('Tauri deep links @desktop @regression', () => {
 		const authData = buildMockAuthData({ device });
 		await setInstallationId(page, 'tauri-deeplink-install');
 		await mockAuthEndpoints(page, authData, { devices: [device] });
-		await page.route('**/api/v1/servers', async (route) => {
+		await page.route('**/api/v2/servers', async (route) => {
 			await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
 		});
 		await page.route('**/api/v2/conversations', async (route) => {
@@ -32,7 +32,7 @@ test.describe('Tauri deep links @desktop @regression', () => {
 		await mockExploreEndpoints(page);
 
 		// Stub the invite-code lookup
-		await page.route('**/api/v1/servers/join/**', async (route) => {
+		await page.route('**/api/v2/servers/join/**', async (route) => {
 			await route.fulfill({
 				status: 200,
 				contentType: 'application/json',

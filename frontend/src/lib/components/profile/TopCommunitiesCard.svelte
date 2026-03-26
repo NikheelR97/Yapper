@@ -7,10 +7,10 @@
 
 	async function handleJoin(community: Community) {
 		try {
-			await api.post(`/api/v1/servers/${community.id}/join`);
+			await api.post(`/api/v2/servers/${community.id}/join`);
 			toast.success(`Joined ${community.name}!`);
-		} catch (e: any) {
-			toast.error(e.message ?? 'Failed to join server');
+		} catch (e: unknown) {
+			toast.error(e instanceof Error ? e.message : 'Failed to join server');
 		}
 	}
 

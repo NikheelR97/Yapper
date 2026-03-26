@@ -1,41 +1,40 @@
 /**
- * Cloudflare Pages Function — edge cache proxy for read-only explore endpoints.
+ * Cloudflare Pages Function - edge cache proxy for read-only explore endpoints.
  *
  * Caches responses from the Fly.io backend (jnb) at the edge for 5 minutes,
  * reducing latency for global users from ~150-300ms (origin RTT) to <50ms (edge hit).
  *
  * Cached endpoints:
- *   GET /api/v1/explore/trending-tags
- *   GET /api/v1/explore/communities
- *   GET /api/v1/explore/live-servers
+ *   GET /api/v2/explore/trending-tags
+ *   GET /api/v2/explore/communities
+ *   GET /api/v2/explore/live-servers
  *
  * Non-GET requests and search queries (which are user-specific) are passed through.
  */
 
-const ORIGIN = 'https://yapper-api.fly.dev';
-const CACHE_TTL = 300; // 5 minutes — matches backend trending tags cache
+import {
+	buildOriginUrl,
+	getExploreSubPath,
+	isCacheableExplorePath,
+} from './explore-proxy';
 
-// Only cache these specific sub-paths (no user-specific data)
-const CACHEABLE_PATHS = new Set([
-	'trending-tags',
-	'communities',
-	'live-servers',
-]);
+const ORIGIN = 'https://yapper-api.fly.dev';
+const CACHE_TTL = 300; // 5 minutes - matches backend trending tags cache
 
 export const onRequest: PagesFunction = async (context) => {
 	const { request } = context;
 
 	// Only cache GET requests
 	if (request.method !== 'GET') {
-		return fetch(`${ORIGIN}${new URL(request.url).pathname}`, request);
+		return fetch(buildOriginUrl(ORIGIN, new URL(request.url).pathname, ''), request);
 	}
 
 	const url = new URL(request.url);
-	const subPath = url.pathname.replace('/api/v1/explore/', '').split('/')[0];
+	const subPath = getExploreSubPath(url.pathname);
 
-	// Only cache known safe endpoints — search and top-yappers may vary per user
-	if (!CACHEABLE_PATHS.has(subPath)) {
-		return fetch(`${ORIGIN}${url.pathname}${url.search}`, {
+	// Only cache known safe endpoints - search and top-yappers may vary per user
+	if (!isCacheableExplorePath(subPath)) {
+		return fetch(buildOriginUrl(ORIGIN, url.pathname, url.search), {
 			headers: request.headers,
 		});
 	}
@@ -46,8 +45,8 @@ export const onRequest: PagesFunction = async (context) => {
 	const cached = await cache.match(cacheKey);
 	if (cached) return cached;
 
-	// Cache miss — fetch from origin
-	const originResponse = await fetch(`${ORIGIN}${url.pathname}${url.search}`, {
+	// Cache miss - fetch from origin
+	const originResponse = await fetch(buildOriginUrl(ORIGIN, url.pathname, url.search), {
 		headers: {
 			'Accept': 'application/json',
 		},

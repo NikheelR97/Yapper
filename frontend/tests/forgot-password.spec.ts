@@ -16,7 +16,7 @@ test.describe('Forgot password page', () => {
 
 	test.beforeEach(async ({ page }) => {
 		// Mock the reset endpoint so we don't need a live backend
-		await page.route(`**/api/v1/auth/forgot-password`, async (route) => {
+		await page.route(`**/api/v2/auth/forgot-password`, async (route) => {
 			await route.fulfill({
 				status: 200,
 				contentType: 'application/json',

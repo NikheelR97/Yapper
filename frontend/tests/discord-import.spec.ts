@@ -29,15 +29,15 @@ async function setupAuthWithDiscord(
 	await setInstallationId(page, 'discord-test-install');
 	await mockAuthEndpoints(page, authData);
 
-	await page.route(`**/api/v1/servers`, async (route) => {
+	await page.route(`**/api/v2/servers`, async (route) => {
 		await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
 	});
-	await page.route(`**/api/v1/conversations`, async (route) => {
+	await page.route(`**/api/v2/conversations`, async (route) => {
 		await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
 	});
 
 	// Mock the users/me endpoint with discord connection info
-	await page.route(`**/api/v1/users/me`, async (route) => {
+	await page.route(`**/api/v2/users/me`, async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
@@ -102,7 +102,7 @@ test.describe('Bot message display in channel @smoke', () => {
 		const serverId = 'srv-bot-test';
 		const channelId = 'ch-bot-test';
 
-		await page.route(`**/api/v1/servers`, async (route) => {
+		await page.route(`**/api/v2/servers`, async (route) => {
 			await route.fulfill({
 				status: 200,
 				contentType: 'application/json',
@@ -118,12 +118,12 @@ test.describe('Bot message display in channel @smoke', () => {
 			});
 		});
 
-		await page.route(`**/api/v1/conversations`, async (route) => {
+		await page.route(`**/api/v2/conversations`, async (route) => {
 			await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
 		});
 
 		// Mock channel messages with a bot plaintext message
-		await page.route(`**/api/v1/channels/${channelId}/messages**`, async (route) => {
+		await page.route(`**/api/v2/channels/${channelId}/messages**`, async (route) => {
 			await route.fulfill({
 				status: 200,
 				contentType: 'application/json',
@@ -157,7 +157,7 @@ test.describe('Bot message display in channel @smoke', () => {
 		});
 
 		// Mock users endpoint for bot identity
-		await page.route(`**/api/v1/servers/${serverId}/members**`, async (route) => {
+		await page.route(`**/api/v2/servers/${serverId}/members**`, async (route) => {
 			await route.fulfill({
 				status: 200,
 				contentType: 'application/json',
