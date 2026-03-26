@@ -9,7 +9,8 @@
  */
 
 import { get, writable } from 'svelte/store';
-import { authStore, refreshAccessToken } from '$stores/auth.js';
+import { goto } from '$app/navigation';
+import { authStore, clearAuth, refreshAccessToken } from '$stores/auth.js';
 import { WS_URL } from '$lib/env.js';
 
 type MessageHandler = (payload: unknown) => void;
@@ -241,6 +242,14 @@ function doConnect(): void {
 
 			case 'error':
 				console.warn('[WS] Server error:', frame.code, frame.message);
+				// Device revocation (4001) must be handled immediately at the WS layer,
+				// not delegated to optional layout handlers which may not yet be mounted.
+				if (frame.code === 4001) {
+					wsDisconnect();
+					clearAuth();
+					void goto('/login');
+					return;
+				}
 				handlers.get('ws_error')?.forEach((h) => h(frame));
 				break;
 		}

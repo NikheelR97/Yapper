@@ -100,31 +100,62 @@ test.describe('Multi-device — WS device revocation @multidevice @smoke', () =>
 	test('WS error frame (code 4001, Device revoked) clears session and redirects to /login', async ({
 		page,
 	}) => {
-		// Intercept WebSocket before the app opens one.
-		// Immediately sends 'ready', then after 1s sends an 'error' frame with code 4001.
+		// Replace WebSocket with a fully synthetic mock that never opens a real
+		// connection. The old mock extended the real WebSocket and relied on a real
+		// 'open' event, which was flaky in CI (no backend → open never fires).
 		await page.addInitScript(() => {
-			const OriginalWebSocket = window.WebSocket;
-			class MockWebSocket extends OriginalWebSocket {
-				constructor(url: string | URL, protocols?: string | string[]) {
-					super(url, protocols);
-					this.addEventListener('open', () => {
-						// Handshake: send 'ready' so wsStore.connected = true
-						(this as unknown as { dispatchFakeMessage: (data: string) => void })
-							.dispatchFakeMessage(JSON.stringify({ type: 'ready' }));
+			class MockWebSocket extends EventTarget {
+				static readonly CONNECTING = 0;
+				static readonly OPEN = 1;
+				static readonly CLOSING = 2;
+				static readonly CLOSED = 3;
+				readonly CONNECTING = 0;
+				readonly OPEN = 1;
+				readonly CLOSING = 2;
+				readonly CLOSED = 3;
 
-						// After a short delay, inject the device-revoked error frame
+				readyState = MockWebSocket.CONNECTING;
+				url: string;
+				protocol = '';
+				extensions = '';
+				bufferedAmount = 0;
+				binaryType: BinaryType = 'blob';
+				onopen: ((ev: Event) => void) | null = null;
+				onmessage: ((ev: MessageEvent) => void) | null = null;
+				onerror: ((ev: Event) => void) | null = null;
+				onclose: ((ev: CloseEvent) => void) | null = null;
+
+				constructor(url: string | URL, _protocols?: string | string[]) {
+					super();
+					this.url = url.toString();
+					// Simulate async open + ready, then inject device-revoked error
+					setTimeout(() => {
+						this.readyState = MockWebSocket.OPEN;
+						const openEv = new Event('open');
+						this.onopen?.(openEv);
+						this.dispatchEvent(openEv);
+						// Send 'ready' frame so wsStore.connected = true
+						this._injectMessage(JSON.stringify({ type: 'ready' }));
+						// After a delay, inject the device-revoked error frame
 						setTimeout(() => {
-							(this as unknown as { dispatchFakeMessage: (data: string) => void })
-								.dispatchFakeMessage(
-									JSON.stringify({ type: 'error', code: 4001, message: 'Device revoked' }),
-								);
+							this._injectMessage(
+								JSON.stringify({ type: 'error', code: 4001, message: 'Device revoked' }),
+							);
 						}, 800);
-					});
+					}, 50);
 				}
 
-				dispatchFakeMessage(data: string): void {
-					const event = new MessageEvent('message', { data });
-					this.dispatchEvent(event);
+				send(_data: string | ArrayBuffer | Blob | ArrayBufferView): void {
+					/* no-op */
+				}
+				close(_code?: number, _reason?: string): void {
+					this.readyState = MockWebSocket.CLOSED;
+				}
+
+				_injectMessage(data: string): void {
+					const ev = new MessageEvent('message', { data });
+					this.onmessage?.(ev);
+					this.dispatchEvent(ev);
 				}
 			}
 			window.WebSocket = MockWebSocket as unknown as typeof WebSocket;
