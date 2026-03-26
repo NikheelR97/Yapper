@@ -162,6 +162,10 @@ async fn get_me(auth: AuthUser, State(state): State<AppState>) -> AppResult<impl
         .as_deref()
         .map(|v| v.starts_with("google:"))
         .unwrap_or(false);
+    let apple_linked = discord_id_raw
+        .as_deref()
+        .map(|v| v.starts_with("apple:"))
+        .unwrap_or(false);
 
     Ok(Json(serde_json::json!({
         "id":                        row.try_get::<Uuid, _>("id").ok(),
@@ -178,7 +182,7 @@ async fn get_me(auth: AuthUser, State(state): State<AppState>) -> AppResult<impl
         "connections": {
             "discord": discord_linked,
             "google":  google_linked,
-            "apple":   false,
+            "apple":   apple_linked,
         },
         "created_at":                row.try_get::<chrono::DateTime<chrono::Utc>, _>("created_at")
                                         .ok().map(|t| t.to_rfc3339()),
