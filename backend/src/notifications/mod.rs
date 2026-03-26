@@ -51,6 +51,15 @@ struct RegisterPushTokenReq {
 
 // ─── Handlers ─────────────────────────────────────────────────────────────────
 
+/// PUT /api/v1/notifications/push-token — register or update a push token.
+///
+/// Enforces a per-user cap ([`MAX_PUSH_TOKENS_PER_USER`](crate::constants::MAX_PUSH_TOKENS_PER_USER));
+/// when the limit is reached the oldest token is evicted before inserting.
+///
+/// # Security invariants
+///
+/// * Requires a trusted device.
+/// * Token is stored per-device, not per-user — revoking a device clears its token.
 async fn register_push_token(
     auth: AuthDevice,
     State(state): State<AppState>,
@@ -69,6 +78,33 @@ async fn register_push_token(
         ));
     }
 
+    // Enforce per-user push token cap: if at limit, remove the oldest token
+    // before registering the new one. Prevents unbounded token accumulation.
+    let token_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM devices WHERE user_id = $1 AND push_token IS NOT NULL AND revoked_at IS NULL",
+    )
+    .bind(auth.user_id)
+    .fetch_one(state.db.pool())
+    .await?;
+
+    if token_count >= crate::constants::MAX_PUSH_TOKENS_PER_USER {
+        sqlx::query(
+            r#"
+            UPDATE devices SET push_token = NULL, push_platform = NULL
+            WHERE id = (
+                SELECT id FROM devices
+                WHERE user_id = $1 AND push_token IS NOT NULL AND revoked_at IS NULL AND id != $2
+                ORDER BY last_seen_at ASC NULLS FIRST
+                LIMIT 1
+            )
+            "#,
+        )
+        .bind(auth.user_id)
+        .bind(auth.device_id)
+        .execute(state.db.pool())
+        .await?;
+    }
+
     sqlx::query("UPDATE devices SET push_token = $1, push_platform = $2 WHERE id = $3")
         .bind(&req.token)
         .bind(&req.platform)
@@ -85,6 +121,7 @@ async fn register_push_token(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// DELETE /api/v1/notifications/push-token — clear the push token for the current device.
 async fn remove_push_token(
     auth: AuthDevice,
     State(state): State<AppState>,

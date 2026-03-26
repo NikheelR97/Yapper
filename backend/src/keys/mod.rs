@@ -54,6 +54,8 @@ static BACKUP_RETRIEVE_LIMITER: once_cell::sync::Lazy<KeyedLimiter<Uuid>> =
         )
     });
 
+/// Reject all-zero X25519 keys, which lie in a small subgroup and would
+/// produce predictable shared secrets.
 fn reject_trivial_x25519_key(bytes: &[u8], field: &str) -> AppResult<()> {
     if bytes.iter().all(|byte| *byte == 0) {
         return Err(AppError::BadRequest(format!(
@@ -63,6 +65,15 @@ fn reject_trivial_x25519_key(bytes: &[u8], field: &str) -> AppResult<()> {
     Ok(())
 }
 
+/// Verify that the signed prekey's Ed25519 signature was produced by the
+/// device's stored signing key. Prevents clients from uploading arbitrary
+/// prekeys that they cannot prove ownership of.
+///
+/// # E2EE contract
+///
+/// * The server never sees private keys. It only verifies that the public
+///   signed prekey was signed by the Ed25519 identity key the device previously
+///   uploaded. This prevents a compromised server from substituting prekeys.
 async fn verify_signed_prekey_signature(
     state: &AppState,
     user_id: Uuid,
@@ -111,6 +122,13 @@ struct UploadIdentityKeyReq {
     signing_public_key: String,
 }
 
+/// POST /api/v1/keys/identity — upload or rotate an X25519 + Ed25519 identity key pair.
+///
+/// # E2EE contract
+///
+/// * `dh_public_key` (X25519) is used in X3DH key agreement.
+/// * `signing_public_key` (Ed25519) is used to verify signed prekeys.
+/// * Both are public-only; the server never receives private keys.
 async fn upload_identity_key(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -168,6 +186,10 @@ struct UploadSignedPreKeyReq {
     signature: String,
 }
 
+/// POST /api/v1/keys/signed-prekey — upload a signed prekey (rotates weekly).
+///
+/// The Ed25519 signature over the X25519 public key is verified server-side
+/// against the device's stored signing key before persisting.
 async fn upload_signed_prekey(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -234,6 +256,15 @@ struct UploadOtpkReq {
     keys: Vec<OtpkItem>,
 }
 
+/// POST /api/v1/keys/one-time-prekeys — upload a batch of one-time prekeys.
+///
+/// Batch size is capped at [`MAX_OPK_BATCH`](crate::constants::MAX_OPK_BATCH).
+/// Each key is validated (32 bytes, non-trivial) and upserted in a single transaction.
+///
+/// # E2EE contract
+///
+/// * OPKs are consumed atomically via `FOR UPDATE SKIP LOCKED` during X3DH.
+///   Each OPK is used at most once, providing forward secrecy for the initial message.
 async fn upload_one_time_prekeys(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -280,6 +311,8 @@ async fn upload_one_time_prekeys(
 
 // ─── Get OPK Count ────────────────────────────────────────────────────────────
 
+/// GET /api/v1/keys/one-time-prekey-count — returns the number of unconsumed OPKs
+/// and a `low` flag (true when < 10 remain) so clients know when to replenish.
 async fn get_opk_count(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -321,6 +354,20 @@ struct KeyBundle {
     one_time_prekey: Option<String>,
 }
 
+/// GET /api/v1/keys/:user_id — fetch a user's public key bundle for X3DH.
+///
+/// Returns the identity key pair (DH + signing), latest signed prekey, and
+/// atomically consumes one OPK (if available) via `FOR UPDATE SKIP LOCKED`.
+///
+/// # Security invariants
+///
+/// * Access control: caller must share a DM conversation or server membership
+///   with the target user ([`require_key_bundle_access`]).
+/// * OPK consumption is atomic — concurrent requests never consume the same OPK.
+///
+/// # E2EE contract
+///
+/// * Only public keys are returned. The server never has access to private keys.
 async fn get_key_bundle(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -464,6 +511,15 @@ struct KeyBundleV2 {
     one_time_prekey: Option<String>,
 }
 
+/// PUT /api/v1/keys/backup — store an opaque PIN-encrypted key backup blob.
+///
+/// The server stores the blob as-is; it never sees the PIN or plaintext.
+/// Client encrypts: `PBKDF2(PIN, salt, 1_200_000) → AES-256-GCM key`.
+///
+/// # Security invariants
+///
+/// * Maximum blob size: 10 MB. Minimum: 45 bytes (salt + IV + 1 byte + tag).
+/// * Server cannot decrypt — zero-knowledge backup.
 async fn put_backup(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -501,6 +557,9 @@ async fn put_backup(
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }
 
+/// GET /api/v1/keys/backup — retrieve the PIN-encrypted key backup blob.
+///
+/// Rate-limited to 5 retrievals per hour per user to prevent offline PIN brute-force.
 async fn get_backup(auth: AuthUser, State(state): State<AppState>) -> AppResult<Json<BackupResp>> {
     // H-06: Rate limit backup retrieval to prevent PIN brute-force (5 attempts/hour/user)
     if BACKUP_RETRIEVE_LIMITER.check_key(&auth.user_id).is_err() {
@@ -528,6 +587,7 @@ async fn get_backup(auth: AuthUser, State(state): State<AppState>) -> AppResult<
     }))
 }
 
+/// POST /api/v2/keys/identity — v2 identity key upload (device-aware, trusted-only).
 async fn upload_identity_key_v2(
     auth: AuthDevice,
     State(state): State<AppState>,
@@ -547,6 +607,7 @@ async fn upload_identity_key_v2(
     .await
 }
 
+/// POST /api/v2/keys/signed-prekey — v2 signed prekey upload (device-aware, trusted-only).
 async fn upload_signed_prekey_v2(
     auth: AuthDevice,
     State(state): State<AppState>,
@@ -566,6 +627,7 @@ async fn upload_signed_prekey_v2(
     .await
 }
 
+/// POST /api/v2/keys/one-time-prekeys — v2 OPK batch upload (device-aware, trusted-only).
 async fn upload_one_time_prekeys_v2(
     auth: AuthDevice,
     State(state): State<AppState>,
@@ -585,6 +647,7 @@ async fn upload_one_time_prekeys_v2(
     .await
 }
 
+/// GET /api/v2/keys/one-time-prekey-count — v2 OPK count (device-scoped).
 async fn get_opk_count_v2(
     auth: AuthDevice,
     State(state): State<AppState>,
@@ -608,6 +671,17 @@ async fn get_opk_count_v2(
     ))
 }
 
+/// GET /api/v2/keys/:user_id/bundles — fetch key bundles for all (or filtered) devices.
+///
+/// Returns one bundle per non-revoked device. Optionally consumes an OPK per
+/// device when `consume_opk=true`. Device IDs can be filtered via `device_ids`
+/// query param (comma-separated, max [`MAX_DEVICE_IDS`](crate::constants::MAX_DEVICE_IDS)).
+///
+/// # Security invariants
+///
+/// * Requires a trusted device.
+/// * Access control via [`require_key_bundle_access`] (DM or shared server).
+/// * Device ID count capped to prevent query amplification.
 async fn get_key_bundles_v2(
     auth: AuthDevice,
     State(state): State<AppState>,
@@ -785,6 +859,13 @@ fn parse_device_ids_filter(value: Option<&str>) -> AppResult<Option<Vec<Uuid>>> 
                 .map_err(|_| AppError::BadRequest(format!("Invalid device_id {segment}")))
         })
         .collect::<Result<Vec<_>, _>>()?;
+
+    if parsed.len() > crate::constants::MAX_DEVICE_IDS {
+        return Err(AppError::BadRequest(format!(
+            "Too many device_ids (max {})",
+            crate::constants::MAX_DEVICE_IDS
+        )));
+    }
 
     if parsed.is_empty() {
         return Err(AppError::BadRequest(

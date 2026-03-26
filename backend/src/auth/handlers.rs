@@ -100,8 +100,11 @@ static EMAIL_VERIFY_IP_LIMITER: once_cell::sync::Lazy<KeyedLimiter<IpAddr>> =
         )
     });
 
-/// Evict stale entries from the auth-related keyed rate limiters.
-/// Called periodically from the global GC task to prevent unbounded memory growth.
+/// Evict stale entries from the auth-related keyed rate limiters
+/// (password reset IP/email and email verification IP).
+///
+/// Called periodically from the global GC task to prevent unbounded memory growth
+/// in the in-memory `governor` keyed state stores.
 pub fn gc_auth_rate_limiters() {
     PASSWORD_RESET_IP_LIMITER.retain_recent();
     PASSWORD_RESET_EMAIL_LIMITER.retain_recent();
@@ -110,6 +113,31 @@ pub fn gc_auth_rate_limiters() {
 
 // ─── Register ─────────────────────────────────────────────────────────────────
 
+/// Register a new user account with email and password.
+///
+/// Validates the request, checks username format (`[a-zA-Z0-9_]+`), enforces
+/// COPPA age gating (under-13 accounts must go through the parental flow),
+/// hashes the password with Argon2id, inserts the user, and issues a JWT
+/// session (access + refresh tokens).
+///
+/// A verification email is sent asynchronously (fire-and-forget).
+///
+/// # Arguments
+/// * `state` — shared application state (DB pool, JWT keys)
+/// * `req` — registration payload (username, email, password, optional display_name and date_of_birth)
+///
+/// # Returns
+/// `201 Created` with [`AuthResponse`] (access token, CSRF token, user DTO) and
+/// `Set-Cookie` headers for the refresh token and CSRF cookie.
+///
+/// # Errors
+/// * `AppError::BadRequest` — validation failure, invalid username format, or COPPA age violation
+/// * `AppError::Conflict` — username or email already taken
+/// * `AppError::Internal` — password hashing or DB failure
+///
+/// # Security invariants
+/// * Passwords are hashed with Argon2id (64MB, 3 iterations, 4 lanes) via semaphore-gated async
+/// * Users under 13 are rejected; they must use `POST /api/v1/parental/children`
 pub async fn register(
     State(state): State<AppState>,
     Json(req): Json<RegisterRequest>,
@@ -207,6 +235,13 @@ pub async fn register(
 
 // ─── Login ────────────────────────────────────────────────────────────────────
 
+/// POST /api/v1/auth/login — authenticate with email + password (legacy single-device).
+///
+/// # Security invariants
+///
+/// * Per-IP login rate limiting (5 attempts/15 min) to prevent credential stuffing.
+/// * Argon2id password verification via semaphore-gated async to cap CPU.
+/// * Constant-time error messages — does not reveal whether email exists.
 pub async fn login(
     State(state): State<AppState>,
     ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
@@ -294,6 +329,16 @@ pub async fn login(
 
 // ─── Refresh ──────────────────────────────────────────────────────────────────
 
+/// POST /api/v1/auth/refresh — exchange a refresh token for a new access token.
+///
+/// The refresh token is read from the `refresh_token` HttpOnly cookie (browser)
+/// or the `X-Refresh-Token` header (native Tauri/Capacitor clients).
+///
+/// # Security invariants
+///
+/// * Atomic token rotation: the old refresh token is revoked in the same
+///   `UPDATE ... WHERE revoked_at IS NULL RETURNING` query that validates it,
+///   preventing TOCTOU race conditions.
 pub async fn refresh(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -331,7 +376,7 @@ pub async fn refresh(
             // Token was not found or was already revoked.
             // Check if the token exists at all — if so, this is reuse detection.
             let exists = sqlx::query!(
-                "SELECT family_id FROM sessions WHERE token_hash = $1 AND user_id = $2",
+                "SELECT family_id, revoked_at FROM sessions WHERE token_hash = $1 AND user_id = $2",
                 token_hash,
                 claims.sub,
             )
@@ -339,18 +384,25 @@ pub async fn refresh(
             .await?;
 
             if let Some(row) = exists {
-                // Reuse detected: revoked token presented → invalidate entire family
-                sqlx::query!(
-                    "UPDATE sessions SET revoked_at = NOW() WHERE family_id = $1 AND revoked_at IS NULL",
-                    row.family_id,
-                )
-                .execute(pool)
-                .await?;
-                tracing::warn!(
-                    "Refresh token reuse detected for user {}. Family {} invalidated.",
-                    claims.sub,
-                    row.family_id
-                );
+                let is_recent_retry = row
+                    .revoked_at
+                    .map(|r| chrono::Utc::now().signed_duration_since(r).num_seconds() < 30)
+                    .unwrap_or(false);
+
+                if !is_recent_retry {
+                    // Reuse detected: revoked token presented → invalidate entire family
+                    sqlx::query!(
+                        "UPDATE sessions SET revoked_at = NOW() WHERE family_id = $1 AND revoked_at IS NULL",
+                        row.family_id,
+                    )
+                    .execute(pool)
+                    .await?;
+                    tracing::warn!(
+                        "Refresh token reuse detected for user {}. Family {} invalidated.",
+                        claims.sub,
+                        row.family_id
+                    );
+                }
             }
             return Err(AppError::Unauthorized);
         }
@@ -396,6 +448,7 @@ pub async fn refresh(
 
 // ─── Logout ───────────────────────────────────────────────────────────────────
 
+/// POST /api/v1/auth/logout — revoke the current refresh token and clear cookies.
 pub async fn logout(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -431,6 +484,7 @@ pub struct VerifyEmailQuery {
     pub token: String,
 }
 
+/// POST /api/v1/auth/verify-email — mark the account as email-verified using a one-time token.
 pub async fn verify_email(
     State(state): State<AppState>,
     ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,

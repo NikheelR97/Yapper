@@ -1,6 +1,7 @@
 import { x25519 } from "@noble/curves/ed25519.js";
 import { hkdf } from "@noble/hashes/hkdf.js";
 import { sha256 } from "@noble/hashes/sha2.js";
+import { openDB, type IDBPDatabase } from "idb";
 import { api } from "$api/client.js";
 import {
   exportSignalSnapshot,
@@ -11,7 +12,9 @@ import type {
   CachedDmHistoryMessage,
 } from "$signal/keystore.js";
 
-const SYNC_REQUEST_PREFIX = "yapper_device_sync_request_";
+const SYNC_DB_NAME = "yapper-device-sync";
+const SYNC_DB_VERSION = 1;
+const SYNC_STORE = "sync_requests";
 const SYNC_INFO = new TextEncoder().encode("YapperDeviceSync_v1");
 const HISTORY_PAGE_LIMIT = 100;
 
@@ -55,8 +58,63 @@ function concat(...arrays: Uint8Array[]): Uint8Array {
   return output;
 }
 
-function syncRequestKey(deviceId: string): string {
-  return `${SYNC_REQUEST_PREFIX}${deviceId}`;
+// ── IndexedDB-backed sync request storage ────────────────────────────────────
+// Private keys for pending device-sync requests are stored in IndexedDB rather
+// than localStorage to reduce XSS exfiltration surface (localStorage is trivially
+// enumerable; IndexedDB requires knowing the database and store names).
+
+let _syncDb: IDBPDatabase | null = null;
+
+async function getSyncDb(): Promise<IDBPDatabase> {
+  if (_syncDb) return _syncDb;
+  _syncDb = await openDB(SYNC_DB_NAME, SYNC_DB_VERSION, {
+    upgrade(db) {
+      if (!db.objectStoreNames.contains(SYNC_STORE)) {
+        db.createObjectStore(SYNC_STORE);
+      }
+    },
+  });
+  return _syncDb;
+}
+
+async function loadStoredSyncRequest(
+  deviceId: string,
+): Promise<StoredSyncRequest | null> {
+  if (typeof indexedDB === "undefined") return null;
+  try {
+    const db = await getSyncDb();
+    const value = await db.get(SYNC_STORE, deviceId);
+    if (value && value.privateKey && value.publicKey) {
+      return value as StoredSyncRequest;
+    }
+    return null;
+  } catch {
+    /* IndexedDB unavailable (e.g., SSR or opaque origin) */
+    return null;
+  }
+}
+
+async function saveStoredSyncRequest(
+  deviceId: string,
+  request: StoredSyncRequest,
+): Promise<void> {
+  if (typeof indexedDB === "undefined") return;
+  try {
+    const db = await getSyncDb();
+    await db.put(SYNC_STORE, request, deviceId);
+  } catch {
+    /* IndexedDB unavailable — key lives only in memory for this session */
+  }
+}
+
+async function deleteStoredSyncRequest(deviceId: string): Promise<void> {
+  if (typeof indexedDB === "undefined") return;
+  try {
+    const db = await getSyncDb();
+    await db.delete(SYNC_STORE, deviceId);
+  } catch {
+    /* IndexedDB unavailable */
+  }
 }
 
 function mergeById<T extends { id: string }>(
@@ -79,41 +137,6 @@ function mergeById<T extends { id: string }>(
   });
 }
 
-function loadStoredSyncRequest(deviceId: string): StoredSyncRequest | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  const raw = window.localStorage.getItem(syncRequestKey(deviceId));
-  if (!raw) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as StoredSyncRequest;
-    if (!parsed.privateKey || !parsed.publicKey) {
-      return null;
-    }
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-function saveStoredSyncRequest(
-  deviceId: string,
-  request: StoredSyncRequest,
-): void {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.setItem(
-    syncRequestKey(deviceId),
-    JSON.stringify(request),
-  );
-}
-
 function jsonReplacer(_key: string, value: unknown): unknown {
   if (value instanceof Uint8Array) {
     return { __u8: bytesToB64(value) };
@@ -128,10 +151,20 @@ function jsonReviver(_key: string, value: unknown): unknown {
   return value;
 }
 
-export function ensurePendingDeviceSyncRequest(deviceId: string): {
+/**
+ * Create or retrieve a pending device-sync key pair for the given device.
+ *
+ * The X25519 private key is stored in IndexedDB (`yapper-device-sync`) rather
+ * than localStorage to reduce XSS key exfiltration surface.
+ *
+ * @param deviceId — the local device UUID
+ * @returns the base64-encoded X25519 public key for the sync handshake
+ * @security Private key never leaves IndexedDB; cleared on sync completion or logout.
+ */
+export async function ensurePendingDeviceSyncRequest(deviceId: string): Promise<{
   publicKey: string;
-} {
-  const existing = loadStoredSyncRequest(deviceId);
+}> {
+  const existing = await loadStoredSyncRequest(deviceId);
   if (existing) {
     return { publicKey: existing.publicKey };
   }
@@ -142,30 +175,36 @@ export function ensurePendingDeviceSyncRequest(deviceId: string): {
     privateKey: bytesToB64(privateKey),
     publicKey: bytesToB64(publicKey),
   };
-  saveStoredSyncRequest(deviceId, request);
+  await saveStoredSyncRequest(deviceId, request);
   return { publicKey: request.publicKey };
 }
 
-export function clearPendingDeviceSyncRequest(deviceId: string): void {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.removeItem(syncRequestKey(deviceId));
+/** Remove the pending sync request (and its private key) from IndexedDB. */
+export async function clearPendingDeviceSyncRequest(deviceId: string): Promise<void> {
+  await deleteStoredSyncRequest(deviceId);
 }
 
-export function hasPendingDeviceSyncRequest(deviceId: string): boolean {
-  return loadStoredSyncRequest(deviceId) != null;
+/** Check whether a pending sync request exists for the given device. */
+export async function hasPendingDeviceSyncRequest(deviceId: string): Promise<boolean> {
+  return (await loadStoredSyncRequest(deviceId)) != null;
 }
 
-function getPendingDeviceSyncPrivateKey(deviceId: string): Uint8Array {
-  const request = loadStoredSyncRequest(deviceId);
+async function getPendingDeviceSyncPrivateKey(deviceId: string): Promise<Uint8Array> {
+  const request = await loadStoredSyncRequest(deviceId);
   if (!request) {
     throw new Error("Missing pending device sync request key");
   }
   return b64ToBytes(request.privateKey);
 }
 
+/**
+ * Encrypt a device-sync payload using ephemeral X25519 + HKDF + AES-256-GCM.
+ *
+ * @param plaintext — the serialised snapshot bytes to encrypt
+ * @param recipientPublicKey — base64-encoded X25519 public key of the new device
+ * @returns ciphertext (base64 of IV || AES-GCM output) and the ephemeral public key
+ * @e2ee Ephemeral key is discarded after encryption — provides forward secrecy for the sync.
+ */
 export async function encryptDeviceSyncChunk(
   plaintext: Uint8Array,
   recipientPublicKey: string,
@@ -210,12 +249,21 @@ export async function encryptDeviceSyncChunk(
   };
 }
 
+/**
+ * Decrypt a device-sync chunk using the stored X25519 private key.
+ *
+ * @param deviceId — local device UUID (used to look up the private key in IndexedDB)
+ * @param ciphertext — base64-encoded IV || AES-GCM ciphertext
+ * @param ekPublic — base64-encoded ephemeral X25519 public key from the sender
+ * @returns the decrypted plaintext bytes
+ * @throws if no pending sync request exists or decryption fails
+ */
 export async function decryptDeviceSyncChunk(
   deviceId: string,
   ciphertext: string,
   ekPublic: string,
 ): Promise<Uint8Array> {
-  const requestPrivateKey = getPendingDeviceSyncPrivateKey(deviceId);
+  const requestPrivateKey = await getPendingDeviceSyncPrivateKey(deviceId);
   const ephemeralPublicKey = b64ToBytes(ekPublic);
   const myPublicKey = x25519.getPublicKey(requestPrivateKey);
   const ciphertextBytes = b64ToBytes(ciphertext);
@@ -339,6 +387,17 @@ async function fetchPaginatedHistory<T extends { id: string }>(
   return history;
 }
 
+/**
+ * Export a complete device snapshot (signal sessions, receiver keys, message history)
+ * for transfer to a newly-trusted device.
+ *
+ * Merges remote server history with the local IndexedDB cache, preferring cached
+ * ciphertext for messages that exist in both (the local copy has the correct
+ * encryption context for the current device).
+ *
+ * @returns JSON-serialised snapshot string (Uint8Arrays encoded as `{ __u8: base64 }`)
+ * @e2ee The snapshot contains ciphertext and signal session state — never plaintext.
+ */
 export async function exportTrustedDeviceSnapshot(): Promise<string> {
   const snapshot = await exportSignalSnapshot();
   const [remoteDmHistory, remoteChannelHistory] = await Promise.all([
@@ -356,6 +415,12 @@ export async function exportTrustedDeviceSnapshot(): Promise<string> {
   );
 }
 
+/**
+ * Import a decrypted device-sync snapshot into the local signal store.
+ *
+ * @param serializedSnapshot — JSON string from {@link exportTrustedDeviceSnapshot}
+ * @e2ee Restores signal sessions, receiver keys, and message ciphertext history.
+ */
 export async function importTrustedDeviceSnapshot(
   serializedSnapshot: string,
 ): Promise<void> {

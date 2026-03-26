@@ -1,3 +1,4 @@
+import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
@@ -34,16 +35,16 @@ import {
 describe('device sync helpers', () => {
 	const deviceId = 'device-sync-test';
 
-	beforeEach(() => {
+	beforeEach(async () => {
 		apiGet.mockReset();
 		exportSignalSnapshot.mockReset();
 		importSignalSnapshot.mockReset();
-		clearPendingDeviceSyncRequest(deviceId);
+		await clearPendingDeviceSyncRequest(deviceId);
 	});
 
 	it('creates a pending sync request and decrypts encrypted chunks', async () => {
-		const request = ensurePendingDeviceSyncRequest(deviceId);
-		expect(hasPendingDeviceSyncRequest(deviceId)).toBe(true);
+		const request = await ensurePendingDeviceSyncRequest(deviceId);
+		expect(await hasPendingDeviceSyncRequest(deviceId)).toBe(true);
 
 		const plaintext = new TextEncoder().encode('trusted history snapshot');
 		const encrypted = await encryptDeviceSyncChunk(plaintext, request.publicKey);

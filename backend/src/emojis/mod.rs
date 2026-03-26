@@ -15,7 +15,7 @@
  *   6. Insert DB row + broadcast emoji_added WS event to all server members
  */
 use axum::{
-    extract::{Multipart, Path, State},
+    extract::{DefaultBodyLimit, Multipart, Path, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{delete, get},
@@ -55,6 +55,7 @@ pub fn server_emoji_router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_emojis).post(upload_emoji))
         .route("/:emoji_id", delete(delete_emoji))
+        .layer(DefaultBodyLimit::max(MAX_EMOJI_BYTES))
 }
 
 /// Empty stub router still needed for the top-level /api/v1/emojis nest in main.rs.
@@ -239,6 +240,24 @@ async fn enforce_emoji_limit(server_id: Uuid, state: &AppState) -> AppResult<()>
 
 async fn convert_to_webp(raw_bytes: Vec<u8>) -> AppResult<Vec<u8>> {
     tokio::task::spawn_blocking(move || -> AppResult<Vec<u8>> {
+        // Validate dimensions before full decompression to prevent decompression bombs.
+        {
+            use image::io::Reader as ImageReader;
+            let reader = ImageReader::new(Cursor::new(&raw_bytes))
+                .with_guessed_format()
+                .map_err(|e| AppError::BadRequest(format!("Unrecognised image format: {e}")))?;
+            let (w, h) = reader
+                .into_dimensions()
+                .map_err(|e| AppError::BadRequest(format!("Cannot read image dimensions: {e}")))?;
+            if w > crate::constants::MAX_IMAGE_DIMENSION
+                || h > crate::constants::MAX_IMAGE_DIMENSION
+                || w.saturating_mul(h) > crate::constants::MAX_DECODED_PIXELS
+            {
+                return Err(AppError::BadRequest(
+                    "Image dimensions exceed the maximum allowed".into(),
+                ));
+            }
+        }
         let img = image::load_from_memory(&raw_bytes)
             .map_err(|e| AppError::BadRequest(format!("Unsupported image format: {e}")))?;
         let resized = img.resize_exact(EMOJI_SIZE, EMOJI_SIZE, FilterType::Lanczos3);

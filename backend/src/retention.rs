@@ -1,3 +1,24 @@
+//! GDPR-compliant data retention worker.
+//!
+//! Runs on a background timer (`spawn_retention_worker` in `main.rs`) and purges
+//! stale operational records (expired sessions, consumed OPKs, delivered sync
+//! events) plus finalises soft-deleted user accounts after a 30-day hold window.
+//!
+//! # Retention policy
+//!
+//! | Record type              | Retention after expiry/revocation |
+//! |--------------------------|----------------------------------|
+//! | Sessions                 | 7 days                           |
+//! | OAuth login codes        | 7 days                           |
+//! | Password reset tokens    | 1 day                            |
+//! | Email verification       | 7 days                           |
+//! | Delivered sync events    | 7 days                           |
+//! | Stale sync events        | 30 days                          |
+//! | Trust requests           | 30 days                          |
+//! | Consumed OPKs            | 30 days                          |
+//! | Revoked device backups   | 30 days                          |
+//! | Soft-deleted accounts    | 30 days (then hard-delete or retain shell) |
+
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -16,6 +37,9 @@ pub const DELETED_ACCOUNT_HOLD_DAYS: i32 = 30;
 pub const DELETED_ACCOUNT_BASIS_PENDING: &str = "pending_purge_review";
 pub const DELETED_ACCOUNT_BASIS_REFERENTIAL_INTEGRITY: &str = "retained_referential_integrity";
 
+/// Check whether a soft-deleted user still has foreign-key references that
+/// prevent a hard `DELETE FROM users`. If blocking refs exist, the account
+/// shell is retained for referential integrity (GDPR Art. 17(3)(e)).
 async fn deleted_account_has_blocking_refs(
     user_id: Uuid,
     state: &AppState,
@@ -41,6 +65,16 @@ async fn deleted_account_has_blocking_refs(
     Ok(row.try_get::<bool, _>("has_blockers")?)
 }
 
+/// Finalise soft-deleted accounts whose hold window has elapsed.
+///
+/// For each candidate account:
+/// - If no blocking foreign-key refs remain → hard `DELETE`.
+/// - Otherwise → mark as `retained_referential_integrity` and push the
+///   hold window out by another 30 days to avoid re-evaluation every cycle.
+///
+/// # Returns
+///
+/// `(hard_deleted, retained_shells)` — counts for structured logging.
 async fn finalize_deleted_accounts(state: &AppState) -> anyhow::Result<(u64, u64)> {
     let candidate_rows = sqlx::query(
         "SELECT id
@@ -95,6 +129,19 @@ async fn finalize_deleted_accounts(state: &AppState) -> anyhow::Result<(u64, u64
     Ok((hard_deleted_users, retained_deleted_shells))
 }
 
+/// Run a single retention-cleanup pass over all stale operational records.
+///
+/// Purges expired sessions, consumed tokens, delivered sync events, consumed
+/// OPKs, revoked backups, and expired R2 media objects. Also finalises
+/// soft-deleted accounts past their hold window.
+///
+/// Designed to be called on a recurring timer (every 6 hours by default).
+/// Each operation is independent — a failure in one does not block the others.
+///
+/// # Errors
+///
+/// Returns `Err` if any database query fails. Partial progress is possible:
+/// earlier deletions succeed even if a later query errors.
 pub async fn run_cleanup(state: &AppState) -> anyhow::Result<()> {
     let pool = state.db.pool();
 

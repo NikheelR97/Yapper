@@ -440,8 +440,12 @@ fn verify_hubspot_signature(
     mac.update(body);
     mac.update(timestamp.as_bytes());
 
-    let expected = BASE64.encode(mac.finalize().into_bytes());
-    expected == signature
+    // Decode the provided signature and use HMAC's constant-time verify_slice
+    // instead of string comparison, which is vulnerable to timing attacks.
+    let Ok(sig_bytes) = BASE64.decode(signature) else {
+        return false;
+    };
+    mac.verify_slice(&sig_bytes).is_ok()
 }
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};

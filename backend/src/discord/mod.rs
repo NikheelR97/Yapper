@@ -65,13 +65,7 @@ async fn import_profile_start(
     let mut csrf_bytes = [0u8; 16];
     getrandom::getrandom(&mut csrf_bytes)
         .map_err(|e| AppError::Internal(anyhow::anyhow!("RNG error: {e}")))?;
-    let csrf_token: String = csrf_bytes
-        .iter()
-        .fold(String::with_capacity(32), |mut s, b| {
-            use std::fmt::Write;
-            write!(s, "{b:02x}").unwrap();
-            s
-        });
+    let csrf_token: String = crate::hex_encode(&csrf_bytes);
 
     // Store csrf_token → (user_id, timestamp) server-side.
     // The URL state param is the opaque token only — user_id never appears in the URL.
@@ -261,6 +255,25 @@ async fn download_and_reupload_avatar(
         anyhow::bail!("Avatar download too large: {} bytes", image_bytes.len());
     }
     let image_bytes = image_bytes.to_vec();
+
+    // Validate dimensions BEFORE full decompression to prevent decompression bombs.
+    // A malicious Discord avatar could be a tiny file with huge pixel dimensions.
+    {
+        use image::io::Reader as ImageReader;
+        use std::io::Cursor;
+        let reader = ImageReader::new(Cursor::new(&image_bytes))
+            .with_guessed_format()
+            .map_err(|e| anyhow::anyhow!("Unrecognised image format: {e}"))?;
+        let (w, h) = reader
+            .into_dimensions()
+            .map_err(|e| anyhow::anyhow!("Cannot read image dimensions: {e}"))?;
+        if w > crate::constants::MAX_IMAGE_DIMENSION || h > crate::constants::MAX_IMAGE_DIMENSION {
+            anyhow::bail!("Discord avatar dimensions {w}×{h} exceed limit");
+        }
+        if w.saturating_mul(h) > crate::constants::MAX_DECODED_PIXELS {
+            anyhow::bail!("Discord avatar pixel count exceeds limit");
+        }
+    }
 
     // Resize to 256×256 WebP in a blocking thread
     let webp_bytes = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<u8>> {

@@ -23,7 +23,7 @@
  *   DELETE /                                — soft-delete account
  */
 use axum::{
-    extract::{Multipart, Path, State},
+    extract::{DefaultBodyLimit, Multipart, Path, State},
     http::{header, StatusCode},
     response::IntoResponse,
     routing::{delete, get, patch, post, put},
@@ -88,10 +88,16 @@ static HEX_COLOR_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^#[0-9a-fA-F]{6}
 static HTTPS_URL_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^https://").unwrap());
 
 pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/me", get(get_me).patch(update_profile))
+    // Upload routes get a generous body limit matching the largest upload (banner = 5 MB).
+    // The handler-level parse_image_upload enforces per-route limits (2 MB avatar, 5 MB banner).
+    let upload_routes = Router::new()
         .route("/me/avatar", post(upload_avatar))
         .route("/me/banner", post(upload_banner))
+        .layer(DefaultBodyLimit::max(MAX_BANNER_UPLOAD_BYTES));
+
+    Router::new()
+        .route("/me", get(get_me).patch(update_profile))
+        .merge(upload_routes)
         .route("/me/username", patch(change_username))
         .route("/me/privacy", get(get_privacy).patch(update_privacy))
         .route("/me/connections/:provider", delete(unlink_connection))
@@ -128,7 +134,11 @@ pub fn account_router() -> Router<AppState> {
 
 // ─── Own profile ──────────────────────────────────────────────────────────────
 
-/// GET /api/v1/users/me
+/// GET /api/v1/users/me — return the authenticated user's full profile.
+///
+/// Includes linked OAuth `connections` (discord, google, apple) and account
+/// metadata (premium status, parental controls). Private fields like
+/// `password_hash` are never exposed.
 async fn get_me(auth: AuthUser, State(state): State<AppState>) -> AppResult<impl IntoResponse> {
     let row = sqlx::query(
         "SELECT id, username, display_name, avatar_url, banner_url, about_me, location,
@@ -177,10 +187,14 @@ async fn get_me(auth: AuthUser, State(state): State<AppState>) -> AppResult<impl
 
 // ─── Connected accounts ───────────────────────────────────────────────────────
 
-/// DELETE /api/v1/users/me/connections/:provider
+/// DELETE /api/v1/users/me/connections/:provider — unlink an OAuth provider.
 ///
-/// Unlinks a connected OAuth provider from the user's account.
-/// Sets discord_id = NULL. Both "discord" and "google" share the discord_id column.
+/// Clears the `discord_id` column (which stores `"provider:id"` for all providers).
+///
+/// # Security invariants
+///
+/// * Prevents unlinking the sole authentication method — returns 409 if the user
+///   has no password and no other linked provider. This avoids permanent lockout.
 async fn unlink_connection(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -206,15 +220,24 @@ async fn unlink_connection(
 
     let discord_id_raw: Option<String> = row.try_get("discord_id").ok().flatten();
     let password_hash: Option<String> = row.try_get("password_hash").ok().flatten();
+
+    let is_discord = discord_id_raw
+        .as_deref()
+        .map(|v| !v.starts_with("google:") && !v.starts_with("apple:"))
+        .unwrap_or(false);
+    let is_google = discord_id_raw
+        .as_deref()
+        .map(|v| v.starts_with("google:"))
+        .unwrap_or(false);
+    let is_apple = discord_id_raw
+        .as_deref()
+        .map(|v| v.starts_with("apple:"))
+        .unwrap_or(false);
+
     let is_linked = match provider.as_str() {
-        "discord" => discord_id_raw
-            .as_deref()
-            .map(|v| !v.starts_with("google:") && !v.starts_with("apple:"))
-            .unwrap_or(false),
-        "google" => discord_id_raw
-            .as_deref()
-            .map(|v| v.starts_with("google:"))
-            .unwrap_or(false),
+        "discord" => is_discord,
+        "google" => is_google,
+        "apple" => is_apple,
         _ => false,
     };
 
@@ -224,9 +247,19 @@ async fn unlink_connection(
         )));
     }
 
-    if password_hash.is_none() {
+    // Safety check: ensure at least one other auth method remains after unlinking.
+    // Without this, unlinking the last provider would strand the account.
+    let has_password = password_hash.is_some();
+    let other_provider_count = [is_discord, is_google, is_apple]
+        .iter()
+        .filter(|&&linked| linked)
+        .count()
+        - 1; // subtract the one being unlinked
+
+    if !has_password && other_provider_count == 0 {
         return Err(AppError::Conflict(
-            "Set a password before unlinking your only sign-in provider".into(),
+            "Set a password or link another provider before unlinking your only sign-in method"
+                .into(),
         ));
     }
 
@@ -475,6 +508,20 @@ async fn purge_account_r2_objects(user_id: Uuid, media_object_keys: &[String]) {
     }
 }
 
+/// DELETE /api/v1/account — soft-delete the user's account (GDPR Art. 17).
+///
+/// In a single transaction:
+/// 1. Anonymises PII (display_name, avatar, email, discord_id).
+/// 2. Purges all operational rows: devices, sessions, keys, OPKs, push tokens,
+///    support tickets, parental artefacts.
+/// 3. Soft-deletes all messages authored by the user (metadata is PII under GDPR).
+/// 4. Sets `deleted_at = NOW()` on the users row.
+///
+/// After a 30-day hold, the retention worker hard-deletes the shell (or retains
+/// it for referential integrity if foreign-key references still exist).
+///
+/// R2 media objects (avatar, banner, uploads) are deleted best-effort outside
+/// the transaction to avoid blocking on external I/O.
 async fn delete_account(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -585,6 +632,15 @@ async fn delete_account(
         .bind(auth.user_id)
         .execute(&mut *tx)
         .await?;
+    // GDPR: soft-delete all messages authored by this user. The ciphertext is
+    // unrecoverable once keys are purged above, but metadata (sender_id,
+    // timestamps) still constitutes personal data under GDPR Art. 17.
+    sqlx::query(
+        "UPDATE messages SET deleted_at = NOW() WHERE sender_id = $1 AND deleted_at IS NULL",
+    )
+    .bind(auth.user_id)
+    .execute(&mut *tx)
+    .await?;
     sqlx::query("DELETE FROM sender_key_distributions WHERE from_user = $1 OR to_user = $1")
         .bind(auth.user_id)
         .execute(&mut *tx)
@@ -2113,6 +2169,17 @@ pub async fn require_dm_access(
     Ok(())
 }
 
+/// Verify that `requester_id` may fetch the key bundle of `target_id`.
+///
+/// Access is granted if any of:
+/// 1. Requester is fetching their own keys.
+/// 2. Both users share at least one server membership.
+/// 3. Both users share a DM conversation.
+///
+/// # Security invariants
+///
+/// * Prevents arbitrary key-bundle enumeration — a user can only fetch keys
+///   for peers they already have a social relationship with.
 pub async fn require_key_bundle_access(
     requester_id: Uuid,
     target_id: Uuid,
@@ -2198,8 +2265,34 @@ fn is_supported_image_content_type(content_type: &str) -> bool {
     )
 }
 
+/// Read image dimensions without full decompression. Rejects images that
+/// exceed `MAX_IMAGE_DIMENSION` in either axis or `MAX_DECODED_PIXELS` total,
+/// preventing decompression-bomb OOM on the 256 MB VM.
+fn validate_image_dimensions(data: &[u8]) -> AppResult<(u32, u32)> {
+    use image::io::Reader as ImageReader;
+    let reader = ImageReader::new(Cursor::new(data))
+        .with_guessed_format()
+        .map_err(|e| AppError::BadRequest(format!("Unrecognised image format: {e}")))?;
+    let (w, h) = reader
+        .into_dimensions()
+        .map_err(|e| AppError::BadRequest(format!("Cannot read image dimensions: {e}")))?;
+    if w > crate::constants::MAX_IMAGE_DIMENSION || h > crate::constants::MAX_IMAGE_DIMENSION {
+        return Err(AppError::BadRequest(format!(
+            "Image dimensions {w}×{h} exceed the {max}×{max} limit",
+            max = crate::constants::MAX_IMAGE_DIMENSION,
+        )));
+    }
+    if w.saturating_mul(h) > crate::constants::MAX_DECODED_PIXELS {
+        return Err(AppError::BadRequest(
+            "Image pixel count exceeds the maximum allowed".into(),
+        ));
+    }
+    Ok((w, h))
+}
+
 async fn transcode_avatar_webp(raw_bytes: Vec<u8>) -> AppResult<Vec<u8>> {
     tokio::task::spawn_blocking(move || -> AppResult<Vec<u8>> {
+        validate_image_dimensions(&raw_bytes)?;
         let img = image::load_from_memory(&raw_bytes)
             .map_err(|e| AppError::BadRequest(format!("Unsupported image format: {e}")))?;
 
@@ -2222,6 +2315,7 @@ async fn transcode_avatar_webp(raw_bytes: Vec<u8>) -> AppResult<Vec<u8>> {
 
 async fn transcode_banner_webp(raw_bytes: Vec<u8>) -> AppResult<Vec<u8>> {
     tokio::task::spawn_blocking(move || -> AppResult<Vec<u8>> {
+        validate_image_dimensions(&raw_bytes)?;
         let img = image::load_from_memory(&raw_bytes)
             .map_err(|e| AppError::BadRequest(format!("Unsupported image format: {e}")))?;
 
@@ -2442,6 +2536,113 @@ mod tests {
             }
             other => panic!("unexpected error: {other:?}"),
         }
+    }
+
+    #[test]
+    fn validate_image_dimensions_accepts_small_png() {
+        let png = tiny_png_bytes(); // 2×2 — well within limits
+        let (w, h) = validate_image_dimensions(&png).expect("small png should pass validation");
+        assert_eq!(w, 2);
+        assert_eq!(h, 2);
+    }
+
+    #[test]
+    fn validate_image_dimensions_rejects_oversized_dimension() {
+        // Craft a minimal PNG with a huge width (50000) in the IHDR chunk.
+        // PNG format: 8-byte signature, then IHDR chunk with width/height as u32 BE.
+        let png = craft_png_header(50_000, 1);
+        let err = validate_image_dimensions(&png).expect_err("huge dimension must be rejected");
+        match err {
+            AppError::BadRequest(msg) => {
+                assert!(
+                    msg.contains("exceed"),
+                    "error should mention exceeding limit, got: {msg}"
+                );
+            }
+            other => panic!("unexpected error variant: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_image_dimensions_rejects_pixel_count_bomb() {
+        // 4096×4097 — each dimension is within MAX_IMAGE_DIMENSION (4096) individually,
+        // but the product (16,781,312) exceeds MAX_DECODED_PIXELS (4096×4096 = 16,777,216).
+        // This verifies the pixel-count check catches decompression bombs where both
+        // dimensions are just under the single-axis limit.
+        let png = craft_png_header(4096, 4097);
+        let err = validate_image_dimensions(&png).expect_err("pixel bomb must be rejected");
+        match err {
+            AppError::BadRequest(msg) => {
+                assert!(
+                    msg.contains("pixel count") || msg.contains("exceed"),
+                    "error should mention pixel count or exceed, got: {msg}"
+                );
+            }
+            other => panic!("unexpected error variant: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn validate_image_dimensions_rejects_nonsense_bytes() {
+        let garbage = b"not an image at all";
+        validate_image_dimensions(garbage).expect_err("garbage bytes must be rejected");
+    }
+
+    /// Craft a minimal valid PNG file with the given dimensions in the IHDR chunk.
+    /// The image data is a valid (but minimal) IDAT so that `into_dimensions()` can
+    /// parse the header without error.
+    fn craft_png_header(width: u32, height: u32) -> Vec<u8> {
+        let mut buf = Vec::new();
+
+        // PNG signature
+        buf.extend_from_slice(&[137, 80, 78, 71, 13, 10, 26, 10]);
+
+        // IHDR chunk: 13 bytes of data
+        let mut ihdr_data = Vec::new();
+        ihdr_data.extend_from_slice(&width.to_be_bytes());
+        ihdr_data.extend_from_slice(&height.to_be_bytes());
+        ihdr_data.push(8); // bit depth
+        ihdr_data.push(2); // color type (RGB)
+        ihdr_data.push(0); // compression
+        ihdr_data.push(0); // filter
+        ihdr_data.push(0); // interlace
+        write_png_chunk(&mut buf, b"IHDR", &ihdr_data);
+
+        // Minimal IDAT chunk (empty deflate stream: single block, no data)
+        let idat_data = [
+            0x08, 0xd7, 0x01, 0x00, 0x00, 0xff, 0xff, 0x00, 0x01, 0x00, 0x01,
+        ];
+        write_png_chunk(&mut buf, b"IDAT", &idat_data);
+
+        // IEND chunk
+        write_png_chunk(&mut buf, b"IEND", &[]);
+
+        buf
+    }
+
+    fn write_png_chunk(buf: &mut Vec<u8>, chunk_type: &[u8; 4], data: &[u8]) {
+        buf.extend_from_slice(&(data.len() as u32).to_be_bytes());
+        buf.extend_from_slice(chunk_type);
+        buf.extend_from_slice(data);
+        // CRC32 over chunk_type + data (ISO 3309 / PNG spec)
+        let crc = png_crc32(chunk_type, data);
+        buf.extend_from_slice(&crc.to_be_bytes());
+    }
+
+    /// Minimal CRC32 (ISO 3309) for PNG chunk checksums in tests.
+    fn png_crc32(chunk_type: &[u8; 4], data: &[u8]) -> u32 {
+        let mut crc: u32 = 0xFFFF_FFFF;
+        for &byte in chunk_type.iter().chain(data.iter()) {
+            crc ^= byte as u32;
+            for _ in 0..8 {
+                if crc & 1 != 0 {
+                    crc = (crc >> 1) ^ 0xEDB8_8320;
+                } else {
+                    crc >>= 1;
+                }
+            }
+        }
+        crc ^ 0xFFFF_FFFF
     }
 
     #[test]

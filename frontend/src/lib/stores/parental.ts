@@ -116,7 +116,7 @@ export async function loadAlerts() {
 					createdAt: sj.created_at,
 				});
 			}
-		} catch {}
+		} catch { /* failed to load pending approvals for this child — skip */ }
 	}
 	parentalStore.update((s) => ({ ...s, alerts }));
 }
@@ -144,7 +144,7 @@ export async function loadActivity(childId: string) {
 			...s,
 			activity: { ...s.activity, [childId]: activity },
 		}));
-	} catch {}
+	} catch { /* overview endpoint failed — activity data unavailable */ }
 }
 
 export async function approveAlert(alertId: string, type: 'friend_request' | 'server_join') {

@@ -262,14 +262,7 @@ async fn create_bot_app_and_token(
     let mut raw_bytes = [0u8; TOKEN_BYTES];
     getrandom::getrandom(&mut raw_bytes)
         .map_err(|e| AppError::Internal(anyhow::anyhow!("RNG error: {e}")))?;
-    let raw_token: String =
-        raw_bytes
-            .iter()
-            .fold(String::with_capacity(TOKEN_BYTES * 2), |mut s, b| {
-                use std::fmt::Write;
-                write!(s, "{b:02x}").unwrap();
-                s
-            });
+    let raw_token: String = crate::hex_encode(&raw_bytes);
     let token_hash = format!("{:x}", Sha256::digest(raw_token.as_bytes()));
 
     sqlx::query("INSERT INTO bot_tokens (bot_app_id, token_hash) VALUES ($1, $2)")
