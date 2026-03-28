@@ -15,7 +15,7 @@
     "test:setup-auth": "node tests/setup-auth.mjs",
     "test:e2e:seed:devices": "dotenv -e .env.test -- node tests/seed-devices.mjs",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "lint": "eslint . && svelte-check --tsconfig ./tsconfig.json",
+    "lint": "svelte-kit sync && eslint . && svelte-check --tsconfig ./tsconfig.json",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "tauri": "tauri"
@@ -64,6 +64,7 @@
     "vitest": "^4.1.0"
   },
   "overrides": {
+    "brace-expansion": "^5.0.5",
     "cookie": "^0.7.0",
     "serialize-javascript": "^7.0.3"
   }

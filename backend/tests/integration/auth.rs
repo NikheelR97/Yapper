@@ -88,7 +88,11 @@ where
     panic!("websocket did not close");
 }
 
-async fn wait_for_ws_event_type<S>(ws: &mut S, event_type: &str, timeout: Duration) -> serde_json::Value
+async fn wait_for_ws_event_type<S>(
+    ws: &mut S,
+    event_type: &str,
+    timeout: Duration,
+) -> serde_json::Value
 where
     S: futures::Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
 {
@@ -404,8 +408,7 @@ async fn ws_reauth_refreshes_same_user_same_device_session(pool: PgPool) {
     };
     let pong_body: serde_json::Value = serde_json::from_str(&pong_text).expect("valid pong json");
     assert_eq!(
-        pong_body["type"],
-        "pong",
+        pong_body["type"], "pong",
         "expected pong after reauth, got frame: {pong_body}"
     );
 }
