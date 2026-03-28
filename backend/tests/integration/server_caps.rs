@@ -8,7 +8,9 @@ use axum_test::TestServer;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-async fn build_server_caps_test_server(pool: PgPool) -> Option<(yapper_server::AppState, TestServer)> {
+async fn build_server_caps_test_server(
+    pool: PgPool,
+) -> Option<(yapper_server::AppState, TestServer)> {
     spawn_test_server_with_pool(pool).await
 }
 
@@ -93,7 +95,10 @@ async fn server_slug_is_unique_for_same_name(pool: PgPool) {
         .await
         .expect("server b slug");
 
-    assert_ne!(slug_a, slug_b, "same-name servers should still get unique slugs");
+    assert_ne!(
+        slug_a, slug_b,
+        "same-name servers should still get unique slugs"
+    );
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -144,17 +149,21 @@ async fn server_member_cap_is_atomic_under_concurrent_joins(pool: PgPool) {
     let joiner_b_client = TestClient::from_session(&concurrent_server, &joiner_b_session);
     let join_path = format!("/api/v2/servers/{server_id}/join");
 
-    let join_a = async {
-        joiner_a_client.post(&join_path).await
-    };
-    let join_b = async {
-        joiner_b_client.post(&join_path).await
-    };
+    let join_a = async { joiner_a_client.post(&join_path).await };
+    let join_b = async { joiner_b_client.post(&join_path).await };
 
     let (resp_a, resp_b) = tokio::join!(join_a, join_b);
     let statuses = [resp_a.status_code().as_u16(), resp_b.status_code().as_u16()];
-    assert!(statuses.contains(&200), "one join should succeed: {:?}", statuses);
-    assert!(statuses.contains(&403), "one join should be rejected at cap: {:?}", statuses);
+    assert!(
+        statuses.contains(&200),
+        "one join should succeed: {:?}",
+        statuses
+    );
+    assert!(
+        statuses.contains(&403),
+        "one join should be rejected at cap: {:?}",
+        statuses
+    );
 
     let member_count: i64 = sqlx::query_scalar("SELECT member_count FROM servers WHERE id = $1")
         .bind(server_id)
@@ -208,8 +217,13 @@ async fn parental_server_join_respects_cap_and_rolls_back_approval(pool: PgPool)
         .and_then(|value| value.parse().ok())
         .expect("missing child id");
 
-    let child_session =
-        login_test_session(&server, &child_email, &child_password, &format!("child_{suffix}")).await;
+    let child_session = login_test_session(
+        &server,
+        &child_email,
+        &child_password,
+        &format!("child_{suffix}"),
+    )
+    .await;
     let child_client = TestClient::from_session(&server, &child_session);
 
     let server_id = create_public_server(&parent_client, &format!("Parental Cap {suffix}")).await;
@@ -246,7 +260,11 @@ async fn parental_server_join_respects_cap_and_rolls_back_approval(pool: PgPool)
 
     let join_path = format!("/api/v2/servers/{server_id}/join");
     let join = child_client.post(&join_path).await;
-    assert!(join.status_code().is_success(), "child join should create a pending request: {}", join.text());
+    assert!(
+        join.status_code().is_success(),
+        "child join should create a pending request: {}",
+        join.text()
+    );
     let join_body: serde_json::Value = join.json();
     assert_eq!(join_body["status"], "pending_approval");
 
@@ -261,15 +279,19 @@ async fn parental_server_join_respects_cap_and_rolls_back_approval(pool: PgPool)
 
     let approve_path = format!("/api/v2/parental/server-joins/{pending_id}/approve");
     let approve = parent_client.patch(&approve_path).await;
-    assert_eq!(approve.status_code().as_u16(), 403, "approval should fail at cap: {}", approve.text());
+    assert_eq!(
+        approve.status_code().as_u16(),
+        403,
+        "approval should fail at cap: {}",
+        approve.text()
+    );
 
-    let pending_status: String = sqlx::query_scalar(
-        "SELECT status FROM pending_server_joins WHERE id = $1",
-    )
-    .bind(pending_id)
-    .fetch_one(state.db.pool())
-    .await
-    .expect("load pending status");
+    let pending_status: String =
+        sqlx::query_scalar("SELECT status FROM pending_server_joins WHERE id = $1")
+            .bind(pending_id)
+            .fetch_one(state.db.pool())
+            .await
+            .expect("load pending status");
     assert_eq!(pending_status, "pending");
 
     let member_count: i64 = sqlx::query_scalar("SELECT member_count FROM servers WHERE id = $1")
@@ -312,7 +334,11 @@ async fn parental_server_join_requests_are_deduplicated(pool: PgPool) {
             "date_of_birth": "2015-03-26",
         }))
         .await;
-    assert!(child_resp.status_code().is_success(), "child creation failed: {}", child_resp.text());
+    assert!(
+        child_resp.status_code().is_success(),
+        "child creation failed: {}",
+        child_resp.text()
+    );
     let child_body: serde_json::Value = child_resp.json();
     let child_id: Uuid = child_body["child_id"]
         .as_str()
@@ -328,12 +354,17 @@ async fn parental_server_join_requests_are_deduplicated(pool: PgPool) {
     .await;
     let child_client = TestClient::from_session(&server, &child_session);
 
-    let server_id = create_public_server(&parent_client, &format!("Pending Join Dedup {suffix}")).await;
+    let server_id =
+        create_public_server(&parent_client, &format!("Pending Join Dedup {suffix}")).await;
     let join_path = format!("/api/v2/servers/{server_id}/join");
 
     for _ in 0..2 {
         let response = child_client.post(&join_path).await;
-        assert!(response.status_code().is_success(), "join intercept failed: {}", response.text());
+        assert!(
+            response.status_code().is_success(),
+            "join intercept failed: {}",
+            response.text()
+        );
     }
 
     let pending_count: i64 = sqlx::query_scalar(
@@ -370,7 +401,11 @@ async fn invite_use_is_consumed_only_after_approved_membership(pool: PgPool) {
             "date_of_birth": "2015-03-26",
         }))
         .await;
-    assert!(child_resp.status_code().is_success(), "child creation failed: {}", child_resp.text());
+    assert!(
+        child_resp.status_code().is_success(),
+        "child creation failed: {}",
+        child_resp.text()
+    );
     let child_body: serde_json::Value = child_resp.json();
     let child_id: Uuid = child_body["child_id"]
         .as_str()
@@ -386,23 +421,30 @@ async fn invite_use_is_consumed_only_after_approved_membership(pool: PgPool) {
     .await;
     let child_client = TestClient::from_session(&server, &child_session);
 
-    let server_id = create_public_server(&parent_client, &format!("Invite Approval {suffix}")).await;
+    let server_id =
+        create_public_server(&parent_client, &format!("Invite Approval {suffix}")).await;
     let invite_code = create_invite(&parent_client, server_id, 1).await;
 
     let join_path = format!("/api/v2/servers/join/{invite_code}");
     let join = child_client.post(&join_path).await;
-    assert!(join.status_code().is_success(), "invite join failed: {}", join.text());
+    assert!(
+        join.status_code().is_success(),
+        "invite join failed: {}",
+        join.text()
+    );
     let join_body: serde_json::Value = join.json();
     assert_eq!(join_body["status"], "pending_approval");
 
-    let uses_before: i32 = sqlx::query_scalar(
-        "SELECT uses FROM server_invite_links WHERE code = $1",
-    )
-    .bind(&invite_code)
-    .fetch_one(state.db.pool())
-    .await
-    .expect("invite uses before approval");
-    assert_eq!(uses_before, 0, "pending approval should not consume invite use");
+    let uses_before: i32 =
+        sqlx::query_scalar("SELECT uses FROM server_invite_links WHERE code = $1")
+            .bind(&invite_code)
+            .fetch_one(state.db.pool())
+            .await
+            .expect("invite uses before approval");
+    assert_eq!(
+        uses_before, 0,
+        "pending approval should not consume invite use"
+    );
 
     let pending_id: Uuid = sqlx::query_scalar(
         "SELECT id FROM pending_server_joins \
@@ -417,14 +459,21 @@ async fn invite_use_is_consumed_only_after_approved_membership(pool: PgPool) {
 
     let approve_path = format!("/api/v2/parental/server-joins/{pending_id}/approve");
     let approve = parent_client.patch(&approve_path).await;
-    assert_eq!(approve.status_code().as_u16(), 204, "approval failed: {}", approve.text());
+    assert_eq!(
+        approve.status_code().as_u16(),
+        204,
+        "approval failed: {}",
+        approve.text()
+    );
 
-    let uses_after: i32 = sqlx::query_scalar(
-        "SELECT uses FROM server_invite_links WHERE code = $1",
-    )
-    .bind(&invite_code)
-    .fetch_one(state.db.pool())
-    .await
-    .expect("invite uses after approval");
-    assert_eq!(uses_after, 1, "successful approval should consume invite use exactly once");
+    let uses_after: i32 =
+        sqlx::query_scalar("SELECT uses FROM server_invite_links WHERE code = $1")
+            .bind(&invite_code)
+            .fetch_one(state.db.pool())
+            .await
+            .expect("invite uses after approval");
+    assert_eq!(
+        uses_after, 1,
+        "successful approval should consume invite use exactly once"
+    );
 }

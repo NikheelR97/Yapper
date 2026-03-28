@@ -130,16 +130,10 @@ async fn prepare_bundle_material(
 ) {
     let identity_dh_key = x25519_key_b64(dh_seed);
     let identity_signing_key = signing_key(signing_seed);
-    let identity_signing_public =
-        base64::engine::general_purpose::STANDARD.encode(identity_signing_key.verifying_key().to_bytes());
+    let identity_signing_public = base64::engine::general_purpose::STANDARD
+        .encode(identity_signing_key.verifying_key().to_bytes());
 
-    upload_identity(
-        server,
-        client,
-        &identity_dh_key,
-        &identity_signing_public,
-    )
-    .await;
+    upload_identity(server, client, &identity_dh_key, &identity_signing_public).await;
 
     let signed_prekey_raw = [signed_prekey_seed; 32];
     let signed_prekey = base64::engine::general_purpose::STANDARD.encode(signed_prekey_raw);
@@ -253,7 +247,11 @@ async fn keys_bundle_response_exposes_only_public_key_material(pool: PgPool) {
 
     let bundle = client.get(&format!("/api/v2/keys/{user_id}/bundles")).await;
 
-    assert!(bundle.status_code().is_success(), "bundle fetch failed: {}", bundle.text());
+    assert!(
+        bundle.status_code().is_success(),
+        "bundle fetch failed: {}",
+        bundle.text()
+    );
 
     let body: serde_json::Value = bundle.json();
     let bundles = body.as_array().expect("bundle response should be an array");
@@ -276,7 +274,10 @@ async fn keys_bundle_response_exposes_only_public_key_material(pool: PgPool) {
     .collect();
     let actual: HashSet<&str> = bundle_obj.keys().map(|key| key.as_str()).collect();
 
-    assert_eq!(actual, expected, "bundle leaked unexpected fields: {bundle_obj:?}");
+    assert_eq!(
+        actual, expected,
+        "bundle leaked unexpected fields: {bundle_obj:?}"
+    );
     assert!(
         bundle_obj.keys().all(|key| !key.contains("private")),
         "bundle response leaked private key material: {bundle_obj:?}"
@@ -306,7 +307,10 @@ async fn keys_opk_consumption_is_atomic_under_concurrent_bundle_requests(pool: P
 
     let bundle_path = format!("/api/v2/keys/{user_id}/bundles");
     let first = async {
-        client.get(&bundle_path).add_query_param("consume_opk", "true").await
+        client
+            .get(&bundle_path)
+            .add_query_param("consume_opk", "true")
+            .await
     };
     let second = async {
         concurrent_client
@@ -329,7 +333,10 @@ async fn keys_opk_consumption_is_atomic_under_concurrent_bundle_requests(pool: P
         resp_b.text()
     );
 
-    let bodies = [resp_a.json::<serde_json::Value>(), resp_b.json::<serde_json::Value>()];
+    let bodies = [
+        resp_a.json::<serde_json::Value>(),
+        resp_b.json::<serde_json::Value>(),
+    ];
     let mut consumed = 0;
     for body in bodies {
         let bundles = body.as_array().expect("bundle response should be an array");
@@ -338,7 +345,10 @@ async fn keys_opk_consumption_is_atomic_under_concurrent_bundle_requests(pool: P
             consumed += 1;
         }
     }
-    assert_eq!(consumed, 1, "exactly one concurrent request should consume the only OPK");
+    assert_eq!(
+        consumed, 1,
+        "exactly one concurrent request should consume the only OPK"
+    );
 
     let remaining = opk_count(&client).await;
     assert_eq!(remaining, 0, "the only OPK should be marked consumed");
@@ -356,16 +366,10 @@ async fn keys_upload_and_fetch_bundle_v2(pool: PgPool) {
 
     let identity_dh_key = x25519_key_b64(1);
     let identity_signing_key = signing_key(9);
-    let identity_signing_public =
-        base64::engine::general_purpose::STANDARD.encode(identity_signing_key.verifying_key().to_bytes());
+    let identity_signing_public = base64::engine::general_purpose::STANDARD
+        .encode(identity_signing_key.verifying_key().to_bytes());
 
-    upload_identity(
-        &server,
-        &client,
-        &identity_dh_key,
-        &identity_signing_public,
-    )
-    .await;
+    upload_identity(&server, &client, &identity_dh_key, &identity_signing_public).await;
 
     let signed_prekey_raw = [5_u8; 32];
     let signed_prekey = base64::engine::general_purpose::STANDARD.encode(signed_prekey_raw);
@@ -416,16 +420,10 @@ async fn keys_opk_count_decrements_after_consumption_v2(pool: PgPool) {
 
     let identity_dh_key = x25519_key_b64(11);
     let identity_signing_key = signing_key(12);
-    let identity_signing_public =
-        base64::engine::general_purpose::STANDARD.encode(identity_signing_key.verifying_key().to_bytes());
+    let identity_signing_public = base64::engine::general_purpose::STANDARD
+        .encode(identity_signing_key.verifying_key().to_bytes());
 
-    upload_identity(
-        &server,
-        &client,
-        &identity_dh_key,
-        &identity_signing_public,
-    )
-    .await;
+    upload_identity(&server, &client, &identity_dh_key, &identity_signing_public).await;
 
     let signed_prekey_raw = [13_u8; 32];
     let signed_prekey = base64::engine::general_purpose::STANDARD.encode(signed_prekey_raw);
@@ -455,7 +453,9 @@ async fn keys_opk_count_decrements_after_consumption_v2(pool: PgPool) {
     );
 
     let bundle_body: serde_json::Value = bundle.json();
-    let bundle_rows = bundle_body.as_array().expect("bundle response should be an array");
+    let bundle_rows = bundle_body
+        .as_array()
+        .expect("bundle response should be an array");
     assert_eq!(bundle_rows.len(), 1);
 
     if bundle_rows[0]["one_time_prekey"].is_string() {

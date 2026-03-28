@@ -64,8 +64,7 @@ async fn resolve_signal_device_id(auth: &AuthUser, state: &AppState) -> AppResul
                 .to_string(),
         )
     })?;
-    let device =
-        crate::devices::get_device_for_user(auth.user_id, device_uuid, state).await?;
+    let device = crate::devices::get_device_for_user(auth.user_id, device_uuid, state).await?;
     if device.revoked_at.is_some() || device.trust_state == DeviceTrustState::Revoked {
         return Err(AppError::Unauthorized);
     }

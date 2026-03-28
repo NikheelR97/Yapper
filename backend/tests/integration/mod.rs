@@ -7,8 +7,8 @@
 use axum::http::{header::AUTHORIZATION, HeaderMap, HeaderName, HeaderValue};
 use axum_test::{TestRequest, TestResponse, TestServer, TestServerConfig};
 use governor::{Quota, RateLimiter};
-use sqlx::PgPool;
 use serde_json::Value;
+use sqlx::PgPool;
 use std::{
     collections::{hash_map::DefaultHasher, HashSet},
     hash::{Hash, Hasher},
@@ -83,7 +83,7 @@ pub async fn spawn_test_server_from_pool(pool: PgPool) -> Option<TestServer> {
             build_router(state).into_make_service_with_connect_info::<SocketAddr>(),
             config,
         )
-            .expect("Failed to create test server"),
+        .expect("Failed to create test server"),
     )
 }
 
@@ -177,7 +177,10 @@ impl<'a> TestClient<'a> {
     }
 
     fn authenticated_request(&self, request: TestRequest) -> TestRequest {
-        request.add_header(authorization_header_name(), bearer_header(&self.access_token))
+        request.add_header(
+            authorization_header_name(),
+            bearer_header(&self.access_token),
+        )
     }
 
     fn mutating_request(&self, request: TestRequest) -> TestRequest {
@@ -491,11 +494,11 @@ pub fn authorization_header_name() -> HeaderName {
 
 pub mod account;
 pub mod auth;
+pub mod canvas;
 pub mod devices;
 pub mod identity;
 pub mod keys;
 pub mod messages;
-pub mod canvas;
 pub mod parental;
 pub mod privacy;
 pub mod screentime;

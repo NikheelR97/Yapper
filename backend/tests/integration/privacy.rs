@@ -1,8 +1,6 @@
 //! Integration tests for presence privacy and read-receipt authorization.
 
-use super::{
-    create_test_user, register_test_session, spawn_test_server_with_pool, TestClient,
-};
+use super::{create_test_user, register_test_session, spawn_test_server_with_pool, TestClient};
 use axum_test::TestServer;
 use sqlx::PgPool;
 use uuid::Uuid;

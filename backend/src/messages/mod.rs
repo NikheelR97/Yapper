@@ -10,7 +10,7 @@ use sqlx::Row;
 use uuid::Uuid;
 
 use crate::{
-    auth::{AuthDevice},
+    auth::AuthDevice,
     constants,
     error::{AppError, AppResult},
     hub::mark_dm_delivered,
@@ -112,9 +112,10 @@ async fn create_or_get_conversation_for_user(
     // Create a new conversation
     let mut tx = state.db.pool().begin().await?;
 
-    let conv_row = sqlx::query("INSERT INTO dm_conversations DEFAULT VALUES RETURNING id, created_at")
-        .fetch_one(&mut *tx)
-        .await?;
+    let conv_row =
+        sqlx::query("INSERT INTO dm_conversations DEFAULT VALUES RETURNING id, created_at")
+            .fetch_one(&mut *tx)
+            .await?;
     let conv_id: Uuid = conv_row.try_get("id")?;
     let created_at: DateTime<Utc> = conv_row.try_get("created_at")?;
 
@@ -661,7 +662,10 @@ mod schema_invariant_tests {
         )
         .bind(server_id)
         .bind("Schema Test Server")
-        .bind(format!("schema-test-{}", &server_id.simple().to_string()[..8]))
+        .bind(format!(
+            "schema-test-{}",
+            &server_id.simple().to_string()[..8]
+        ))
         .bind(user_id)
         .execute(pool)
         .await
@@ -720,7 +724,9 @@ mod schema_invariant_tests {
         .bind(user_id)
         .execute(&pool)
         .await
-        .expect_err("channel rows with neither ciphertext nor plaintext should violate the constraint");
+        .expect_err(
+            "channel rows with neither ciphertext nor plaintext should violate the constraint",
+        );
 
         let db_err = err
             .as_database_error()

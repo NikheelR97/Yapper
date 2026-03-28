@@ -3,8 +3,8 @@
 use super::{
     register_test_session, spawn_test_server_from_state, spawn_test_server_with_pool, TestClient,
 };
-use base64::Engine;
 use axum_test::TestServer;
+use base64::Engine;
 use sqlx::PgPool;
 use uuid::Uuid;
 use yapper_server::constants::MAX_MESSAGE_LENGTH;
@@ -23,7 +23,11 @@ async fn create_public_server(client: &TestClient<'_>, name: &str) -> Uuid {
         }))
         .await;
 
-    assert!(resp.status_code().is_success(), "server create failed: {}", resp.text());
+    assert!(
+        resp.status_code().is_success(),
+        "server create failed: {}",
+        resp.text()
+    );
     let body: serde_json::Value = resp.json();
     body["id"]
         .as_str()
@@ -84,7 +88,10 @@ async fn create_conversation_is_idempotent_for_same_pair(pool: PgPool) {
 
     let body_a: serde_json::Value = resp_a.json();
     let body_b: serde_json::Value = resp_b.json();
-    assert_eq!(body_a["id"], body_b["id"], "same pair should resolve to one conversation");
+    assert_eq!(
+        body_a["id"], body_b["id"],
+        "same pair should resolve to one conversation"
+    );
 
     let (user_low, user_high) = if sender_id < peer_id {
         (sender_id, peer_id)
@@ -101,7 +108,10 @@ async fn create_conversation_is_idempotent_for_same_pair(pool: PgPool) {
     .await
     .expect("pair count");
 
-    assert_eq!(pair_count, 1, "same pair should have exactly one canonical pair row");
+    assert_eq!(
+        pair_count, 1,
+        "same pair should have exactly one canonical pair row"
+    );
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -116,7 +126,8 @@ async fn channel_message_rejects_ciphertext_over_max_length(pool: PgPool) {
     let server_id = create_public_server(&sender_client, &format!("Channel {suffix}")).await;
     let channel_id = general_channel_id(&state, server_id).await;
 
-    let oversized = base64::engine::general_purpose::STANDARD.encode(vec![0_u8; MAX_MESSAGE_LENGTH + 1]);
+    let oversized =
+        base64::engine::general_purpose::STANDARD.encode(vec![0_u8; MAX_MESSAGE_LENGTH + 1]);
     let resp = sender_client
         .post(&format!("/api/v2/channels/{channel_id}/messages"))
         .json(&serde_json::json!({
@@ -126,12 +137,19 @@ async fn channel_message_rejects_ciphertext_over_max_length(pool: PgPool) {
         .await;
 
     assert_eq!(resp.status_code().as_u16(), 400);
-    assert!(resp.text().contains("Ciphertext exceeds size limit"), "unexpected response: {}", resp.text());
+    assert!(
+        resp.text().contains("Ciphertext exceeds size limit"),
+        "unexpected response: {}",
+        resp.text()
+    );
 }
 
 #[sqlx::test(migrations = "./migrations")]
 async fn dm_message_rejects_ciphertext_over_max_length(pool: PgPool) {
-    let Some(server) = build_messages_test_server(pool).await.map(|(_, server)| server) else {
+    let Some(server) = build_messages_test_server(pool)
+        .await
+        .map(|(_, server)| server)
+    else {
         return;
     };
 
@@ -147,14 +165,19 @@ async fn dm_message_rejects_ciphertext_over_max_length(pool: PgPool) {
         .post("/api/v2/conversations")
         .json(&serde_json::json!({ "peer_id": peer_id }))
         .await;
-    assert!(create.status_code().is_success(), "conversation create failed: {}", create.text());
+    assert!(
+        create.status_code().is_success(),
+        "conversation create failed: {}",
+        create.text()
+    );
     let body: serde_json::Value = create.json();
     let conv_id: Uuid = body["id"]
         .as_str()
         .and_then(|value| value.parse().ok())
         .expect("missing conversation id");
 
-    let oversized = base64::engine::general_purpose::STANDARD.encode(vec![1_u8; MAX_MESSAGE_LENGTH + 1]);
+    let oversized =
+        base64::engine::general_purpose::STANDARD.encode(vec![1_u8; MAX_MESSAGE_LENGTH + 1]);
     let send = sender_client
         .post(&format!("/api/v2/conversations/{conv_id}/messages"))
         .json(&serde_json::json!({
@@ -168,7 +191,11 @@ async fn dm_message_rejects_ciphertext_over_max_length(pool: PgPool) {
         .await;
 
     assert_eq!(send.status_code().as_u16(), 400);
-    assert!(send.text().contains("Ciphertext exceeds size limit"), "unexpected response: {}", send.text());
+    assert!(
+        send.text().contains("Ciphertext exceeds size limit"),
+        "unexpected response: {}",
+        send.text()
+    );
 
     let _ = sender_id;
 }
@@ -180,7 +207,8 @@ async fn channel_message_rows_without_content_are_rejected_by_the_db_constraint(
     };
 
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
-    let sender_session = register_test_session(&server, &format!("channel_constraint_{suffix}")).await;
+    let sender_session =
+        register_test_session(&server, &format!("channel_constraint_{suffix}")).await;
     let sender_client = TestClient::from_session(&server, &sender_session);
     let sender_id = sender_session.user_id;
     let server_id = create_public_server(&sender_client, &format!("Constraint {suffix}")).await;
@@ -196,9 +224,13 @@ async fn channel_message_rows_without_content_are_rejected_by_the_db_constraint(
     .execute(state.db.pool())
     .await;
 
-    let err = result.expect_err("channel row without content should violate the message content constraint");
+    let err = result
+        .expect_err("channel row without content should violate the message content constraint");
     let db_err = err
         .as_database_error()
         .expect("constraint violation should surface as a database error");
-    assert_eq!(db_err.constraint(), Some("messages_ciphertext_xor_plaintext"));
+    assert_eq!(
+        db_err.constraint(),
+        Some("messages_ciphertext_xor_plaintext")
+    );
 }

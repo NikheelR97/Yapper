@@ -33,7 +33,11 @@ async fn duplicate_pending_friend_requests_are_deduplicated(pool: PgPool) {
             "date_of_birth": "2015-03-26",
         }))
         .await;
-    assert!(child_resp.status_code().is_success(), "child creation failed: {}", child_resp.text());
+    assert!(
+        child_resp.status_code().is_success(),
+        "child creation failed: {}",
+        child_resp.text()
+    );
 
     let request_path = format!("/api/v2/users/by/{child_username}/friend-request");
     for _ in 0..2 {
@@ -59,5 +63,8 @@ async fn duplicate_pending_friend_requests_are_deduplicated(pool: PgPool) {
     .await
     .expect("pending friend count");
 
-    assert_eq!(pending_count, 1, "duplicate pending friend requests should collapse to one row");
+    assert_eq!(
+        pending_count, 1,
+        "duplicate pending friend requests should collapse to one row"
+    );
 }

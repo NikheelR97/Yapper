@@ -940,9 +940,7 @@ async fn validate_ws_token(token: &str, state: &AppState) -> Option<WsAuth> {
         let device = crate::devices::get_device_for_user(claims.sub, device_id, state)
             .await
             .ok()?;
-        if device.revoked_at.is_some()
-            || device.trust_state != DeviceTrustState::Trusted
-        {
+        if device.revoked_at.is_some() || device.trust_state != DeviceTrustState::Trusted {
             return None;
         }
         trust_state = Some(device.trust_state);
@@ -1458,7 +1456,10 @@ async fn handle_inbound(text: String, auth: &mut WsAuth, state: &AppState, tx: &
         // Only bots reach here (non-bot device-less tokens are rejected in
         // `validate_ws_token`). Bots are trusted by definition.
         None => {
-            debug_assert_eq!(auth.account_type, "bot", "non-bot token without device_id should have been rejected at WS auth");
+            debug_assert_eq!(
+                auth.account_type, "bot",
+                "non-bot token without device_id should have been rejected at WS auth"
+            );
             auth.account_type == "bot"
         }
     };
@@ -2524,12 +2525,13 @@ mod tests {
         .await
         .unwrap();
 
-        let undelivered_before: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM messages WHERE conversation_id = $1 AND delivered = FALSE")
-                .bind(conversation_id)
-                .fetch_one(state.db.pool())
-                .await
-                .unwrap();
+        let undelivered_before: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM messages WHERE conversation_id = $1 AND delivered = FALSE",
+        )
+        .bind(conversation_id)
+        .fetch_one(state.db.pool())
+        .await
+        .unwrap();
         assert_eq!(undelivered_before, 1, "message should start as undelivered");
 
         mark_dm_delivered(&[(message_id, recipient_device)], &state)
@@ -2558,13 +2560,17 @@ mod tests {
             "envelope should be marked delivered"
         );
 
-        let undelivered_after: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM messages WHERE conversation_id = $1 AND delivered = FALSE")
-                .bind(conversation_id)
-                .fetch_one(state.db.pool())
-                .await
-                .unwrap();
-        assert_eq!(undelivered_after, 0, "mark_dm_delivered should transition the state");
+        let undelivered_after: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM messages WHERE conversation_id = $1 AND delivered = FALSE",
+        )
+        .bind(conversation_id)
+        .fetch_one(state.db.pool())
+        .await
+        .unwrap();
+        assert_eq!(
+            undelivered_after, 0,
+            "mark_dm_delivered should transition the state"
+        );
     }
 
     #[sqlx::test(migrations = "./migrations")]
@@ -2656,7 +2662,10 @@ mod tests {
             Some(device_id),
             true,
             conn_id,
-            ConnectionHandle { tx: tx.clone(), close_tx },
+            ConnectionHandle {
+                tx: tx.clone(),
+                close_tx
+            },
         ));
 
         sqlx::query(

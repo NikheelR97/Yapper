@@ -116,7 +116,11 @@ async fn music_queue_rejects_non_admin_enqueue_attempts(pool: PgPool) {
     let join = member_client
         .post(&format!("/api/v2/servers/{server_id}/join"))
         .await;
-    assert!(join.status_code().is_success(), "member join failed: {}", join.text());
+    assert!(
+        join.status_code().is_success(),
+        "member join failed: {}",
+        join.text()
+    );
 
     let enqueue = member_client
         .post(&format!("/api/v2/canvas/servers/{server_id}/music/queue"))
@@ -129,7 +133,11 @@ async fn music_queue_rejects_non_admin_enqueue_attempts(pool: PgPool) {
         }))
         .await;
 
-    assert_eq!(enqueue.status_code().as_u16(), 403, "non-admin enqueue should be rejected");
+    assert_eq!(
+        enqueue.status_code().as_u16(),
+        403,
+        "non-admin enqueue should be rejected"
+    );
 }
 
 #[sqlx::test(migrations = "./migrations")]
@@ -139,7 +147,8 @@ async fn music_queue_rejects_tracks_when_at_capacity(pool: PgPool) {
     };
 
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
-    let owner_session = register_test_session(&server, &format!("canvas_queue_owner_{suffix}")).await;
+    let owner_session =
+        register_test_session(&server, &format!("canvas_queue_owner_{suffix}")).await;
     let owner_client = TestClient::from_session(&server, &owner_session);
     let owner_id = owner_session.user_id;
     let server_id = create_public_server(&owner_client, &format!("Canvas Cap {suffix}")).await;
@@ -184,7 +193,8 @@ async fn clip_reactions_are_idempotent_for_the_same_user_and_emoji(pool: PgPool)
     };
 
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
-    let owner_session = register_test_session(&server, &format!("canvas_clip_owner_{suffix}")).await;
+    let owner_session =
+        register_test_session(&server, &format!("canvas_clip_owner_{suffix}")).await;
     let owner_client = TestClient::from_session(&server, &owner_session);
     let owner_id = owner_session.user_id;
     let owner_device_id = owner_session.device_id.expect("missing owner device id");
@@ -211,7 +221,12 @@ async fn clip_reactions_are_idempotent_for_the_same_user_and_emoji(pool: PgPool)
             .put(&reaction_path)
             .json(&serde_json::json!({ "emoji": ":fire:" }))
             .await;
-        assert_eq!(response.status_code().as_u16(), 204, "reaction add failed: {}", response.text());
+        assert_eq!(
+            response.status_code().as_u16(),
+            204,
+            "reaction add failed: {}",
+            response.text()
+        );
     }
 
     let reaction_count: i64 = sqlx::query_scalar(
@@ -224,5 +239,8 @@ async fn clip_reactions_are_idempotent_for_the_same_user_and_emoji(pool: PgPool)
     .await
     .expect("reaction count");
 
-    assert_eq!(reaction_count, 1, "duplicate reactions should be stored once");
+    assert_eq!(
+        reaction_count, 1,
+        "duplicate reactions should be stored once"
+    );
 }

@@ -132,14 +132,23 @@ async fn linked_identities_coexist_and_unlink_individually(pool: PgPool) {
     }
 
     let me = client.get("/api/v2/users/me").await;
-    assert!(me.status_code().is_success(), "GET /users/me failed: {}", me.text());
+    assert!(
+        me.status_code().is_success(),
+        "GET /users/me failed: {}",
+        me.text()
+    );
     let me_body: serde_json::Value = me.json();
     assert_eq!(me_body["connections"]["discord"], true);
     assert_eq!(me_body["connections"]["google"], true);
     assert_eq!(me_body["connections"]["apple"], true);
 
     let unlink = client.delete("/api/v2/users/me/connections/google").await;
-    assert_eq!(unlink.status_code().as_u16(), 204, "unlink failed: {}", unlink.text());
+    assert_eq!(
+        unlink.status_code().as_u16(),
+        204,
+        "unlink failed: {}",
+        unlink.text()
+    );
 
     let me_after = client.get("/api/v2/users/me").await;
     assert!(
@@ -152,12 +161,11 @@ async fn linked_identities_coexist_and_unlink_individually(pool: PgPool) {
     assert_eq!(me_after_body["connections"]["google"], false);
     assert_eq!(me_after_body["connections"]["apple"], true);
 
-    let linked_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM user_linked_identities WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .fetch_one(state.db.pool())
-    .await
-    .expect("count linked identities");
+    let linked_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM user_linked_identities WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_one(state.db.pool())
+            .await
+            .expect("count linked identities");
     assert_eq!(linked_count, 2);
 }

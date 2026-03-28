@@ -5,7 +5,9 @@ use axum_test::TestServer;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-async fn build_screentime_test_server(pool: PgPool) -> Option<(yapper_server::AppState, TestServer)> {
+async fn build_screentime_test_server(
+    pool: PgPool,
+) -> Option<(yapper_server::AppState, TestServer)> {
     spawn_test_server_with_pool(pool).await
 }
 
@@ -16,8 +18,10 @@ async fn parental_screentime_access_requires_the_linked_parent(pool: PgPool) {
     };
 
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
-    let parent_a_session = register_test_session(&server, &format!("screen_parent_a_{suffix}")).await;
-    let parent_b_session = register_test_session(&server, &format!("screen_parent_b_{suffix}")).await;
+    let parent_a_session =
+        register_test_session(&server, &format!("screen_parent_a_{suffix}")).await;
+    let parent_b_session =
+        register_test_session(&server, &format!("screen_parent_b_{suffix}")).await;
     let parent_a_client = TestClient::from_session(&server, &parent_a_session);
     let parent_b_client = TestClient::from_session(&server, &parent_b_session);
 
@@ -32,7 +36,11 @@ async fn parental_screentime_access_requires_the_linked_parent(pool: PgPool) {
         }))
         .await;
 
-    assert!(child_resp.status_code().is_success(), "child creation failed: {}", child_resp.text());
+    assert!(
+        child_resp.status_code().is_success(),
+        "child creation failed: {}",
+        child_resp.text()
+    );
     let child_body: serde_json::Value = child_resp.json();
     let child_id: Uuid = child_body["child_id"]
         .as_str()
@@ -43,13 +51,21 @@ async fn parental_screentime_access_requires_the_linked_parent(pool: PgPool) {
         .get(&format!("/api/v2/parental/children/{child_id}/screentime"))
         .add_query_param("period", "today")
         .await;
-    assert_eq!(forbidden.status_code().as_u16(), 403, "wrong parent should be rejected");
+    assert_eq!(
+        forbidden.status_code().as_u16(),
+        403,
+        "wrong parent should be rejected"
+    );
 
     let allowed = parent_a_client
         .get(&format!("/api/v2/parental/children/{child_id}/screentime"))
         .add_query_param("period", "today")
         .await;
-    assert!(allowed.status_code().is_success(), "linked parent should be allowed: {}", allowed.text());
+    assert!(
+        allowed.status_code().is_success(),
+        "linked parent should be allowed: {}",
+        allowed.text()
+    );
 }
 
 #[sqlx::test(migrations = "./migrations")]

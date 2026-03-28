@@ -7,10 +7,9 @@
 //!   TEST_DATABASE_URL=postgres://... cargo test --test integration -- auth
 
 use super::{
-    authorization_header_name, bearer_header, create_test_user,
-    create_test_user_with_device, login_test_session, login_test_user_with_device,
-    register_test_session, spawn_test_server_from_pool, spawn_test_server_with_pool,
-    test_device_bootstrap, TestClient,
+    authorization_header_name, bearer_header, create_test_user, create_test_user_with_device,
+    login_test_session, login_test_user_with_device, register_test_session,
+    spawn_test_server_from_pool, spawn_test_server_with_pool, test_device_bootstrap, TestClient,
 };
 use axum_test::TestServer;
 use chrono::Utc;
