@@ -14,7 +14,7 @@ jobs:
   setup-auth:
     name: Setup E2E Auth State
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
 
     defaults:
       run:
