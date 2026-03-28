@@ -1,6 +1,6 @@
 //! CSRF double-submit cookie middleware.
 //!
-//! Applied to the entire /api/v1 router, exempting /auth/* routes (those
+//! Applied to the entire /api/v2 router, exempting /auth/* routes (those
 //! endpoints receive no JWT and set the CSRF cookie themselves on success).
 //!
 //! For all other state-changing requests (POST/PUT/PATCH/DELETE), the client
@@ -122,7 +122,7 @@ pub fn should_use_secure_cookie() -> bool {
 mod tests {
     use super::*;
 
-    // ── is_csrf_exempt ───────────────────────────────────────────────
+    // â”€â”€ is_csrf_exempt â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     #[test]
     fn exempt_auth_login() {
@@ -191,7 +191,7 @@ mod tests {
 
     #[test]
     fn non_exempt_random_api_path() {
-        assert!(!is_csrf_exempt("/api/v1/conversations"));
+        assert!(!is_csrf_exempt("/api/v2/conversations"));
     }
 
     #[test]
@@ -229,7 +229,7 @@ mod tests {
         assert!(!is_csrf_exempt("/auth"));
     }
 
-    // ── normalize_path ───────────────────────────────────────────────
+    // â”€â”€ normalize_path â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     #[test]
     fn normalize_strips_trailing_slash() {
@@ -251,8 +251,8 @@ mod tests {
         assert_eq!(normalize_path("/foo///"), "/foo");
     }
 
-    // ── csrf_cookie_header format (no env-dependent tests — env vars
-    //    are process-global and race under parallel test execution) ───
+    // â”€â”€ csrf_cookie_header format (no env-dependent tests â€” env vars
+    //    are process-global and race under parallel test execution) â”€â”€â”€
 
     #[test]
     fn cookie_header_contains_token_name() {

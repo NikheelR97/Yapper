@@ -61,6 +61,7 @@
 			role="dialog"
 			aria-modal="true"
 			aria-label="Create a server"
+			tabindex="-1"
 			on:click|stopPropagation
 		>
 			<div class="modal-header">

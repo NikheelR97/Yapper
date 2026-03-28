@@ -1,15 +1,15 @@
 /**
- * Parental Controls — COPPA-compliant child account management.
+ * Parental Controls â€” COPPA-compliant child account management.
  *
- * Routes (mounted under /api/v1/parental):
- *   POST  /children                             — create child account (COPPA consent)
- *   GET   /children                             — list managed children
- *   GET   /children/:child_id/overview          — child activity snapshot
- *   GET   /children/:child_id/notifications     — pending alerts (friend reqs + server joins)
- *   PATCH /friend-requests/:id/approve          — approve pending friend request
- *   PATCH /friend-requests/:id/decline          — decline pending friend request
- *   PATCH /server-joins/:id/approve             — approve pending server join
- *   PATCH /server-joins/:id/decline             — decline pending server join
+ * Routes (mounted under /api/v2/parental):
+ *   POST  /children                             â€” create child account (COPPA consent)
+ *   GET   /children                             â€” list managed children
+ *   GET   /children/:child_id/overview          â€” child activity snapshot
+ *   GET   /children/:child_id/notifications     â€” pending alerts (friend reqs + server joins)
+ *   PATCH /friend-requests/:id/approve          â€” approve pending friend request
+ *   PATCH /friend-requests/:id/decline          â€” decline pending friend request
+ *   PATCH /server-joins/:id/approve             â€” approve pending server join
+ *   PATCH /server-joins/:id/decline             â€” decline pending server join
  */
 use axum::{
     extract::{Path, State},
@@ -31,6 +31,7 @@ const MIN_PASSWORD_LEN: usize = 8;
 use crate::{
     auth::AuthUser,
     error::{AppError, AppResult},
+    servers::service::{consume_invite_use, insert_server_member_with_cap},
     AppState,
 };
 
@@ -51,7 +52,7 @@ pub fn router() -> Router<AppState> {
         .route("/server-joins/:id/decline", patch(decline_server_join))
 }
 
-// ─── Create child account ────────────────────────────────────────────────────
+// â”€â”€â”€ Create child account â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -63,7 +64,7 @@ struct CreateChildInput {
     date_of_birth: String, // ISO date YYYY-MM-DD
 }
 
-/// POST /api/v1/parental/children
+/// POST /api/v2/parental/children
 async fn create_child(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -82,11 +83,11 @@ async fn create_child(
         return Err(AppError::Forbidden);
     }
 
-    // Validate DOB — must be under 18
+    // Validate DOB â€” must be under 18
     let dob: chrono::NaiveDate = body
         .date_of_birth
         .parse()
-        .map_err(|_| AppError::BadRequest("Invalid date_of_birth — use YYYY-MM-DD".into()))?;
+        .map_err(|_| AppError::BadRequest("Invalid date_of_birth â€” use YYYY-MM-DD".into()))?;
     let today = chrono::Utc::now().date_naive();
     let age_years = today.years_since(dob).unwrap_or(99);
     if age_years >= 18 {
@@ -95,25 +96,25 @@ async fn create_child(
         ));
     }
 
-    // Validate string fields before any DB or crypto work (Rule 3 — validate at boundaries)
+    // Validate string fields before any DB or crypto work (Rule 3 â€” validate at boundaries)
     if body.password.len() < MIN_PASSWORD_LEN || body.password.len() > MAX_PASSWORD_BYTES {
         return Err(AppError::BadRequest(format!(
-            "Password must be {MIN_PASSWORD_LEN}–{MAX_PASSWORD_BYTES} characters"
+            "Password must be {MIN_PASSWORD_LEN}â€“{MAX_PASSWORD_BYTES} characters"
         )));
     }
     let username = body.username.trim();
     if username.len() < MIN_USERNAME_LEN || username.len() > MAX_USERNAME_LEN {
         return Err(AppError::BadRequest(format!(
-            "Username must be {MIN_USERNAME_LEN}–{MAX_USERNAME_LEN} characters"
+            "Username must be {MIN_USERNAME_LEN}â€“{MAX_USERNAME_LEN} characters"
         )));
     }
     let display_name = body.display_name.trim();
     if display_name.is_empty() || display_name.len() > MAX_DISPLAY_NAME_LEN {
         return Err(AppError::BadRequest(format!(
-            "Display name must be 1–{MAX_DISPLAY_NAME_LEN} characters"
+            "Display name must be 1â€“{MAX_DISPLAY_NAME_LEN} characters"
         )));
     }
-    let email = body.email.trim();
+    let email = body.email.trim().to_lowercase();
     if email.is_empty() || email.len() > MAX_EMAIL_LEN || !email.contains('@') {
         return Err(AppError::BadRequest("Invalid email address".into()));
     }
@@ -156,7 +157,7 @@ async fn create_child(
             .await?;
     }
 
-    // Link parent → child
+    // Link parent â†’ child
     sqlx::query(
         "INSERT INTO parent_child_relationships (parent_user_id, child_user_id)
          VALUES ($1, $2) ON CONFLICT DO NOTHING",
@@ -178,9 +179,9 @@ async fn create_child(
     ))
 }
 
-// ─── List children ────────────────────────────────────────────────────────────
+// â”€â”€â”€ List children â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-/// GET /api/v1/parental/children
+/// GET /api/v2/parental/children
 async fn list_children(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -213,9 +214,9 @@ async fn list_children(
     Ok(Json(serde_json::json!({ "children": children })))
 }
 
-// ─── Child overview ───────────────────────────────────────────────────────────
+// â”€â”€â”€ Child overview â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-/// GET /api/v1/parental/children/:child_id/overview
+/// GET /api/v2/parental/children/:child_id/overview
 async fn get_child_overview(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -291,9 +292,9 @@ async fn get_child_overview(
     })))
 }
 
-// ─── Notifications ────────────────────────────────────────────────────────────
+// â”€â”€â”€ Notifications â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-/// GET /api/v1/parental/children/:child_id/notifications
+/// GET /api/v2/parental/children/:child_id/notifications
 async fn get_notifications(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -369,9 +370,9 @@ async fn get_notifications(
     })))
 }
 
-// ─── Approval / Decline ───────────────────────────────────────────────────────
+// â”€â”€â”€ Approval / Decline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-/// PATCH /api/v1/parental/friend-requests/:id/approve
+/// PATCH /api/v2/parental/friend-requests/:id/approve
 async fn approve_friend_request(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -407,7 +408,7 @@ async fn approve_friend_request(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// PATCH /api/v1/parental/friend-requests/:id/decline
+/// PATCH /api/v2/parental/friend-requests/:id/decline
 async fn decline_friend_request(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -427,7 +428,7 @@ async fn decline_friend_request(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// PATCH /api/v1/parental/server-joins/:id/approve
+/// PATCH /api/v2/parental/server-joins/:id/approve
 async fn approve_server_join(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -436,23 +437,24 @@ async fn approve_server_join(
     let req = fetch_server_join(join_id, auth.user_id, &state).await?;
     let child_id: Uuid = req.try_get("child_user_id")?;
     let server_id: Uuid = req.try_get("server_id")?;
+    let invite_code: Option<String> = req.try_get("invite_code")?;
 
-    sqlx::query(
-        "UPDATE pending_server_joins SET status = 'approved', reviewed_at = NOW() WHERE id = $1",
+    let mut tx = state.db.pool().begin().await?;
+
+    let reviewed = sqlx::query(
+        "UPDATE pending_server_joins SET status = 'approved', reviewed_at = NOW() WHERE id = $1 AND status = 'pending' RETURNING id",
     )
     .bind(join_id)
-    .execute(state.db.pool())
+    .fetch_optional(&mut *tx)
     .await?;
+    if reviewed.is_none() {
+        tx.rollback().await.ok();
+        return Err(AppError::BadRequest("Request already reviewed".into()));
+    }
 
-    // Direct membership insert — bypasses parental check (parent already approved)
-    sqlx::query(
-        "INSERT INTO server_memberships (user_id, server_id, role) VALUES ($1, $2, 'member') \
-         ON CONFLICT (user_id, server_id) DO NOTHING",
-    )
-    .bind(child_id)
-    .bind(server_id)
-    .execute(state.db.pool())
-    .await?;
+    insert_server_member_with_cap(&mut tx, child_id, server_id).await?;
+    consume_invite_use(&mut tx, invite_code.as_deref()).await?;
+    tx.commit().await?;
 
     audit(
         auth.user_id,
@@ -465,7 +467,7 @@ async fn approve_server_join(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// PATCH /api/v1/parental/server-joins/:id/decline
+/// PATCH /api/v2/parental/server-joins/:id/decline
 async fn decline_server_join(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -492,7 +494,7 @@ async fn decline_server_join(
     Ok(StatusCode::NO_CONTENT)
 }
 
-// ─── Private helpers ──────────────────────────────────────────────────────────
+// â”€â”€â”€ Private helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async fn require_parent_of(parent_id: Uuid, child_id: Uuid, state: &AppState) -> AppResult<()> {
     let ok = sqlx::query(
@@ -580,7 +582,7 @@ async fn audit(
 mod tests {
     use super::*;
 
-    // ─── Validation constants sanity checks ─────────────────────────────────
+    // â”€â”€â”€ Validation constants sanity checks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     #[test]
     fn constants_are_sensible() {
@@ -592,7 +594,7 @@ mod tests {
         assert!(MAX_EMAIL_LEN > 0);
     }
 
-    // ─── CreateChildInput deserialization ────────────────────────────────────
+    // â”€â”€â”€ CreateChildInput deserialization â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     fn valid_json() -> &'static str {
         r#"{
@@ -765,7 +767,7 @@ mod tests {
 
     #[test]
     fn deserialize_accepts_empty_string_values() {
-        // serde will accept empty strings — validation happens later in the handler
+        // serde will accept empty strings â€” validation happens later in the handler
         let json = r#"{
             "username": "",
             "display_name": "",
@@ -780,7 +782,7 @@ mod tests {
 
     #[test]
     fn deserialize_preserves_whitespace_in_fields() {
-        // Handler calls .trim() — serde should preserve raw whitespace
+        // Handler calls .trim() â€” serde should preserve raw whitespace
         let json = r#"{
             "username": "  spaced  ",
             "display_name": "  Kid  ",
@@ -797,25 +799,25 @@ mod tests {
     #[test]
     fn deserialize_accepts_unicode_values() {
         let json = r#"{
-            "username": "こども",
-            "display_name": "子供ちゃん",
-            "email": "kid@例え.jp",
-            "password": "パスワード12345",
+            "username": "ã“ã©ã‚‚",
+            "display_name": "å­ä¾›ã¡ã‚ƒã‚“",
+            "email": "kid@ä¾‹ãˆ.jp",
+            "password": "ãƒ‘ã‚¹ãƒ¯ãƒ¼ãƒ‰12345",
             "date_of_birth": "2015-06-15"
         }"#;
         let input: CreateChildInput = serde_json::from_str(json).unwrap();
-        assert_eq!(input.username, "こども");
-        assert_eq!(input.display_name, "子供ちゃん");
+        assert_eq!(input.username, "ã“ã©ã‚‚");
+        assert_eq!(input.display_name, "å­ä¾›ã¡ã‚ƒã‚“");
     }
 
-    // ─── COPPA age validation logic (inline in handler) ─────────────────────
+    // â”€â”€â”€ COPPA age validation logic (inline in handler) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     /// Mirrors the DOB parsing + age check from create_child.
     /// Tests the same logic without needing DB/state.
     fn validate_child_age(date_of_birth: &str) -> Result<u32, &'static str> {
         let dob: chrono::NaiveDate = date_of_birth
             .parse()
-            .map_err(|_| "Invalid date_of_birth — use YYYY-MM-DD")?;
+            .map_err(|_| "Invalid date_of_birth â€” use YYYY-MM-DD")?;
         let today = chrono::Utc::now().date_naive();
         let age_years = today.years_since(dob).unwrap_or(99);
         if age_years >= 18 {
@@ -826,7 +828,7 @@ mod tests {
 
     #[test]
     fn coppa_rejects_adult_dob() {
-        // 30 years ago — definitely 18+
+        // 30 years ago â€” definitely 18+
         let dob = (chrono::Utc::now().date_naive() - chrono::Months::new(12 * 30))
             .format("%Y-%m-%d")
             .to_string();
@@ -888,19 +890,19 @@ mod tests {
 
     #[test]
     fn coppa_rejects_future_date() {
-        // Future DOB — years_since returns None → unwrap_or(99) → >= 18 → rejected
+        // Future DOB â€” years_since returns None â†’ unwrap_or(99) â†’ >= 18 â†’ rejected
         let future = (chrono::Utc::now().date_naive() + chrono::Months::new(12))
             .format("%Y-%m-%d")
             .to_string();
         assert!(validate_child_age(&future).is_err());
     }
 
-    // ─── Inline validation logic (mirrors handler checks) ───────────────────
+    // â”€â”€â”€ Inline validation logic (mirrors handler checks) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     fn validate_password(password: &str) -> Result<(), String> {
         if password.len() < MIN_PASSWORD_LEN || password.len() > MAX_PASSWORD_BYTES {
             return Err(format!(
-                "Password must be {MIN_PASSWORD_LEN}–{MAX_PASSWORD_BYTES} characters"
+                "Password must be {MIN_PASSWORD_LEN}â€“{MAX_PASSWORD_BYTES} characters"
             ));
         }
         Ok(())
@@ -938,7 +940,7 @@ mod tests {
         let username = raw.trim();
         if username.len() < MIN_USERNAME_LEN || username.len() > MAX_USERNAME_LEN {
             return Err(format!(
-                "Username must be {MIN_USERNAME_LEN}–{MAX_USERNAME_LEN} characters"
+                "Username must be {MIN_USERNAME_LEN}â€“{MAX_USERNAME_LEN} characters"
             ));
         }
         Ok(())
@@ -982,7 +984,7 @@ mod tests {
         let display_name = raw.trim();
         if display_name.is_empty() || display_name.len() > MAX_DISPLAY_NAME_LEN {
             return Err(format!(
-                "Display name must be 1–{MAX_DISPLAY_NAME_LEN} characters"
+                "Display name must be 1â€“{MAX_DISPLAY_NAME_LEN} characters"
             ));
         }
         Ok(())
@@ -1055,7 +1057,7 @@ mod tests {
         assert!(validate_email("@").is_ok());
     }
 
-    // ─── Friendship UID ordering (from approve_friend_request) ──────────────
+    // â”€â”€â”€ Friendship UID ordering (from approve_friend_request) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     fn ordered_pair(a: Uuid, b: Uuid) -> (Uuid, Uuid) {
         if a < b {

@@ -12,7 +12,7 @@ import { waitForAppReady, waitForKeyBundles, navigateClientSide } from './helper
 /**
  * Feature: Read Receipts
  *
- * Two-user live test: User A sends DM → User B opens it → read receipt fires.
+ * Two-user live test: User A sends DM -> User B opens it -> read receipt fires.
  */
 
 test.describe.configure({ timeout: 180_000 });
@@ -24,7 +24,44 @@ const USER_B_PASS = process.env.E2E_PASSWORD_2 ?? '';
 
 const client = new E2EApiClient();
 
-test.describe('Read receipts — DM', () => {
+async function loginAndBootstrapSignal(
+	page: Awaited<ReturnType<Browser['newPage']>>,
+	email: string,
+	password: string,
+	installationId: string,
+) {
+	const keyUploads = [
+		page.waitForResponse(
+			(response) =>
+				response.request().method() === 'POST' &&
+				response.url().includes('/api/v2/keys/identity') &&
+				response.ok(),
+		),
+		page.waitForResponse(
+			(response) =>
+				response.request().method() === 'POST' &&
+				response.url().includes('/api/v2/keys/signed-prekey') &&
+				response.ok(),
+		),
+		page.waitForResponse(
+			(response) =>
+				response.request().method() === 'POST' &&
+				response.url().includes('/api/v2/keys/one-time-prekeys') &&
+				response.ok(),
+		),
+	];
+
+	await setInstallationId(page, installationId);
+	await page.goto('/login');
+	await page.fill('#email', email);
+	await page.fill('#password', password);
+	await page.getByRole('button', { name: /Sign In/i }).click();
+	await page.waitForURL(/\/explore/, { timeout: 20_000 });
+	await waitForAppReady(page);
+	await Promise.all(keyUploads);
+}
+
+test.describe('Read receipts - DM', () => {
 	test.use({ storageState: { cookies: [], origins: [] } });
 
 	test.skip(
@@ -49,32 +86,9 @@ test.describe('Read receipts — DM', () => {
 		const pageB = await ctxB.newPage();
 
 		try {
-			// Log in User B FIRST so their browser uploads prekeys to the server.
-			// User A's X3DH can then succeed when they navigate to the DM.
-			await setInstallationId(pageB, B_PRIMARY_INSTALLATION_ID);
-			await pageB.goto('/login');
-			await pageB.fill('#email', USER_B_EMAIL);
-			await pageB.fill('#password', USER_B_PASS);
-			await pageB.getByRole('button', { name: /Sign In/i }).click();
-			await pageB.waitForURL(/\/explore/, { timeout: 20_000 });
-			await waitForAppReady(pageB);
+			await loginAndBootstrapSignal(pageB, USER_B_EMAIL, USER_B_PASS, B_PRIMARY_INSTALLATION_ID);
+			await loginAndBootstrapSignal(pageA, USER_A_EMAIL, USER_A_PASS, PRIMARY_INSTALLATION_ID);
 
-			// Log in User A (User B's prekeys are now on the server)
-			await setInstallationId(pageA, PRIMARY_INSTALLATION_ID);
-			await pageA.goto('/login');
-			await pageA.fill('#email', USER_A_EMAIL);
-			await pageA.fill('#password', USER_A_PASS);
-			await pageA.getByRole('button', { name: /Sign In/i }).click();
-			await pageA.waitForURL(/\/explore/, { timeout: 20_000 });
-			await waitForAppReady(pageA);
-
-			// Fresh browser contexts upload NEW Signal keys as a background promise
-			// (initializeSignalKeys). Wait for keys to settle before sending.
-			await Promise.all([pageA.waitForTimeout(15_000), pageB.waitForTimeout(15_000)]);
-
-			// Wait for BOTH users' key bundles to land on the server before A
-			// sends. initializeSignalKeys() runs as a background promise after
-			// the loading screen hides, so encryptDm() can race with key upload.
 			await Promise.all([
 				waitForKeyBundles(sessionA.accessToken, sessionA.userId),
 				waitForKeyBundles(sessionA.accessToken, sessionB.userId),
@@ -87,22 +101,12 @@ test.describe('Read receipts — DM', () => {
 			const testMsg = `RR Test ${Date.now()}`;
 			await inputA.fill(testMsg);
 			await inputA.press('Enter');
-			await expect(pageA.getByText(testMsg)).toBeVisible({ timeout: 60_000 });
+			await expect(pageA.getByTestId('dm-message-list')).toContainText(testMsg, { timeout: 10_000 });
 
-			// User B opens the conversation (their Signal session can now decrypt)
 			await navigateClientSide(pageB, `/dm/${conversationId}`);
-			await expect(pageB.getByText(testMsg)).toBeVisible({ timeout: 60_000 });
+			await expect(pageB.getByTestId('dm-message-list')).toContainText(testMsg, { timeout: 10_000 });
 
-			// User A should now see a "read" indicator once User B has read the message.
-			// Note: IntersectionObserver-based read-marking is not yet implemented in the
-			// frontend (deferred), so this assertion is soft — it passes even if the receipt
-			// isn't visible yet, while still validating the component selector is correct.
-			await pageA.locator('.read-receipt, [data-testid="read-receipt"], [aria-label*="Read"]')
-				.waitFor({ state: 'visible', timeout: 10_000 })
-				.catch(() => {
-					// Feature partially implemented — receipt display exists but automatic
-					// IntersectionObserver marking is deferred.  Not a test failure.
-				});
+			await expect(pageA.getByTestId('read-receipt-indicator')).toBeVisible({ timeout: 8_000 });
 		} finally {
 			await ctxA.close();
 			await ctxB.close();

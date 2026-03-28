@@ -20,10 +20,45 @@ async function setupAuthWithServer(
 ): Promise<void> {
 	const device = buildMockDevice({ installation_id: 'emoji-test-install' });
 	const authData = buildMockAuthData({ device });
+	await page.addInitScript(() => {
+		const clearNativeMarkers = () => {
+			try {
+				delete (window as unknown as { Capacitor?: unknown }).Capacitor;
+				delete (window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
+				delete (window as unknown as { __TAURI__?: unknown }).__TAURI__;
+			} catch {
+				// Ignore if the runtime seals these properties; the web path still works when absent.
+			}
+		};
+		clearNativeMarkers();
+		window.setInterval(clearNativeMarkers, 0);
+		try {
+			const proxiedWindow = new Proxy(window, {
+				has(target, prop) {
+					if (prop === 'Capacitor' || prop === '__TAURI_INTERNALS__' || prop === '__TAURI__') {
+						return false;
+					}
+					return Reflect.has(target, prop);
+				},
+				get(target, prop, receiver) {
+					if (prop === 'Capacitor' || prop === '__TAURI_INTERNALS__' || prop === '__TAURI__') {
+						return undefined;
+					}
+					return Reflect.get(target, prop, receiver);
+				},
+			});
+			Object.defineProperty(globalThis, 'window', {
+				configurable: true,
+				get: () => proxiedWindow,
+			});
+		} catch {
+			// If the runtime refuses to proxy the global, the repeated cleanup still helps.
+		}
+	});
 	await setInstallationId(page, 'emoji-test-install');
 	await mockAuthEndpoints(page, authData);
 
-	await page.route(`**/api/v1/servers`, async (route) => {
+	await page.route(`**/api/v2/servers`, async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
@@ -39,30 +74,47 @@ async function setupAuthWithServer(
 		});
 	});
 
-	await page.route(`**/api/v1/conversations`, async (route) => {
+	await page.route(`**/api/v2/users/**/presence`, async (route) => {
+		await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+	});
+
+	await page.route(`**/api/v2/conversations`, async (route) => {
 		await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
 	});
 
 	// Mock server emojis
-	await page.route(`**/api/v1/servers/${serverId}/emojis`, async (route) => {
+	await page.route(`**/api/v2/servers/${serverId}/emojis`, async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
-			body: JSON.stringify(
-				emojis.map((e, i) => ({
+			body: JSON.stringify({
+				emojis: emojis.map((e, i) => ({
 					id: `emoji-${i}`,
 					name: e.name,
-					url: e.url,
-					server_id: serverId,
-					uploaded_by: 'e2e-user',
-					created_at: new Date().toISOString(),
+					image_url: e.url,
 				})),
-			),
+			}),
+		});
+	});
+
+	await page.route(`**/api/v2/servers/${serverId}/channels`, async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify([
+				{
+					id: channelId,
+					server_id: serverId,
+					name: 'general',
+					type: 'text',
+					position: 1,
+				},
+			]),
 		});
 	});
 
 	// Mock channel messages containing emoji shortcodes
-	await page.route(`**/api/v1/channels/${channelId}/messages**`, async (route) => {
+	await page.route(`**/api/v2/channels/${channelId}/messages**`, async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
@@ -83,7 +135,23 @@ async function setupAuthWithServer(
 		});
 	});
 
-	await page.route(`**/api/v1/servers/${serverId}/members**`, async (route) => {
+	await page.route(`**/api/v2/channels/${channelId}/members`, async (route) => {
+		await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+	});
+
+	await page.route(`**/api/v2/channels/${channelId}/sender-key-dist`, async (route) => {
+		await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+	});
+
+	await page.route(`**/api/v2/canvas/servers/${serverId}/state**`, async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ music: null, polls: [], clips: [] }),
+		});
+	});
+
+	await page.route(`**/api/v2/servers/${serverId}/members**`, async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
@@ -94,11 +162,18 @@ async function setupAuthWithServer(
 	});
 
 	await mockExploreEndpoints(page);
+	page.on('response', (response) => {
+		if (response.status() === 401 || response.status() === 403 || response.status() >= 500) {
+			console.log('[emoji response]', response.status(), response.url());
+		}
+	});
+	page.on('pageerror', (err) => console.log('[emoji pageerror]', err.message));
+	page.on('console', (msg) => {
+		if (msg.type() === 'error') console.log('[emoji console]', msg.text());
+	});
 }
 
 test.describe('Custom emoji rendering @smoke', () => {
-	test.use({ storageState: { cookies: [], origins: [] } });
-
 	test('renders :emoji_name: as <img> with safe URL', async ({ page }) => {
 		const serverId = 'srv-emoji-render';
 		const channelId = 'ch-emoji-render';
@@ -107,19 +182,22 @@ test.describe('Custom emoji rendering @smoke', () => {
 			{ name: 'party_parrot', url: SAFE_EMOJI_URL },
 		]);
 
+		const bootstrapReady = Promise.all([
+			page.waitForResponse((resp) => resp.url().includes('/api/v2/keys/identity') && resp.status() === 200),
+			page.waitForResponse((resp) => resp.url().includes('/api/v2/keys/signed-prekey') && resp.status() === 200),
+			page.waitForResponse((resp) => resp.url().includes('/api/v2/keys/one-time-prekeys') && resp.status() === 200),
+			page.waitForResponse((resp) => resp.url().includes('/api/v2/keys/one-time-prekey-count') && resp.status() === 200),
+		]);
+		await page.goto('/explore');
+		await bootstrapReady;
 		await page.goto(`/servers/${serverId}/channels/${channelId}`);
-		await expect(page.locator('[aria-label="Loading Yapper"]')).toHaveCount(0, { timeout: 20_000 });
-
-		// Wait for message list to render
-		await page.waitForTimeout(2_000);
+		await expect(page.getByLabel('Loading Yapper')).toBeHidden({ timeout: 30_000 });
 
 		// Check that the page loaded without errors
 		await expect(page.locator('body')).toBeVisible();
 
-		// If emoji rendering is working, the shortcode should be replaced by an img
-		// or the text should be visible as-is if the emoji store hasn't loaded yet
-		const messageArea = page.locator('main, [class*="message"], [class*="chat"]').first();
-		await expect(messageArea).toBeVisible({ timeout: 10_000 });
+		await expect(page.getByTestId('message-list')).toContainText('Check out this emoji', { timeout: 10_000 });
+		await expect(page.locator(`img[src="${SAFE_EMOJI_URL}"]`)).toHaveCount(1, { timeout: 10_000 });
 	});
 
 	test('blocks javascript: protocol in emoji URLs (XSS prevention)', async ({ page }) => {
@@ -135,8 +213,7 @@ test.describe('Custom emoji rendering @smoke', () => {
 		page.on('pageerror', (err) => jsErrors.push(err.message));
 
 		await page.goto(`/servers/${serverId}/channels/${channelId}`);
-		await expect(page.locator('[aria-label="Loading Yapper"]')).toHaveCount(0, { timeout: 20_000 });
-		await page.waitForTimeout(2_000);
+		await expect(page.getByLabel('Loading Yapper')).toBeHidden({ timeout: 30_000 });
 
 		// No img tags should have javascript: src
 		const dangerousImgs = await page.locator('img[src^="javascript:"]').count();
@@ -149,8 +226,6 @@ test.describe('Custom emoji rendering @smoke', () => {
 });
 
 test.describe('Emoji picker integration @smoke', () => {
-	test.use({ storageState: { cookies: [], origins: [] } });
-
 	test('emoji picker button is visible in message input area', async ({ page }) => {
 		const serverId = 'srv-emoji-picker';
 		const channelId = 'ch-emoji-picker';
@@ -160,7 +235,7 @@ test.describe('Emoji picker integration @smoke', () => {
 		]);
 
 		await page.goto(`/servers/${serverId}/channels/${channelId}`);
-		await expect(page.locator('[aria-label="Loading Yapper"]')).toHaveCount(0, { timeout: 20_000 });
+		await expect(page.getByLabel('Loading Yapper')).toBeHidden({ timeout: 30_000 });
 
 		// Look for emoji picker toggle button near the message input
 		const emojiBtn = page.locator(

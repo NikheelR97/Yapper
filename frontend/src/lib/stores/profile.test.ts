@@ -55,7 +55,7 @@ describe('profile store', () => {
 
 		await loadProfile('tester');
 
-		expect(api.get).toHaveBeenCalledWith('/api/v1/users/by/tester');
+		expect(api.get).toHaveBeenCalledWith('/api/v2/users/by/tester');
 		expect(get(profileStore)).toEqual({
 			profile: testProfile,
 			loading: false,
@@ -84,7 +84,7 @@ describe('profile store', () => {
 
 		await followUser('tester');
 
-		expect(api.post).toHaveBeenCalledWith('/api/v1/users/by/tester/follow');
+		expect(api.post).toHaveBeenCalledWith('/api/v2/users/by/tester/follow');
 		expect(get(profileStore).profile).toMatchObject({
 			isFollowing: true,
 			followerCount: 5,
@@ -100,7 +100,7 @@ describe('profile store', () => {
 
 		await unfollowUser('tester');
 
-		expect(api.delete).toHaveBeenCalledWith('/api/v1/users/by/tester/follow');
+		expect(api.delete).toHaveBeenCalledWith('/api/v2/users/by/tester/follow');
 		expect(get(profileStore).profile).toMatchObject({
 			isFollowing: false,
 			followerCount: 0,
@@ -121,6 +121,6 @@ describe('profile store', () => {
 	it('sends friend requests through the expected endpoint', async () => {
 		await sendFriendRequest('tester');
 
-		expect(api.post).toHaveBeenCalledWith('/api/v1/users/by/tester/friend-request');
+		expect(api.post).toHaveBeenCalledWith('/api/v2/users/by/tester/friend-request');
 	});
 });

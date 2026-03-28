@@ -1,11 +1,12 @@
 import type { FullConfig } from '@playwright/test';
-import { writeFileSync } from 'fs';
+import { mkdirSync, writeFileSync } from 'fs';
 
 interface AuthData {
 	accessToken: string;
 	csrfToken: string;
 	user: Record<string, unknown>;
 	device?: Record<string, unknown>;
+	refreshToken?: string;
 }
 
 interface LoginResult {
@@ -89,24 +90,21 @@ function responseCookies(apiUrl: string, response: Response): LoginResult['stora
 		.filter((cookie): cookie is NonNullable<typeof cookie> => cookie !== null);
 }
 
-async function loginWithFallback(apiUrl: string, email: string, password: string): Promise<LoginResult> {
+async function loginWithV2(
+	apiUrl: string,
+	email: string,
+	password: string,
+	deviceBootstrap: typeof DEFAULT_DEVICE_BOOTSTRAP,
+): Promise<LoginResult> {
 	let response = await fetch(`${apiUrl}/api/v2/auth/login`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({
 			email,
 			password,
-			device: DEFAULT_DEVICE_BOOTSTRAP,
+			device: deviceBootstrap,
 		}),
 	});
-
-	if (response.status === 404) {
-		response = await fetch(`${apiUrl}/api/v1/auth/login`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ email, password }),
-		});
-	}
 
 	if (!response.ok) {
 		throw new Error(`global setup login failed: ${response.status} ${await response.text()}`);
@@ -115,6 +113,7 @@ async function loginWithFallback(apiUrl: string, email: string, password: string
 	const body = (await response.json()) as {
 		access_token?: string;
 		csrf_token?: string;
+		refresh_token?: string;
 		user?: Record<string, unknown>;
 		device?: Record<string, unknown>;
 	};
@@ -127,6 +126,7 @@ async function loginWithFallback(apiUrl: string, email: string, password: string
 		auth: {
 			accessToken: body.access_token,
 			csrfToken: body.csrf_token,
+			refreshToken: body.refresh_token,
 			user: body.user,
 			device: body.device,
 		},
@@ -138,7 +138,7 @@ async function loginWithFallback(apiUrl: string, email: string, password: string
 }
 
 async function fetchUser(apiUrl: string, accessToken: string): Promise<Record<string, unknown> | null> {
-	const response = await fetch(`${apiUrl}/api/v1/users/me`, {
+	const response = await fetch(`${apiUrl}/api/v2/users/me`, {
 		headers: { Authorization: `Bearer ${accessToken}` },
 	});
 
@@ -149,29 +149,62 @@ async function fetchUser(apiUrl: string, accessToken: string): Promise<Record<st
 	return (await response.json()) as Record<string, unknown>;
 }
 
+function writeAuthArtifacts(prefix: string, result: LoginResult): void {
+	mkdirSync('tests/auth-state', { recursive: true });
+	writeFileSync(`tests/auth-state/${prefix}.json`, JSON.stringify(result.storageState, null, 2));
+	writeFileSync(`tests/auth-state/${prefix}.data.json`, JSON.stringify(result.auth, null, 2));
+}
+
 /**
  * Global setup writes:
- * - tests/auth-state.json with API cookies for refresh flows
- * - tests/auth-data.json with access token, CSRF token, user, and optional device
+ * - tests/auth-state/user-a(.data).json for the primary account
+ * - tests/auth-state/user-b(.data).json for the secondary account when configured
+ * - legacy tests/auth-state.json + tests/auth-data.json for mocked-auth specs
  *
  * Most E2E specs mock /api/v2/auth/refresh and /users/me using this saved data so
  * they do not burn through the backend login rate limit.
  */
 export default async function globalSetup(_config: FullConfig) {
-	const email = process.env.E2E_EMAIL;
-	const password = process.env.E2E_PASSWORD;
-
-	if (!email || !password) {
-		return;
-	}
-
 	const apiUrl = process.env.VITE_API_URL ?? 'https://api.yapperhq.com';
-	const result = await loginWithFallback(apiUrl, email, password);
-	const latestUser = await fetchUser(apiUrl, result.auth.accessToken);
-	if (latestUser) {
-		result.auth.user = latestUser;
-	}
 
-	writeFileSync('tests/auth-state.json', JSON.stringify(result.storageState, null, 2));
-	writeFileSync('tests/auth-data.json', JSON.stringify(result.auth, null, 2));
+	const accounts = [
+		{
+			email: process.env.E2E_EMAIL,
+			password: process.env.E2E_PASSWORD,
+			prefix: 'user-a',
+			writeLegacy: true,
+			device: DEFAULT_DEVICE_BOOTSTRAP,
+		},
+		{
+			email: process.env.E2E_EMAIL_2,
+			password: process.env.E2E_PASSWORD_2,
+			prefix: 'user-b',
+			writeLegacy: false,
+			device: {
+				installation_id:
+					process.env.E2E_SECONDARY_INSTALLATION_ID ??
+					'22222222-2222-4222-8222-222222222222',
+				platform: 'web',
+				label: 'E2E Secondary Browser',
+			},
+		},
+	];
+
+	for (const account of accounts) {
+		if (!account.email || !account.password) {
+			continue;
+		}
+
+		const result = await loginWithV2(apiUrl, account.email, account.password, account.device);
+		const latestUser = await fetchUser(apiUrl, result.auth.accessToken);
+		if (latestUser) {
+			result.auth.user = latestUser;
+		}
+
+		writeAuthArtifacts(account.prefix, result);
+		if (account.writeLegacy) {
+			writeFileSync('tests/auth-state.json', JSON.stringify(result.storageState, null, 2));
+			writeFileSync('tests/auth-data.json', JSON.stringify(result.auth, null, 2));
+		}
+	}
 }

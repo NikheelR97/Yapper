@@ -151,7 +151,7 @@
 					<div class="section-header">
 						<h3 class="section-label">Polls</h3>
 						{#if channelId && isAdmin}
-							<button class="btn-add-inline" on:click={() => (showPollCreator = true)}>+</button>
+							<button class="btn-add-inline" on:click={() => (showPollCreator = true)} aria-label="Add poll">+</button>
 						{/if}
 					</div>
 					<div class="polls-list">

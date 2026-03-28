@@ -3,7 +3,7 @@
  *
  * Sources of truth (in priority order):
  *  1. WS `presence` events pushed by the server (immediate)
- *  2. REST GET /api/v1/users/:id/presence (initial fetch + fallback)
+ *  2. REST GET /api/v2/users/:id/presence (initial fetch + fallback)
  *
  * Usage:
  *   const status = getPresence(userId);   // subscribe to a readable
@@ -14,6 +14,7 @@
 import { writable, get } from 'svelte/store';
 import { api } from '$api/client.js';
 import { onWsMessage } from '$stores/ws.js';
+import { registerSessionResetter } from '$stores/auth.js';
 
 interface PresenceState {
     online: boolean;
@@ -25,6 +26,16 @@ interface PresenceState {
 const presenceMap = new Map<string, ReturnType<typeof writable<PresenceState>>>();
 // Track which users have already been fetched via REST to avoid duplicate requests
 const fetchedUsers = new Set<string>();
+
+function resetPresenceState(): void {
+    for (const store of presenceMap.values()) {
+        store.set({ online: false, away: false, lastSeen: null });
+    }
+    presenceMap.clear();
+    fetchedUsers.clear();
+}
+
+registerSessionResetter(resetPresenceState);
 
 function getOrCreate(userId: string) {
     if (!presenceMap.has(userId)) {
@@ -54,7 +65,7 @@ export function getPresence(userId: string) {
 export async function fetchPresence(userId: string): Promise<void> {
     try {
         const res = await api.get<{ online: boolean; last_seen_at: string | null }>(
-            `/api/v1/users/${userId}/presence`
+			`/api/v2/users/${userId}/presence`
         );
         // REST endpoint doesn't expose away state — only WS events do
         getOrCreate(userId).update(s => ({ ...s, online: res.online, lastSeen: res.last_seen_at }));

@@ -48,7 +48,7 @@ export async function mockExploreEndpoints(
 	const searchUsers = data.searchUsers ?? [];
 
 	// Store expects { tags: Array<{tag: string, server_count: number}> }
-	await page.route(`**/api/v1/explore/trending-tags`, async (route) => {
+	await page.route(`**/api/v2/explore/trending-tags`, async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
@@ -59,7 +59,7 @@ export async function mockExploreEndpoints(
 	});
 
 	// Store expects { servers: LiveServer[] } with snake_case fields
-	await page.route(`**/api/v1/explore/live-servers`, async (route) => {
+	await page.route(`**/api/v2/explore/live-servers`, async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
@@ -77,7 +77,7 @@ export async function mockExploreEndpoints(
 	});
 
 	// Store expects { communities: Community[] } with snake_case fields
-	await page.route(`**/api/v1/explore/communities`, async (route) => {
+	await page.route(`**/api/v2/explore/communities`, async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
@@ -93,9 +93,9 @@ export async function mockExploreEndpoints(
 		});
 	});
 
-	// Store uses /api/v1/search?q=... and expects { servers: [...], users: [...] }
+	// Store uses /api/v2/search?q=... and expects { servers: [...], users: [...] }
 	// with users having display_name (snake_case), is_friend, request_sent
-	await page.route(`**/api/v1/search**`, async (route) => {
+	await page.route(`**/api/v2/search**`, async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
@@ -161,7 +161,7 @@ export async function mockProfileEndpoints(page: Page, profile: MockProfile): Pr
 
 	// Use a function-based URL matcher to avoid glob/micromatch edge cases.
 	await page.route(
-		(url) => url.pathname === `/api/v1/users/by/${profile.username}`,
+		(url) => url.pathname === `/api/v2/users/by/${profile.username}`,
 		async (route) => {
 			await route.fulfill({
 				status: 200,
@@ -173,7 +173,7 @@ export async function mockProfileEndpoints(page: Page, profile: MockProfile): Pr
 
 	// Follow / unfollow
 	await page.route(
-		(url) => url.pathname === `/api/v1/users/by/${profile.username}/follow`,
+		(url) => url.pathname === `/api/v2/users/by/${profile.username}/follow`,
 		async (route) => {
 			await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
 		},
@@ -181,7 +181,7 @@ export async function mockProfileEndpoints(page: Page, profile: MockProfile): Pr
 
 	// Friend request
 	await page.route(
-		(url) => url.pathname === `/api/v1/users/by/${profile.username}/friend-request`,
+		(url) => url.pathname === `/api/v2/users/by/${profile.username}/friend-request`,
 		async (route) => {
 			await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
 		},
@@ -210,7 +210,7 @@ export async function mockParentalEndpoints(
 	children: MockChild[] = [],
 	alerts: MockAlert[] = [],
 ): Promise<void> {
-	await page.route(`**/api/v1/parental/children`, async (route) => {
+	await page.route(`**/api/v2/parental/children`, async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
@@ -218,7 +218,7 @@ export async function mockParentalEndpoints(
 		});
 	});
 
-	await page.route(`**/api/v1/parental/pending-alerts`, async (route) => {
+	await page.route(`**/api/v2/parental/pending-alerts`, async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
@@ -226,7 +226,7 @@ export async function mockParentalEndpoints(
 		});
 	});
 
-	await page.route(`**/api/v1/parental/activity**`, async (route) => {
+	await page.route(`**/api/v2/parental/activity**`, async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
@@ -234,7 +234,7 @@ export async function mockParentalEndpoints(
 		});
 	});
 
-	await page.route(`**/api/v1/parental/screen-time**`, async (route) => {
+	await page.route(`**/api/v2/parental/screen-time**`, async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
@@ -243,7 +243,7 @@ export async function mockParentalEndpoints(
 	});
 
 	// Child creation
-	await page.route(`**/api/v1/parental/children`, async (route) => {
+	await page.route(`**/api/v2/parental/children`, async (route) => {
 		if (route.request().method() === 'POST') {
 			await route.fulfill({
 				status: 201,
@@ -294,8 +294,8 @@ export async function mockCanvasEndpoints(
 	];
 	const clips = data.clips ?? [];
 
-	// Canvas state — backend path is /api/v1/canvas/servers/:server_id
-	await page.route(`**/api/v1/canvas/servers/*/state**`, async (route) => {
+	// Canvas state — backend path is /api/v2/canvas/servers/:server_id
+	await page.route(`**/api/v2/canvas/servers/*/state**`, async (route) => {
 		const normalizedPolls = polls.map((p) => ({
 			id: p.id,
 			channel_id: 'mock-channel',
@@ -317,7 +317,7 @@ export async function mockCanvasEndpoints(
 	});
 
 	// Clips sub-route
-	await page.route(`**/api/v1/canvas/servers/*/clips`, async (route) => {
+	await page.route(`**/api/v2/canvas/servers/*/clips`, async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
@@ -325,8 +325,8 @@ export async function mockCanvasEndpoints(
 		});
 	});
 
-	// Poll vote — backend path is /api/v1/canvas/polls/:poll_id/vote
-	await page.route(`**/api/v1/canvas/polls/*/vote`, async (route) => {
+	// Poll vote — backend path is /api/v2/canvas/polls/:poll_id/vote
+	await page.route(`**/api/v2/canvas/polls/*/vote`, async (route) => {
 		await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ vote_counts: {} }) });
 	});
 }
@@ -337,7 +337,7 @@ export async function mockSupportEndpoints(
 	page: Page,
 	tickets: Array<{ id: string; type: string; priority: string; description: string; createdAt: string }> = [],
 ): Promise<void> {
-	await page.route(`**/api/v1/support/tickets`, async (route) => {
+	await page.route(`**/api/v2/support/tickets`, async (route) => {
 		if (route.request().method() === 'GET') {
 			await route.fulfill({
 				status: 200,
@@ -372,7 +372,7 @@ export async function mockPremiumEndpoints(
 	page: Page,
 	{ promoValid = true }: { promoValid?: boolean } = {},
 ): Promise<void> {
-	await page.route(`**/api/v1/premium/promo`, async (route) => {
+	await page.route(`**/api/v2/premium/promo`, async (route) => {
 		if (promoValid) {
 			await route.fulfill({
 				status: 200,

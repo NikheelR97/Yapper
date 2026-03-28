@@ -9,6 +9,7 @@
 import { writable, get } from 'svelte/store';
 import { api } from '$api/client.js';
 import { onWsMessage } from '$stores/ws.js';
+import { registerSessionResetter } from '$stores/auth.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -113,6 +114,15 @@ const emptyState: CanvasState = {
 	loading: false,
 };
 
+function resetCanvasState(): void {
+	for (const store of canvasStores.values()) {
+		store.set({ ...emptyState });
+	}
+	canvasStores.clear();
+}
+
+registerSessionResetter(resetCanvasState);
+
 export function getCanvasStore(serverId: string) {
 	if (!canvasStores.has(serverId)) {
 		canvasStores.set(serverId, writable<CanvasState>({ ...emptyState }));
@@ -135,7 +145,7 @@ export async function loadCanvasState(
 			clips: ClipV2[];
 			pinned_clips: ClipV2[];
 			event: CanvasEvent | null;
-		}>(`/api/v1/canvas/servers/${serverId}/state?channel_id=${channelId}`);
+		}>(`/api/v2/canvas/servers/${serverId}/state?channel_id=${channelId}`);
 		store.set({
 			music: res.music ?? emptyState.music,
 			polls: res.polls ?? [],
@@ -158,7 +168,7 @@ export async function loadCanvas(serverId: string): Promise<void> {
 			music: MusicNowPlaying | null;
 			polls: Poll[];
 			clips: ClipV2[];
-		}>(`/api/v1/canvas/servers/${serverId}`);
+		}>(`/api/v2/canvas/servers/${serverId}`);
 		store.update((s) => ({
 			...s,
 			music: {
@@ -177,7 +187,7 @@ export async function loadCanvas(serverId: string): Promise<void> {
 export async function loadClips(serverId: string): Promise<void> {
 	try {
 		const res = await api.get<{ clips: ClipV2[] }>(
-			`/api/v1/canvas/servers/${serverId}/clips`
+			`/api/v2/canvas/servers/${serverId}/clips`
 		);
 		getCanvasStore(serverId).update((s) => ({
 			...s,
@@ -199,7 +209,7 @@ export interface MusicInput {
 }
 
 export async function setMusic(serverId: string, input: MusicInput): Promise<void> {
-	await api.patch(`/api/v1/canvas/servers/${serverId}/music`, input);
+	await api.patch(`/api/v2/canvas/servers/${serverId}/music`, input);
 }
 
 export interface EnqueueTrackInput {
@@ -214,21 +224,21 @@ export async function enqueueTrack(
 	serverId: string,
 	input: EnqueueTrackInput
 ): Promise<{ id: string; position: number }> {
-	return api.post(`/api/v1/canvas/servers/${serverId}/music/queue`, input);
+	return api.post(`/api/v2/canvas/servers/${serverId}/music/queue`, input);
 }
 
 export async function removeFromQueue(
 	serverId: string,
 	trackId: string
 ): Promise<void> {
-	await api.delete(`/api/v1/canvas/servers/${serverId}/music/queue/${trackId}`);
+	await api.delete(`/api/v2/canvas/servers/${serverId}/music/queue/${trackId}`);
 }
 
 export async function reorderQueue(
 	serverId: string,
 	trackIds: string[]
 ): Promise<void> {
-	await api.post(`/api/v1/canvas/servers/${serverId}/music/queue/reorder`, {
+	await api.post(`/api/v2/canvas/servers/${serverId}/music/queue/reorder`, {
 		track_ids: trackIds,
 	});
 }
@@ -242,14 +252,14 @@ export interface SkipVoteResult {
 }
 
 export async function skipVote(serverId: string): Promise<SkipVoteResult> {
-	return api.post(`/api/v1/canvas/servers/${serverId}/music/skip-vote`, {});
+	return api.post(`/api/v2/canvas/servers/${serverId}/music/skip-vote`, {});
 }
 
 export async function advanceTrack(
 	serverId: string,
 	force = false
 ): Promise<{ now_playing: MusicNowPlaying | null; queue_remaining: number }> {
-	return api.post(`/api/v1/canvas/servers/${serverId}/music/advance`, { force });
+	return api.post(`/api/v2/canvas/servers/${serverId}/music/advance`, { force });
 }
 
 export interface HistoryTrack {
@@ -268,7 +278,7 @@ export async function getMusicHistory(
 	serverId: string
 ): Promise<HistoryTrack[]> {
 	const res = await api.get<{ tracks: HistoryTrack[] }>(
-		`/api/v1/canvas/servers/${serverId}/music/history`
+		`/api/v2/canvas/servers/${serverId}/music/history`
 	);
 	return res.tracks;
 }
@@ -278,7 +288,7 @@ export async function updateMusicSettings(
 	settings: { skip_threshold_pct?: number; queue_enabled?: boolean }
 ): Promise<void> {
 	await api.patch(
-		`/api/v1/canvas/servers/${serverId}/music/settings`,
+		`/api/v2/canvas/servers/${serverId}/music/settings`,
 		settings
 	);
 }
@@ -295,7 +305,7 @@ export async function createPoll(
 		anonymous?: boolean;
 	}
 ): Promise<{ id: string }> {
-	return api.post(`/api/v1/canvas/channels/${channelId}/polls`, {
+	return api.post(`/api/v2/canvas/channels/${channelId}/polls`, {
 		poll_type: opts?.poll_type ?? 'multiple_choice',
 		question,
 		options,
@@ -310,7 +320,7 @@ export async function votePoll(
 	optionIndex: number
 ): Promise<void> {
 	const res = await api.post<{ vote_counts: Record<string, number> }>(
-		`/api/v1/canvas/polls/${pollId}/vote`,
+		`/api/v2/canvas/polls/${pollId}/vote`,
 		{ option_index: optionIndex }
 	);
 	getCanvasStore(serverId).update((s) => ({
@@ -324,7 +334,7 @@ export async function votePoll(
 }
 
 export async function closePoll(pollId: string): Promise<void> {
-	await api.post(`/api/v1/canvas/polls/${pollId}/close`, {});
+	await api.post(`/api/v2/canvas/polls/${pollId}/close`, {});
 }
 
 export interface PollResults {
@@ -343,7 +353,7 @@ export interface PollResults {
 }
 
 export async function getPollResults(pollId: string): Promise<PollResults> {
-	return api.get(`/api/v1/canvas/polls/${pollId}/results`);
+	return api.get(`/api/v2/canvas/polls/${pollId}/results`);
 }
 
 // ─── Clips API ────────────────────────────────────────────────────────────────
@@ -352,7 +362,7 @@ export async function addClipReaction(
 	clipId: string,
 	emoji: string
 ): Promise<void> {
-	await api.put(`/api/v1/canvas/clips/${clipId}/reactions`, { emoji });
+	await api.put(`/api/v2/canvas/clips/${clipId}/reactions`, { emoji });
 }
 
 export async function removeClipReaction(
@@ -360,7 +370,7 @@ export async function removeClipReaction(
 	emoji: string
 ): Promise<void> {
 	await api.delete(
-		`/api/v1/canvas/clips/${clipId}/reactions?emoji=${encodeURIComponent(emoji)}`
+		`/api/v2/canvas/clips/${clipId}/reactions?emoji=${encodeURIComponent(emoji)}`
 	);
 }
 
@@ -368,7 +378,7 @@ export async function pinClip(
 	serverId: string,
 	clipId: string
 ): Promise<void> {
-	await api.post(`/api/v1/canvas/servers/${serverId}/pinned-clips`, {
+	await api.post(`/api/v2/canvas/servers/${serverId}/pinned-clips`, {
 		clip_id: clipId,
 	});
 }
@@ -378,7 +388,7 @@ export async function unpinClip(
 	clipId: string
 ): Promise<void> {
 	await api.delete(
-		`/api/v1/canvas/servers/${serverId}/pinned-clips/${clipId}`
+		`/api/v2/canvas/servers/${serverId}/pinned-clips/${clipId}`
 	);
 }
 
@@ -394,18 +404,18 @@ export async function createCanvasEvent(
 	serverId: string,
 	input: CreateEventInput
 ): Promise<CanvasEvent> {
-	return api.post(`/api/v1/canvas/servers/${serverId}/events`, input);
+	return api.post(`/api/v2/canvas/servers/${serverId}/events`, input);
 }
 
 export async function updateCanvasEvent(
 	eventId: string,
 	input: Partial<CreateEventInput>
 ): Promise<CanvasEvent> {
-	return api.patch(`/api/v1/canvas/events/${eventId}`, input);
+	return api.patch(`/api/v2/canvas/events/${eventId}`, input);
 }
 
 export async function deleteCanvasEvent(eventId: string): Promise<void> {
-	await api.delete(`/api/v1/canvas/events/${eventId}`);
+	await api.delete(`/api/v2/canvas/events/${eventId}`);
 }
 
 // ─── WS handler ───────────────────────────────────────────────────────────────

@@ -48,12 +48,33 @@ async function loginAs(page: Page) {
 }
 
 async function loginFresh(page: Page, email: string, password: string, installationId: string) {
+	const keyUploads = [
+		page.waitForResponse(
+			(response) =>
+				response.request().method() === 'POST' &&
+				response.url().includes('/api/v2/keys/identity') &&
+				response.ok(),
+		),
+		page.waitForResponse(
+			(response) =>
+				response.request().method() === 'POST' &&
+				response.url().includes('/api/v2/keys/signed-prekey') &&
+				response.ok(),
+		),
+		page.waitForResponse(
+			(response) =>
+				response.request().method() === 'POST' &&
+				response.url().includes('/api/v2/keys/one-time-prekeys') &&
+				response.ok(),
+		),
+	];
 	await setInstallationId(page, installationId);
 	await page.goto('/login');
 	await page.fill('#email', email);
 	await page.fill('#password', password);
 	await page.getByRole('button', { name: /Sign In/i }).click();
 	await page.waitForURL(/\/explore/, { timeout: 20_000 });
+	await Promise.all(keyUploads);
 }
 
 async function waitForAppReady(page: Page): Promise<void> {
@@ -126,7 +147,7 @@ function apiHeaders(session: SessionBootstrap) {
 }
 
 async function createDmConversation(session: SessionBootstrap, peerId: string): Promise<string> {
-	const response = await fetch(`${API_URL}/api/v1/conversations`, {
+	const response = await fetch(`${API_URL}/api/v2/conversations`, {
 		method: 'POST',
 		headers: apiHeaders(session),
 		body: JSON.stringify({ peer_id: peerId }),
@@ -288,7 +309,7 @@ test.describe('Seeded DM flow', () => {
 		const approveBtn = page.getByRole('button', { name: /^Approve$/i }).first();
 		if (await approveBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
 			await approveBtn.click();
-			await page.waitForTimeout(1_500);
+			await expect(approveBtn).toHaveCount(0, { timeout: 10_000 });
 		}
 
 		const input = page.locator('textarea[aria-label="Message"]').first();
@@ -316,21 +337,12 @@ test.describe('Seeded DM flow', () => {
 		console.log('[test] Pressing Enter at', new Date().toISOString());
 		await input.press('Enter');
 
-		// Poll every 2s to see if message appeared
-		let found = false;
-		for (let i = 0; i < 30; i++) {
-			await page.waitForTimeout(2_000);
-			const isVisible = await page.getByText(testMsg).isVisible().catch(() => false);
-			const isDisabled = await input.isDisabled().catch(() => false);
-			console.log(`[test] t+${(i+1)*2}s: msg visible=${isVisible}, input disabled=${isDisabled}`);
-			if (consoleLogs.length > 0) {
-				const recent = consoleLogs.splice(0);
-				for (const log of recent) console.log(log);
-			}
-			if (isVisible) { found = true; break; }
-		}
+		await expect(page.getByTestId('dm-message-list')).toContainText(testMsg, { timeout: 10_000 });
 
-		expect(found, 'Message should be visible within 60s').toBe(true);
+		if (consoleLogs.length > 0) {
+			const recent = consoleLogs.splice(0);
+			for (const log of recent) console.log(log);
+		}
 		} finally {
 			await ctxB.close();
 		}

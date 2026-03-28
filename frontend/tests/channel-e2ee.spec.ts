@@ -64,7 +64,7 @@ async function createApiSession(
 
 async function createServer(session: Session): Promise<{ serverId: string; channelId: string }> {
 	const name = `E2E Channel E2EE ${Date.now()}`;
-	const createRes = await fetch(`${API_URL}/api/v1/servers`, {
+	const createRes = await fetch(`${API_URL}/api/v2/servers`, {
 		method: 'POST',
 		headers: apiHeaders(session),
 		body: JSON.stringify({ name }),
@@ -72,7 +72,7 @@ async function createServer(session: Session): Promise<{ serverId: string; chann
 	if (!createRes.ok) throw new Error(`createServer failed: ${createRes.status}`);
 	const server = (await createRes.json()) as { id: string };
 
-	const chRes = await fetch(`${API_URL}/api/v1/servers/${server.id}/channels`, {
+	const chRes = await fetch(`${API_URL}/api/v2/servers/${server.id}/channels`, {
 		headers: { Authorization: `Bearer ${session.accessToken}` },
 	});
 	if (!chRes.ok) throw new Error(`listChannels failed: ${chRes.status}`);
@@ -84,7 +84,7 @@ async function createServer(session: Session): Promise<{ serverId: string; chann
 }
 
 async function createInvite(session: Session, serverId: string): Promise<string> {
-	const res = await fetch(`${API_URL}/api/v1/servers/${serverId}/invite`, {
+	const res = await fetch(`${API_URL}/api/v2/servers/${serverId}/invite`, {
 		method: 'POST',
 		headers: apiHeaders(session),
 		body: JSON.stringify({ max_uses: 5 }),
@@ -95,7 +95,7 @@ async function createInvite(session: Session, serverId: string): Promise<string>
 }
 
 async function joinByInvite(session: Session, code: string): Promise<void> {
-	const res = await fetch(`${API_URL}/api/v1/servers/join/${code}`, {
+	const res = await fetch(`${API_URL}/api/v2/servers/join/${code}`, {
 		method: 'POST',
 		headers: apiHeaders(session),
 		body: '{}',
@@ -109,6 +109,26 @@ async function loginAndWaitReady(
 	pass: string,
 	installId: string,
 ): Promise<void> {
+	const keyUploads = [
+		page.waitForResponse(
+			(response) =>
+				response.request().method() === 'POST' &&
+				response.url().includes('/api/v2/keys/identity') &&
+				response.ok(),
+		),
+		page.waitForResponse(
+			(response) =>
+				response.request().method() === 'POST' &&
+				response.url().includes('/api/v2/keys/signed-prekey') &&
+				response.ok(),
+		),
+		page.waitForResponse(
+			(response) =>
+				response.request().method() === 'POST' &&
+				response.url().includes('/api/v2/keys/one-time-prekeys') &&
+				response.ok(),
+		),
+	];
 	await setInstallationId(page, installId);
 	await page.goto('/login');
 	await page.fill('#email', email);
@@ -119,6 +139,7 @@ async function loginAndWaitReady(
 	await expect(page.locator('[aria-label="Loading Yapper"]')).toHaveCount(0, {
 		timeout: 45_000,
 	});
+	await Promise.all(keyUploads);
 }
 
 /**
@@ -138,6 +159,24 @@ async function waitForBundles(authToken: string, userId: string): Promise<void> 
 		await new Promise<void>((resolve) => setTimeout(resolve, 1_000));
 	}
 	throw new Error(`Key bundles for user ${userId} not available after 30 s`);
+}
+
+async function reopenChannel(
+	page: ReturnType<Browser['newPage']> extends Promise<infer P> ? P : never,
+	serverId: string,
+	channelId: string,
+): Promise<void> {
+	await navigateClientSide(page, '/explore');
+	await navigateClientSide(page, `/servers/${serverId}/channels/${channelId}`);
+	await expect(page.locator('textarea[aria-label="Message"]').first()).toBeEnabled({ timeout: 60_000 });
+}
+
+async function expectChannelMessage(
+	page: ReturnType<Browser['newPage']> extends Promise<infer P> ? P : never,
+	text: string,
+	timeout = 10_000,
+): Promise<void> {
+	await expect(page.getByTestId('message-list')).toContainText(text, { timeout });
 }
 
 test.describe('Channel E2EE — cross-user message decryption', () => {
@@ -205,7 +244,6 @@ test.describe('Channel E2EE — cross-user message decryption', () => {
 				// Fresh browser contexts upload NEW Signal keys as a background promise
 				// (initializeSignalKeys). Without this wait, A's joinChannel() may
 				// encrypt using B's stale (pre-session) public key.
-				await Promise.all([pageA.waitForTimeout(15_000), pageB.waitForTimeout(15_000)]);
 
 				// Confirm both users' key bundles are on the server before A navigates.
 				// The app uploads keys async after the loading screen hides; this poll
@@ -229,33 +267,21 @@ test.describe('Channel E2EE — cross-user message decryption', () => {
 				await expect(inputB0).toBeEnabled({ timeout: 60_000 });
 
 				// Wait for the full key_dist_request → redistribution cycle via WS
-				await pageB.waitForTimeout(10_000);
 
 				// Re-navigate B to fetch the redistributed SenderKey from the DB
-				await navigateClientSide(pageB, '/explore');
-				await navigateClientSide(pageB, `/servers/${serverId}/channels/${channelId}`);
-				await expect(pageB.locator('textarea[aria-label="Message"]').first()).toBeEnabled({ timeout: 60_000 });
-				await pageB.waitForTimeout(3_000);
+				await reopenChannel(pageB, serverId, channelId);
 
 				// ── A sends AFTER key exchange is complete ────────────────────────────
 				await inputA.fill(testMsg);
 				await inputA.press('Enter');
-				await expect(pageA.getByText(testMsg)).toBeVisible({ timeout: 15_000 });
+				await expectChannelMessage(pageA, testMsg);
 
 				// ── B should see A's message ─────────────────────────────────────────
 				// If B doesn't see it via WS, re-navigate to fetch from server.
-				const bSees = await pageB.getByText(testMsg).isVisible().catch(() => false);
-				if (!bSees) {
-					await pageB.waitForTimeout(15_000);
-					const bSeesRetry = await pageB.getByText(testMsg).isVisible().catch(() => false);
-					if (!bSeesRetry) {
-						await navigateClientSide(pageB, '/explore');
-						await navigateClientSide(pageB, `/servers/${serverId}/channels/${channelId}`);
-						await expect(pageB.locator('textarea[aria-label="Message"]').first()).toBeEnabled({ timeout: 60_000 });
-						await pageB.waitForTimeout(5_000);
-					}
-				}
-				await expect(pageB.getByText(testMsg)).toBeVisible({ timeout: 30_000 });
+				await expectChannelMessage(pageB, testMsg).catch(async () => {
+					await reopenChannel(pageB, serverId, channelId);
+					await expectChannelMessage(pageB, testMsg);
+				});
 			} finally {
 				await ctxA.close();
 				await ctxB.close();
@@ -303,7 +329,6 @@ test.describe('Channel E2EE — cross-user message decryption', () => {
 				// Fresh browser contexts upload NEW Signal keys as a background promise
 				// (initializeSignalKeys). Without this wait, A's joinChannel() may
 				// encrypt using B's stale (pre-session) public key.
-				await Promise.all([pageA.waitForTimeout(15_000), pageB.waitForTimeout(15_000)]);
 
 				// Confirm both users' key bundles are on the server before A navigates.
 				await Promise.all([
@@ -323,38 +348,27 @@ test.describe('Channel E2EE — cross-user message decryption', () => {
 				await expect(pageB.locator('textarea[aria-label="Message"]').first()).toBeEnabled({ timeout: 60_000 });
 
 				// Wait for key_dist_request → redistribution cycle
-				await pageB.waitForTimeout(10_000);
 
 				// B re-navigates to fetch redistributed SenderKey from DB
-				await navigateClientSide(pageB, '/explore');
-				await navigateClientSide(pageB, `/servers/${serverId}/channels/${channelId}`);
+				await reopenChannel(pageB, serverId, channelId);
 				const inputB = pageB.locator('textarea[aria-label="Message"]').first();
 				await expect(inputB).toBeEnabled({ timeout: 60_000 });
-				await pageB.waitForTimeout(3_000);
 
 				// ── A sends first message AFTER key exchange ─────────────────────────
 				await inputA.fill(msgFromA);
 				await inputA.press('Enter');
-				await expect(pageA.getByText(msgFromA)).toBeVisible({ timeout: 15_000 });
+				await expectChannelMessage(pageA, msgFromA);
 
 				// B should see A's message — re-navigate if WS delivery is slow
-				const bSeesA = await pageB.getByText(msgFromA).isVisible().catch(() => false);
-				if (!bSeesA) {
-					await pageB.waitForTimeout(15_000);
-					const bSeesARetry = await pageB.getByText(msgFromA).isVisible().catch(() => false);
-					if (!bSeesARetry) {
-						await navigateClientSide(pageB, '/explore');
-						await navigateClientSide(pageB, `/servers/${serverId}/channels/${channelId}`);
-						await expect(pageB.locator('textarea[aria-label="Message"]').first()).toBeEnabled({ timeout: 60_000 });
-						await pageB.waitForTimeout(5_000);
-					}
-				}
-				await expect(pageB.getByText(msgFromA)).toBeVisible({ timeout: 30_000 });
+				await expectChannelMessage(pageB, msgFromA).catch(async () => {
+					await reopenChannel(pageB, serverId, channelId);
+					await expectChannelMessage(pageB, msgFromA);
+				});
 
 				// B sends a reply
 				await inputB.fill(msgFromB);
 				await inputB.press('Enter');
-				await expect(pageB.getByText(msgFromB)).toBeVisible({ timeout: 15_000 });
+				await expectChannelMessage(pageB, msgFromB);
 
 				// A re-navigates to pick up B's SenderKey distribution.
 				// The key_dist_request → redistribution cycle may need multiple
@@ -362,16 +376,17 @@ test.describe('Channel E2EE — cross-user message decryption', () => {
 				// request, A regenerates + redistributes, then A must re-enter
 				// to fetch the updated key + decrypt B's message.
 				for (let attempt = 0; attempt < 3; attempt++) {
-					await navigateClientSide(pageA, '/explore');
-					await navigateClientSide(pageA, `/servers/${serverId}/channels/${channelId}`);
-					await expect(pageA.locator('textarea[aria-label="Message"]').first()).toBeEnabled({ timeout: 60_000 });
-					await pageA.waitForTimeout(attempt === 0 ? 10_000 : 5_000);
-					const aSeesB = await pageA.getByText(msgFromB).isVisible().catch(() => false);
+					await reopenChannel(pageA, serverId, channelId);
+					const aSeesB = await pageA
+						.getByTestId('message-list')
+						.textContent()
+						.then((content) => content?.includes(msgFromB) ?? false)
+						.catch(() => false);
 					if (aSeesB) break;
 				}
 
-				await expect(pageA.getByText(msgFromB)).toBeVisible({ timeout: 30_000 });
-				await expect(pageA.getByText(msgFromA)).toBeVisible({ timeout: 10_000 });
+				await expectChannelMessage(pageA, msgFromB, 30_000);
+				await expectChannelMessage(pageA, msgFromA);
 				await expect(pageA.getByText(/Unable to decrypt/i)).toHaveCount(0);
 			} finally {
 				await ctxA.close();

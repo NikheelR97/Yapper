@@ -1,16 +1,16 @@
 /**
- * Emojis — custom server emoji CRUD.
+ * Emojis â€” custom server emoji CRUD.
  *
- * Routes (mounted under /api/v1/servers/:server_id/emojis via main.rs wiring):
- *   GET    /api/v1/servers/:id/emojis          — list all emojis for a server
- *   POST   /api/v1/servers/:id/emojis          — upload a new emoji (multipart: name + file)
- *   DELETE /api/v1/servers/:id/emojis/:emo_id  — admin-only delete
+ * Routes (mounted under /api/v2/servers/:server_id/emojis via main.rs wiring):
+ *   GET    /api/v2/servers/:id/emojis          â€” list all emojis for a server
+ *   POST   /api/v2/servers/:id/emojis          â€” upload a new emoji (multipart: name + file)
+ *   DELETE /api/v2/servers/:id/emojis/:emo_id  â€” admin-only delete
  *
  * Upload pipeline:
  *   1. Verify caller is server admin/owner
  *   2. Validate name (2-32 chars, lowercase alphanumeric + underscores)
  *   3. Enforce per-server limit (50 free / 100 premium)
- *   4. Decode image with `image` crate → resize 64×64 → encode as WebP
+ *   4. Decode image with `image` crate â†’ resize 64Ã—64 â†’ encode as WebP
  *   5. Upload to R2 at  emojis/servers/{server_id}/{emoji_id}.webp
  *   6. Insert DB row + broadcast emoji_added WS event to all server members
  */
@@ -35,9 +35,9 @@ use crate::{
     AppState,
 };
 
-// ─── Limits ──────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Limits â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-/// Maximum raw upload size accepted (256 KB — before WebP conversion).
+/// Maximum raw upload size accepted (256 KB â€” before WebP conversion).
 const MAX_EMOJI_BYTES: usize = 256 * 1024;
 /// Target output canvas for server emojis.
 const EMOJI_SIZE: u32 = 64;
@@ -48,9 +48,9 @@ const EMOJI_LIMIT_PREMIUM: i64 = 100;
 
 static EMOJI_NAME_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^[a-z0-9_]{2,32}$").unwrap());
 
-// ─── Router ───────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Router â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-/// Mounted at /api/v1/servers/:server_id/emojis (added in main.rs)
+/// Mounted at /api/v2/servers/:server_id/emojis (added in main.rs)
 pub fn server_emoji_router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_emojis).post(upload_emoji))
@@ -58,14 +58,14 @@ pub fn server_emoji_router() -> Router<AppState> {
         .layer(DefaultBodyLimit::max(MAX_EMOJI_BYTES))
 }
 
-/// Empty stub router still needed for the top-level /api/v1/emojis nest in main.rs.
+/// Empty stub router still needed for the top-level /api/v2/emojis nest in main.rs.
 pub fn router() -> Router<AppState> {
     Router::new()
 }
 
-// ─── List ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€ List â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-/// GET /api/v1/servers/:server_id/emojis
+/// GET /api/v2/servers/:server_id/emojis
 async fn list_emojis(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -100,13 +100,13 @@ async fn list_emojis(
     Ok(Json(serde_json::json!({ "emojis": emojis })))
 }
 
-// ─── Upload ──────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Upload â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-/// POST /api/v1/servers/:server_id/emojis
+/// POST /api/v2/servers/:server_id/emojis
 ///
 /// Multipart fields (order-independent):
-///   name  — shortcode name, lowercase alphanumeric + underscores, 2-32 chars
-///   file  — raw image bytes (PNG, JPEG, GIF ≤ 256KB)
+///   name  â€” shortcode name, lowercase alphanumeric + underscores, 2-32 chars
+///   file  â€” raw image bytes (PNG, JPEG, GIF â‰¤ 256KB)
 async fn upload_emoji(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -271,9 +271,9 @@ async fn convert_to_webp(raw_bytes: Vec<u8>) -> AppResult<Vec<u8>> {
     .map_err(|e| AppError::Internal(anyhow::anyhow!("Spawn blocking error: {e}")))?
 }
 
-// ─── Delete ──────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Delete â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-/// DELETE /api/v1/servers/:server_id/emojis/:emoji_id
+/// DELETE /api/v2/servers/:server_id/emojis/:emoji_id
 async fn delete_emoji(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -294,7 +294,7 @@ async fn delete_emoji(
     let r2_key: String = row.try_get("image_r2_key").unwrap_or_default();
     let name: String = row.try_get("name").unwrap_or_default();
 
-    // Best-effort R2 deletion — log but don't fail the request if R2 is down
+    // Best-effort R2 deletion â€” log but don't fail the request if R2 is down
     if let Err(e) = delete_from_r2(&r2_key).await {
         tracing::warn!(emoji_id = %emoji_id, r2_key = %r2_key, "Failed to delete emoji from R2: {e}");
     }
@@ -315,7 +315,7 @@ async fn delete_emoji(
     Ok(StatusCode::NO_CONTENT)
 }
 
-// ─── R2 helpers ───────────────────────────────────────────────────────────────
+// â”€â”€â”€ R2 helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /// Upload raw WebP bytes to R2 and return the public HTTPS URL.
 ///
@@ -328,7 +328,7 @@ async fn upload_webp_to_r2(r2_key: &str, webp_bytes: Vec<u8>) -> AppResult<Strin
     let bucket = crate::media::r2::r2_bucket_opt();
 
     let (Some(client), Some(bucket)) = (client, bucket) else {
-        // R2 not configured — return a placeholder URL for local dev
+        // R2 not configured â€” return a placeholder URL for local dev
         tracing::warn!(
             r2_key,
             "R2 not configured; returning stub URL for emoji upload"
@@ -375,7 +375,7 @@ async fn delete_from_r2(r2_key: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-// ─── Authorisation helpers ────────────────────────────────────────────────────
+// â”€â”€â”€ Authorisation helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async fn require_server_member(user_id: Uuid, server_id: Uuid, state: &AppState) -> AppResult<()> {
     let is_member =
@@ -431,7 +431,7 @@ async fn emoji_limit_for_server(server_id: Uuid, state: &AppState) -> AppResult<
     })
 }
 
-// ─── WS broadcast helper ─────────────────────────────────────────────────────
+// â”€â”€â”€ WS broadcast helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /// Fan out a JSON payload to all members of a server over WebSocket.
 async fn broadcast_to_server_members(
@@ -456,7 +456,7 @@ async fn broadcast_to_server_members(
         .broadcast(&member_ids, WsOutbound::Message { payload });
 }
 
-// ─── Tests ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 #[cfg(test)]
 mod tests {
@@ -492,7 +492,7 @@ mod tests {
 
     #[test]
     fn webp_conversion_produces_correct_dimensions() {
-        // Create a small test PNG (8×8 red square) using image crate
+        // Create a small test PNG (8Ã—8 red square) using image crate
         let img = image::RgbaImage::from_pixel(8, 8, image::Rgba([255u8, 0, 0, 255]));
         let mut buf = Cursor::new(Vec::new());
         image::DynamicImage::ImageRgba8(img)

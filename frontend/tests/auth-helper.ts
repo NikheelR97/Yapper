@@ -7,6 +7,7 @@ export interface AuthData {
 	csrfToken: string;
 	user: Record<string, unknown>;
 	device?: ServerDevice;
+	refreshToken?: string;
 }
 
 export interface ServerDevice {
@@ -97,19 +98,21 @@ export function buildMockAuthData(
  * Returns null if auth-data.json doesn't exist yet (first run / no E2E_EMAIL set).
  */
 export function loadAuthData(): AuthData | null {
-	const path = 'tests/auth-data.json';
-	if (!existsSync(path)) return null;
-	try {
-		return JSON.parse(readFileSync(path, 'utf-8')) as AuthData;
-	} catch {
-		return null;
+	for (const path of ['tests/auth-state/user-a.data.json', 'tests/auth-data.json']) {
+		if (!existsSync(path)) {
+			continue;
+		}
+		try {
+			return JSON.parse(readFileSync(path, 'utf-8')) as AuthData;
+		} catch {
+			continue;
+		}
 	}
+	return null;
 }
 
 /**
- * Log in directly against the API, preferring v2 device-aware auth and
- * falling back to the legacy v1 login endpoint if the target backend has not
- * deployed v2 yet.
+ * Log in directly against the API using the v2 device-aware auth endpoint.
  */
 export async function loginViaApi(
 	email: string,
@@ -117,11 +120,13 @@ export async function loginViaApi(
 	options?: {
 		installationId?: string;
 		label?: string;
+		platform?: ServerDevice['platform'];
 	},
 ): Promise<AuthData> {
 	const installationId = options?.installationId ?? 'e2e-installation';
 	const label = options?.label ?? 'E2E Browser';
-	const cacheKey = `${email}:${installationId}`;
+	const platform = options?.platform ?? 'web';
+	const cacheKey = `${email}:${installationId}:${platform}`;
 	const cached = apiLoginCache.get(cacheKey);
 	if (cached) {
 		return cached;
@@ -134,19 +139,11 @@ export async function loginViaApi(
 			password,
 			device: {
 				installation_id: installationId,
-				platform: 'web',
+				platform,
 				label,
 			},
 		}),
 	});
-
-	if (response.status === 404) {
-		response = await fetch(`${API_URL}/api/v1/auth/login`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ email, password }),
-		});
-	}
 
 	if (!response.ok) {
 		throw new Error(`loginViaApi failed: ${response.status} ${await response.text()}`);
@@ -155,6 +152,7 @@ export async function loginViaApi(
 	const body = (await response.json()) as {
 		access_token?: string;
 		csrf_token?: string;
+		refresh_token?: string;
 		user?: Record<string, unknown>;
 		device?: ServerDevice;
 	};
@@ -166,8 +164,9 @@ export async function loginViaApi(
 	const authData = {
 		accessToken: body.access_token,
 		csrfToken: body.csrf_token,
+		refreshToken: body.refresh_token,
 		user: body.user,
-		device: body.device ?? buildMockDevice({ installation_id: installationId, label }),
+		device: body.device ?? buildMockDevice({ installation_id: installationId, label, platform }),
 	};
 	apiLoginCache.set(cacheKey, authData);
 	return authData;
@@ -205,7 +204,7 @@ export async function mockAuthEndpoints(
 		});
 	});
 
-	await page.route(`**/api/v1/users/me`, async (route) => {
+	await page.route(`**/api/v2/users/me`, async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',

@@ -154,49 +154,6 @@ impl FromRequestParts<AppState> for AuthDevice {
     }
 }
 
-// ─── Optional auth extractor ──────────────────────────────────────────────────
-
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-pub struct OptionalAuthUser(pub Option<AuthUser>);
-
-#[axum::async_trait]
-impl FromRequestParts<AppState> for OptionalAuthUser {
-    type Rejection = std::convert::Infallible;
-
-    async fn from_request_parts(
-        parts: &mut Parts,
-        state: &AppState,
-    ) -> Result<Self, Self::Rejection> {
-        let Some(header) = parts
-            .headers
-            .get(axum::http::header::AUTHORIZATION)
-            .and_then(|v| v.to_str().ok())
-        else {
-            return Ok(OptionalAuthUser(None));
-        };
-
-        let Some(token) = header.strip_prefix("Bearer ") else {
-            return Ok(OptionalAuthUser(None));
-        };
-
-        let Ok(claims) = validate_access_token(token, &state.jwt_keys) else {
-            return Ok(OptionalAuthUser(None));
-        };
-
-        if requires_device_binding(&claims.claims.account_type) && claims.claims.device_id.is_none()
-        {
-            return Ok(OptionalAuthUser(None));
-        }
-
-        Ok(OptionalAuthUser(Some(AuthUser {
-            user_id: claims.claims.sub,
-            device_id: claims.claims.device_id,
-            account_type: claims.claims.account_type,
-        })))
-    }
-}
-
 // ─── Role guard helpers ───────────────────────────────────────────────────────
 
 #[allow(dead_code)]

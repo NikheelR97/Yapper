@@ -1,28 +1,79 @@
-name: E2E Nightly
+name: E2E Nightly / Manual
 
 on:
   schedule:
-    # 02:00 SAST (Africa/Johannesburg = UTC+2) = 00:00 UTC — runs against production
-    - cron: '0 0 * * *'
+    # Run nightly at 02:00 SAST (00:00 UTC)
+    - cron: "0 0 * * *"
   workflow_dispatch:
     inputs:
       base_url:
-        description: 'Base URL to run Playwright against'
+        description: "Frontend base URL to run Playwright against"
         required: false
-        default: 'https://app.yapperhq.com'
+        default: "https://staging.yapperhq.com"
+        type: string
+      api_url:
+        description: "Backend API base URL used by seeded test flows"
+        required: false
+        default: "https://staging-api.yapperhq.com"
+        type: string
+      allow_production:
+        description: "Allow production URLs for this manual run"
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: e2e-${{ github.event.inputs.base_url || 'staging' }}-${{ github.event.inputs.api_url || 'staging' }}
+  cancel-in-progress: false
 
 env:
-  BASE_URL: ${{ github.event.inputs.base_url || 'https://app.yapperhq.com' }}
+  # For scheduled runs, default to staging. For manual runs, use input values.
+  BASE_URL: ${{ github.event.inputs.base_url || 'https://staging.yapperhq.com' }}
+  VITE_API_URL: ${{ github.event.inputs.api_url || 'https://staging-api.yapperhq.com' }}
 
 permissions:
   contents: read
 
 jobs:
-  # ─── Seed once before shards run ─────────────────────────────────────────────
-  seed:
-    name: Seed test devices
+  guard:
+    name: Validate target URLs
     runs-on: ubuntu-latest
+
+    steps:
+      - name: Refuse production URLs by default
+        shell: bash
+        run: |
+          base_url="${BASE_URL}"
+          api_url="${VITE_API_URL}"
+
+          if [[ -z "${base_url}" || -z "${api_url}" ]]; then
+            echo "Both base_url and api_url are required." >&2
+            exit 1
+          fi
+
+          for target in "${base_url}" "${api_url}"; do
+            case "${target}" in
+              https://app.yapperhq.com*|https://api.yapperhq.com*)
+                if [[ "${{ github.event.inputs.allow_production }}" != "true" ]]; then
+                  echo "::error::Refusing to target production without explicit allow_production=true."
+                  echo "Refusing to target production without explicit allow_production=true." >&2
+                  exit 1
+                fi
+                ;;
+            esac
+          done
+
+          echo "Targeting: base_url=${base_url}, api_url=${api_url}"
+
+  setup-auth:
+    name: Setup E2E Auth State
+    runs-on: ubuntu-latest
+    needs: [guard]
     timeout-minutes: 5
+
+    defaults:
+      run:
+        working-directory: frontend
 
     steps:
       - uses: actions/checkout@v6
@@ -30,23 +81,56 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate auth-state artifacts
+        run: npm run test:setup-auth
+        env:
+          VITE_API_URL: ${{ env.VITE_API_URL }}
+          E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+          E2E_EMAIL_2: ${{ secrets.E2E_EMAIL_2 }}
+          E2E_PASSWORD_2: ${{ secrets.E2E_PASSWORD_2 }}
+
+      - name: Upload auth-state artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-auth-state
+          path: frontend/tests/auth-state/
+          retention-days: 1
+
+  seed:
+    name: Seed test devices
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [guard]
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
 
       - name: Seed devices
         run: node tests/seed-devices.mjs
         working-directory: frontend
         env:
-          VITE_API_URL: https://api.yapperhq.com
+          VITE_API_URL: ${{ env.VITE_API_URL }}
           E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
           E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
-          E2E_SKIP_SECONDARY_DEVICE: '1'
-        continue-on-error: true
+          E2E_SKIP_SECONDARY_DEVICE: "1"
 
-  # ─── Playwright shards ───────────────────────────────────────────────────────
   playwright:
     name: Playwright E2E (${{ matrix.project }} shard ${{ matrix.shard }})
     runs-on: ${{ matrix.runner }}
-    needs: [seed]
+    needs: [seed, setup-auth]
     timeout-minutes: 45
 
     strategy:
@@ -62,7 +146,6 @@ jobs:
           - project: chromium
             shard: 3/3
             runner: ubuntu-latest
-          # mobile-chrome has few tests — only needs 1 shard
           - project: mobile-chrome
             shard: 1/1
             runner: ubuntu-latest
@@ -73,13 +156,19 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
         run: npm ci
         working-directory: frontend
+
+      - name: Download auth-state artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: playwright-auth-state
+          path: frontend/tests/auth-state/
 
       - name: Cache Playwright browsers
         id: pw-cache
@@ -98,14 +187,14 @@ jobs:
         working-directory: frontend
 
       - name: Run Playwright tests
-        run: npx playwright test --project=${{ matrix.project }} --shard=${{ matrix.shard }}
+        run: npx playwright test --project=${{ matrix.project }} --shard=${{ matrix.shard }} --workers=4
         working-directory: frontend
         env:
-          CI: true
-          NIGHTLY: 'true'
-          ALLURE: 'true'
+          CI: "true"
+          NIGHTLY: "true"
+          ALLURE: "true"
           BASE_URL: ${{ env.BASE_URL }}
-          VITE_API_URL: https://api.yapperhq.com
+          VITE_API_URL: ${{ env.VITE_API_URL }}
           E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
           E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
           E2E_EMAIL_2: ${{ secrets.E2E_EMAIL_2 }}
@@ -119,7 +208,7 @@ jobs:
           path: frontend/playwright-report/
           retention-days: 14
 
-      - name: Upload Allure results (for combined report)
+      - name: Upload Allure results
         if: always()
         uses: actions/upload-artifact@v7
         with:
@@ -132,15 +221,14 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: test-results-${{ matrix.project }}-${{ strategy.job-index }}
-          path: |
-            frontend/test-results/
+          path: frontend/test-results/
           retention-days: 14
 
   combine-allure:
     name: Generate Allure Report
     runs-on: ubuntu-latest
     needs: [playwright]
-    if: always()
+    if: always() && needs.playwright.result != 'skipped'
 
     steps:
       - uses: actions/checkout@v6
@@ -148,8 +236,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install allure-commandline
@@ -161,11 +249,9 @@ jobs:
           pattern: allure-results-*
           merge-multiple: true
           path: allure-results/
-        continue-on-error: true
 
       - name: Generate Allure HTML report
         run: allure generate allure-results --clean -o allure-report
-        continue-on-error: true
 
       - name: Upload Allure HTML report
         uses: actions/upload-artifact@v7
@@ -174,29 +260,31 @@ jobs:
           path: allure-report/
           retention-days: 30
 
-      - name: Write nightly summary
-        if: always()
+      - name: Write summary
+        shell: bash
         run: |
-          echo "## Nightly E2E — $(date -u '+%Y-%m-%d')" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**URL tested:** ${{ env.BASE_URL }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Projects:** chromium (×3 shards), mobile-chrome (×1 shard)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Allure report available in the \`allure-report\` artifact (30-day retention)." >> $GITHUB_STEP_SUMMARY
+          echo "## E2E Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Frontend URL tested:** ${BASE_URL}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**API URL tested:** ${VITE_API_URL}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Projects:** chromium (x3 shards), mobile-chrome (x1 shard)" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Trigger:** ${{ github.event_name }}" >> "$GITHUB_STEP_SUMMARY"
 
-  notify-failure:
-    name: Notify on failure
+  # This job enforces that ALL playwright shards passed. The combine-allure job
+  # runs with if: always() to generate reports even on failure, but this job
+  # will fail the workflow if any shard failed.
+  e2e-result:
+    name: E2E Result
     runs-on: ubuntu-latest
     needs: [playwright]
-    if: failure() && github.event_name == 'schedule'
-    permissions: {}
+    if: always()
 
     steps:
-      - name: Post failure summary
+      - name: Check playwright result
+        shell: bash
         run: |
-          echo "## ❌ Nightly E2E Failed" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Date:** $(date -u '+%Y-%m-%d %H:%M UTC')" >> $GITHUB_STEP_SUMMARY
-          echo "**URL tested:** ${{ env.BASE_URL }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Check the Playwright HTML reports and Allure report in the artifacts." >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ needs.playwright.result }}" != "success" ]]; then
+            echo "::error::E2E tests did not pass. Result: ${{ needs.playwright.result }}"
+            exit 1
+          fi
+          echo "All E2E shards passed."

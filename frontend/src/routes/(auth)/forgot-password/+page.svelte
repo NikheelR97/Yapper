@@ -10,7 +10,7 @@
 		error = '';
 		loading = true;
 		try {
-			await api.post('/api/v1/auth/password-reset/request', { email });
+			await api.post('/api/v2/auth/password-reset/request', { email });
 			sent = true;
 		} catch (e) {
 			if (e instanceof ApiError) {

@@ -1,8 +1,8 @@
 # API Reference
 
-Base URL: `https://api.yapperhq.com` (production) · `http://localhost:8080` (local)
+Base URLs: `https://api.yapperhq.com` (production) · `https://staging-api.yapperhq.com` (staging) · `http://localhost:8080` (local)
 
-All `/api/v1/*` endpoints require `Authorization: Bearer <access_token>` unless noted.
+The only documented HTTP API surface is `/api/v2/*`. Canonical device-aware auth lives under `/api/v2/auth/*`. OAuth browser redirects remain versionless under `/auth/oauth/*`.
 All state-mutating requests require `X-CSRF-Token: <csrf_token>` (value from the `csrf_token` cookie).
 
 ---
@@ -11,588 +11,433 @@ All state-mutating requests require `X-CSRF-Token: <csrf_token>` (value from the
 
 ### `GET /health`
 No auth required.
+
 ```json
 { "status": "ok", "db": true }
 ```
 
 ---
 
-## Auth — `/auth/*`
+## Auth
 
-### `POST /auth/register`
-```json
-// Request
-{ "username": "alice", "display_name": "Alice", "email": "alice@example.com", "password": "..." }
+### `POST /api/v2/auth/register`
+Device bootstrap registration. Returns access token, CSRF token, user, and device metadata.
 
-// Response 201
-{ "user_id": "uuid", "message": "Verification email sent" }
-```
+### `POST /api/v2/auth/login`
+Device bootstrap login. Returns access token, CSRF token, user, and device metadata.
 
-### `POST /auth/login`
-```json
-// Request
-{ "email": "alice@example.com", "password": "..." }
+### `POST /api/v2/auth/oauth/exchange`
+Exchange an OAuth code for a device-aware session.
 
-// Response 200 — sets HttpOnly refresh_token cookie
-{ "access_token": "jwt", "expires_in": 900, "user": { "id": "...", "username": "alice", ... } }
-```
+### `POST /api/v2/auth/attach-device`
+Attach the current installation to an already signed-in account.
 
-### `POST /auth/refresh`
-No body — reads `refresh_token` cookie.
-```json
-// Response 200
-{ "access_token": "jwt", "expires_in": 900 }
-```
+### `POST /api/v2/auth/refresh`
+Refresh the current device-bound session.
 
-### `POST /auth/logout`
-Invalidates the refresh token.
+### `DELETE /api/v2/auth/logout`
+Invalidate the current refresh-token family.
 
-### `GET /auth/verify-email?token=...`
-Verifies the email address from the link sent to the user.
+### `GET /auth/oauth/discord` · `GET /auth/oauth/google` · `GET /auth/oauth/apple`
+Redirect to the OAuth provider. No auth required.
 
-### `POST /auth/forgot-password`
-```json
-{ "email": "alice@example.com" }
-```
-
-### `POST /auth/reset-password`
-```json
-{ "token": "...", "new_password": "..." }
-```
-
-### `GET /auth/oauth/discord` · `GET /auth/oauth/google`
-Redirects to OAuth provider. No auth required.
-
-### `GET /auth/oauth/discord/callback` · `GET /auth/oauth/google/callback`
-OAuth redirect handler — sets tokens and redirects to app.
+### `GET /auth/oauth/discord/callback` · `GET /auth/oauth/google/callback` · `POST /auth/oauth/apple/callback`
+OAuth callback handler. Sets tokens and redirects back into the app.
 
 ---
 
-## Users — `/api/v1/users/*`
+## Devices
 
-### `GET /api/v1/users/me`
+### `GET /api/v2/devices`
+List the authenticated user's devices.
+
+### `POST /api/v2/devices/trust-requests`
+Create a trust request for a pending device.
+
+### `GET /api/v2/devices/sync-events`
+Fetch queued sync events for the authenticated device.
+
+### `POST /api/v2/devices/sync-events`
+Create a device sync event.
+
+### `POST /api/v2/devices/:id/approve`
+Approve a pending device from a trusted device.
+
+### `DELETE /api/v2/devices/:id`
+Revoke a device.
+
+---
+
+## Keys
+
+### `POST /api/v2/keys/identity`
+Upload identity and signed prekey for the trusted device.
+
+### `POST /api/v2/keys/signed-prekey`
+Upload a signed prekey for the trusted device.
+
+### `POST /api/v2/keys/one-time-prekeys`
+Upload one-time prekeys for the trusted device.
+
+### `GET /api/v2/keys/one-time-prekey-count`
+Get the remaining one-time-prekey count for the trusted device.
+
+### `GET /api/v2/keys/backup` · `PUT /api/v2/keys/backup`
+Download or replace the encrypted key backup blob for the current user.
+
+### `POST /api/v2/keys/backup/restore`
+Restore a key backup into the current device vault.
+
+### `GET /api/v2/keys/:user_id/bundles`
+Fetch a user's device-aware key bundles.
+
+---
+
+## Conversations
+
+### `POST /api/v2/conversations`
+Create or get a trusted DM conversation.
+
+### `GET /api/v2/conversations`
+List device-aware DM conversations.
+
+### `GET /api/v2/conversations/:id/messages`
+Fetch encrypted DM history.
+
+### `POST /api/v2/conversations/:id/messages`
+Send a device-aware DM message.
+
+---
+
+## Users
+
+### `GET /api/v2/users/me`
 Own full profile.
+
 ```json
 {
-  "id": "uuid", "username": "alice", "display_name": "Alice",
-  "avatar_url": null, "banner_url": null, "about_me": null,
-  "account_type": "standard", "is_premium": false,
-  "parental_controls_enabled": false, "created_at": "2026-..."
+  "id": "uuid",
+  "username": "alice",
+  "display_name": "Alice",
+  "avatar_url": null,
+  "banner_url": null,
+  "about_me": null,
+  "account_type": "standard",
+  "is_premium": false,
+  "parental_controls_enabled": false,
+  "created_at": "2026-..."
 }
 ```
 
-### `GET /api/v1/users/:id/presence`
+### `GET /api/v2/users/:id/presence`
 ```json
 { "online": true, "away": false, "last_seen_at": "2026-..." }
 ```
 
-### `GET /api/v1/users/by/:username`
+### `GET /api/v2/users/by/:username`
 Public profile.
-```json
-{
-  "id": "uuid", "username": "bob", "follower_count": 42,
-  "following_count": 10, "is_following": false,
-  "mutual_followers": [{ "id": "...", "username": "...", "avatar_url": null }],
-  "top_communities": [{ "id": "...", "name": "...", "slug": "...", "member_count": 100 }]
-}
-```
 
-### `POST /api/v1/users/by/:username/follow`
+### `POST /api/v2/users/by/:username/follow`
 Follow a user. Response: `204 No Content`
 
-### `DELETE /api/v1/users/by/:username/follow`
-Unfollow. Response: `204 No Content`
+### `DELETE /api/v2/users/by/:username/follow`
+Unfollow a user. Response: `204 No Content`
 
-### `POST /api/v1/users/by/:username/friend-request`
-If target has parental controls → `202 { "status": "pending_parental_approval" }`
-Otherwise → `201 { "status": "pending" }`
+### `POST /api/v2/users/by/:username/friend-request`
+If the target has parental controls, returns `202 { "status": "pending_parental_approval" }`.
+Otherwise returns `201 { "status": "pending" }`.
 
-### `GET /api/v1/users/me/feed`
-Activity feed from followed users (hype moments).
-```json
-{ "items": [{ "id": "...", "type": "yap", "pinned_at": "...", "author": { ... } }] }
-```
+### `GET /api/v2/users/me/feed`
+Activity feed from followed users.
 
-### `POST /api/v1/users/me/hype-moments`
-```json
-// Request
-{ "message_id": "uuid", "type": "yap" }   // type: yap | clip | text
-// Response 201
-{ "id": "uuid" }
-```
+### `POST /api/v2/users/me/hype-moments`
+Pin a message to the user's profile.
 
-### `GET /api/v1/users/by/:username/hype-moments`
-```json
-{ "moments": [{ "id": "...", "message_id": "...", "type": "yap", "pinned_at": "..." }] }
-```
+### `GET /api/v2/users/by/:username/hype-moments`
+Fetch pinned profile moments for a user.
 
----
+### `PATCH /api/v2/users/me`
+Update profile fields.
 
-## Servers — `/api/v1/servers/*`
+### `POST /api/v2/users/me/avatar`
+Upload a profile avatar.
 
-### `GET /api/v1/servers`
-List servers the authenticated user is a member of.
+### `POST /api/v2/users/me/banner`
+Upload a profile banner.
 
-### `POST /api/v1/servers`
-```json
-// Request
-{ "name": "My Server", "description": "...", "is_public": true }
-// Response 201 — ServerResp
-```
+### `PATCH /api/v2/users/me/username`
+Change username with cooldown enforcement.
 
-### `GET /api/v1/servers/:id`
-```json
-{
-  "id": "uuid", "name": "...", "slug": "...", "owner_id": "...",
-  "icon_url": null, "description": null, "is_public": true,
-  "member_count": 42, "role": "member"
-}
-```
+### `GET /api/v2/users/me/privacy`
+Read privacy preferences.
 
-### `PATCH /api/v1/servers/:id`
-Admin only.
-```json
-{ "name": "New Name", "description": "...", "is_public": false, "icon_url": "..." }
-```
+### `PATCH /api/v2/users/me/privacy`
+Update privacy preferences, including `show_last_seen`.
 
-### `POST /api/v1/servers/:id/join`
-Join a public server. Returns `{ "status": "joined" }` or `{ "status": "pending_approval" }` for child accounts.
+### `GET /api/v2/users/me/appearance`
+Read appearance preferences.
 
-### `DELETE /api/v1/servers/:id/leave`
-Leave a server. Owners must transfer ownership first.
+### `PATCH /api/v2/users/me/appearance`
+Update appearance preferences.
 
-### `POST /api/v1/servers/:id/invites`
-```json
-// Request
-{ "max_uses": 10, "expires_in_hours": 24 }
-// Response 201
-{ "code": "abc123x", "server_id": "...", "max_uses": 10, "expires_at": "..." }
-```
+### `GET /api/v2/users/me/notifications`
+Read notification preferences.
 
-### `POST /api/v1/servers/join/:code`
-Join via invite link. Returns `{ "status": "joined" }` or `{ "status": "pending_approval" }`.
+### `PATCH /api/v2/users/me/notifications`
+Update notification preferences.
+
+### `DELETE /api/v2/users/me/connections/:provider`
+Unlink a connected account.
 
 ---
 
-## Channels — `/api/v1/channels/*`
+## Servers
 
-### `GET /api/v1/channels/:server_id`
-List channels for a server (must be a member).
+### `GET /api/v2/servers`
+List servers the authenticated user belongs to.
 
-### `POST /api/v1/channels/:server_id`
-Admin only.
-```json
-{ "name": "announcements", "type": "text" }
-```
+### `POST /api/v2/servers`
+Create a server.
 
-### `GET /api/v1/channels/:id/messages`
-Message history (last 50, encrypted ciphertext).
-```json
-{ "messages": [{ "id": "...", "ciphertext": "base64...", "sender_id": "...", "created_at": "..." }] }
-```
+### `GET /api/v2/servers/:id`
+Get server metadata.
 
-### `POST /api/v1/channels/:id/sender-key-distribution`
-Distribute an encrypted sender key to a specific member.
+### `PATCH /api/v2/servers/:id`
+Update server metadata.
 
-### `GET /api/v1/channels/:id/sender-key-distributions`
-Fetch pending sender key distributions for the authenticated user.
+### `POST /api/v2/servers/:id/join`
+Join a public server.
 
----
+### `DELETE /api/v2/servers/:id/leave`
+Leave a server.
 
-## Direct Messages — `/api/v1/conversations/*`
+### `POST /api/v2/servers/:id/invites`
+Create an invite code.
 
-### `GET /api/v1/conversations`
-List all DM conversations.
+### `POST /api/v2/servers/join/:code`
+Join a server via invite code.
 
-### `POST /api/v1/conversations`
-```json
-{ "participant_id": "uuid" }
-// Response 201
-{ "conversation_id": "uuid", "prekey_bundle": { ... } }
-```
+### `GET /api/v2/servers/:server_id/channels`
+List channels for a server.
 
-### `GET /api/v1/conversations/:id/messages`
-Message history (encrypted).
+### `POST /api/v2/servers/:server_id/channels`
+Create a channel in a server.
 
 ---
 
-## Keys — `/api/v1/keys/*`
+## Channels
 
-### `GET /api/v1/keys/prekey-bundle/:user_id`
-Fetch a user's prekey bundle for X3DH.
-```json
-{
-  "identity_key": "base64", "signed_prekey": "base64",
-  "signed_prekey_sig": "base64", "one_time_prekey": "base64",
-  "one_time_prekey_id": 42
-}
-```
+### `GET /api/v2/channels/:id/messages`
+Fetch encrypted channel history.
 
-### `POST /api/v1/keys/identity`
-Upload identity + signed prekey.
+### `POST /api/v2/channels/:id/messages`
+Send an encrypted channel message.
 
-### `POST /api/v1/keys/one-time`
-Upload batch of one-time prekeys.
+### `POST /api/v2/channels/:id/sender-key-distribution`
+Store channel sender-key distribution payloads.
 
-### `GET /api/v1/keys/one-time/count`
-```json
-{ "count": 15 }
-```
-
-### `GET /api/v1/keys/backup`
-Download encrypted key backup blob.
-
-### `PUT /api/v1/keys/backup`
-Upload encrypted key backup.
-```json
-{ "salt": "base64", "ciphertext": "base64" }
-```
+### `GET /api/v2/channels/:id/sender-key-distributions`
+Fetch pending sender-key distribution payloads.
 
 ---
 
-## Explore — `/api/v1/explore/*`
+## Explore
 
-### `GET /api/v1/explore/communities?tag=gaming&limit=20&offset=0`
-Paginated public server list.
+### `GET /api/v2/explore/communities?tag=gaming&limit=20&offset=0`
+Browse public communities.
 
-### `GET /api/v1/explore/live-servers`
-Servers with recent activity (last 15 minutes).
+### `GET /api/v2/explore/live-servers`
+Browse recently active public servers.
 
-### `GET /api/v1/explore/trending-tags`
-Top 20 tags by server count (5-minute in-memory cache).
+### `GET /api/v2/explore/trending-tags`
+Fetch the trending tag list.
 
-### `GET /api/v1/explore/search?q=minecraft&limit=20`
-Full-text search across servers and users (pg_trgm).
-```json
-{
-  "servers": [{ "id": "...", "name": "...", "member_count": 100 }],
-  "users":   [{ "id": "...", "username": "...", "display_name": "..." }]
-}
-```
+### `GET /api/v2/explore/search?q=minecraft&limit=20`
+Search servers and users.
 
-### `GET /api/v1/explore/top-yappers`
-Top 20 users by follower count.
+### `GET /api/v2/explore/top-yappers`
+Fetch the top creators by follower count.
+
+### `GET /api/v2/search?q=...`
+Unified discovery search endpoint.
 
 ---
 
-## Canvas — `/api/v1/canvas/*`
+## Canvas
 
-### `GET /api/v1/canvas/:server_id`
-Current canvas state (music + active polls).
+### `GET /api/v2/canvas/:server_id`
+Fetch the server canvas snapshot.
 
-### `GET /api/v1/canvas/:server_id/clips`
-Encrypted clip list for the server.
+### `GET /api/v2/canvas/:server_id/clips`
+Fetch canvas clips.
 
-### `PATCH /api/v1/canvas/:server_id/music`
-Admin only.
-```json
-{ "title": "Song Name", "artist": "Artist", "album_art_url": "...", "duration_sec": 240 }
-```
+### `PATCH /api/v2/canvas/:server_id/music`
+Update music state.
 
-### `POST /api/v1/canvas/:server_id/polls`
-Admin only.
-```json
-{ "question": "Best language?", "options": ["Rust", "Go", "Zig"], "ends_at": "2026-..." }
-```
+### `POST /api/v2/canvas/:server_id/polls`
+Create a poll.
 
-### `POST /api/v1/canvas/:server_id/polls/:poll_id/vote`
-```json
-{ "option_index": 0 }
-```
-Returns `409` if already voted.
+### `POST /api/v2/canvas/:server_id/polls/:poll_id/vote`
+Vote in a poll.
 
----
+### `GET /api/v2/canvas/:server_id/music/queue`
+Fetch the music queue.
 
-## Parental Controls — `/api/v1/parental/*`
+### `POST /api/v2/canvas/:server_id/music/queue`
+Add a track to the music queue.
 
-### `POST /api/v1/parental/children`
-Create a child account (COPPA — DOB must be < 18 years ago).
-```json
-// Request
-{
-  "username": "kiddo", "display_name": "Junior",
-  "email": "junior@example.com", "password": "...",
-  "date_of_birth": "2015-06-15"
-}
-// Response 201
-{ "child_id": "uuid", "account_type": "child", "parental_controls_enabled": true }
-```
+### `DELETE /api/v2/canvas/:server_id/music/queue/:track_id`
+Remove a queued track.
 
-### `GET /api/v1/parental/children`
-List managed children.
+### `POST /api/v2/canvas/:server_id/music/queue/reorder`
+Reorder queued tracks.
 
-### `GET /api/v1/parental/children/:child_id/overview`
-Pending counts + top servers.
-
-### `GET /api/v1/parental/children/:child_id/notifications`
-Pending friend requests + server join requests. Marks alerts as read.
-
-### `PATCH /api/v1/parental/friend-requests/:id/approve`
-Approve a pending friend request → creates `friendships` row.
-
-### `PATCH /api/v1/parental/friend-requests/:id/decline`
-
-### `PATCH /api/v1/parental/server-joins/:id/approve`
-Approve a pending server join → inserts `server_memberships`.
-
-### `PATCH /api/v1/parental/server-joins/:id/decline`
-
----
-
-## Screen Time — `/api/v1/screentime/*` + parental read/update
-
-### `POST /api/v1/screentime/report`
-Child device usage ingestion (metadata only). Typically called by authenticated child clients.
-```json
-// Request
-{
-  "recordedDate": "2026-03-03",
-  "platform": "ios",
-  "apps": [
-    { "appName": "Yapper", "durationSeconds": 3600 },
-    { "appName": "YouTube", "durationSeconds": 1200 }
-  ]
-}
-
-// Response 201
-{
-  "status": "ok",
-  "recordedDate": "2026-03-03",
-  "itemsUpserted": 2,
-  "platform": "ios"
-}
-```
-
-Validation:
-- `platform` must be one of `ios | android | web | desktop`
-- `apps` max length `64`
-- `durationSeconds` range `0..86400`
-
-### `GET /api/v1/parental/children/:child_id/screentime?period=today|week|month`
-Parent-only route (must manage the child account).
-```json
-{
-  "period": "week",
-  "rangeStart": "2026-02-26",
-  "rangeEnd": "2026-03-03",
-  "totalMinutesToday": 154,
-  "limitMinutes": 180,
-  "appBreakdown": [
-    { "appName": "Yapper", "icon": "🟣", "minutes": 72 },
-    { "appName": "YouTube", "icon": "🔴", "minutes": 30 }
-  ],
-  "weeklyData": [
-    { "day": "Mon", "yapperMinutes": 60, "otherMinutes": 40 }
-  ],
-  "bedtimeStart": "22:00",
-  "bedtimeEnd": "07:00"
-}
-```
-
-### `PATCH /api/v1/parental/children/:child_id/screentime`
-Parent-only route to update daily limit and bedtime window.
-```json
-// Request
-{
-  "limitMinutes": 180,
-  "bedtimeStart": "22:00",
-  "bedtimeEnd": "07:00"
-}
-
-// Response 200
-{
-  "status": "ok",
-  "childId": "uuid",
-  "limitMinutes": 180,
-  "bedtimeStart": "22:00",
-  "bedtimeEnd": "07:00"
-}
-```
-
----
-
-## Media — `/api/v1/media/*`
-
-### `POST /api/v1/media/upload-url`
-Get a presigned R2 PUT URL. Client encrypts the file with AES-256-GCM before uploading.
-```json
-// Request
-{ "filename": "audio.enc", "content_type": "application/octet-stream", "size_bytes": 102400 }
-// Response
-{ "upload_url": "https://...", "media_id": "uuid", "expires_in": 300 }
-```
-
-### `GET /api/v1/media/:id/download-url`
-Get a presigned R2 GET URL for an encrypted blob.
-
----
-
-## Notifications — `/api/v1/notifications/*`
-
-### `POST /api/v1/notifications/register-device`
-Register a device for FCM push notifications.
-```json
-{ "fcm_token": "...", "platform": "web" }   // platform: web | ios | android
-```
-
-### `DELETE /api/v1/notifications/register-device`
-Unregister the current device token.
-
----
-
-## WebSocket — `wss://api.yapperhq.com/ws`
-
-Connect, then immediately send an `Auth` frame.
-
-### Inbound (client → server)
-
-```json
-{ "type": "auth",        "token": "jwt" }
-{ "type": "reauth",      "token": "jwt" }
-{ "type": "ping" }
-{ "type": "send_dm",     "conversation_id": "uuid", "ciphertext": "base64",
-                         "ephemeral_key": "base64", "opk_id": 42, "msg_num": 0 }
-{ "type": "send_channel","channel_id": "uuid", "ciphertext": "base64",
-                         "message_type": "text", "msg_num": 1 }
-{ "type": "typing_start","channel_id": "uuid" }
-{ "type": "read",        "message_id": "uuid", "channel_id": "uuid" }
-```
-
-### Outbound (server → client)
-
-```json
-{ "type": "pong" }
-{ "type": "error", "message": "Rate limit exceeded" }
-{ "type": "message", "payload": { "id": "...", "channel_id": "...", "ciphertext": "..." } }
-{ "type": "typing",      "channel_id": "uuid", "user_id": "uuid" }
-{ "type": "typing_stop", "channel_id": "uuid", "user_id": "uuid" }
-{ "type": "read_receipt","channel_id": "uuid", "message_id": "uuid", "user_id": "uuid" }
-{ "type": "presence",    "user_id": "uuid", "online": true, "away": false }
-{ "type": "canvas_update","payload": { "type": "music_update", ... } }
-{ "type": "parent_notification", "payload": { "type": "friend_request", "child_id": "...", ... } }
-```
-
-### Rate Limits
-
-- WS message rate: 5 messages/second per user, burst of 20
-- Exceeding the limit returns `{ "type": "error", "message": "Rate limit exceeded" }` and the message is dropped (connection stays open)
-
----
-
-## Canvas (Expanded) — `/api/v1/canvas/:server_id/*`
-
-### Music
-
-### `GET /api/v1/canvas/:server_id/music/queue`
-Get the current music queue for the server.
-
-### `POST /api/v1/canvas/:server_id/music/queue`
-Add a track to the queue.
-
-### `DELETE /api/v1/canvas/:server_id/music/queue/:track_id`
-Remove a track from the queue.
-
-### `POST /api/v1/canvas/:server_id/music/queue/reorder`
-Reorder the queue.
-```json
-{ "track_ids": ["uuid1", "uuid2", "uuid3"] }
-```
-
-### `POST /api/v1/canvas/:server_id/music/skip`
+### `POST /api/v2/canvas/:server_id/music/skip`
 Skip the current track.
 
-### `POST /api/v1/canvas/:server_id/music/dj/request`
-Request the DJ role.
+### `GET /api/v2/canvas/:server_id/music/history`
+Fetch music history.
 
-### `DELETE /api/v1/canvas/:server_id/music/dj`
-Release the DJ role.
+### `GET /api/v2/canvas/:server_id/music/settings`
+Read music settings.
 
-### `GET /api/v1/canvas/:server_id/music/history`
-Get play history.
+### `PATCH /api/v2/canvas/:server_id/music/settings`
+Update music settings.
 
-### `GET /api/v1/canvas/:server_id/music/settings`
-Get music settings.
+### `POST /api/v2/canvas/:server_id/polls/:id/close`
+Close a poll.
 
-### `PATCH /api/v1/canvas/:server_id/music/settings`
-Update music settings (admin only).
+### `GET /api/v2/canvas/:server_id/polls/:id/results`
+Fetch poll results.
 
-### Polls
+### `POST /api/v2/canvas/:server_id/clips/:id/reactions`
+Add a clip reaction.
 
-### `POST /api/v1/canvas/:server_id/polls`
-Create a poll (types: `binary`, `emoji`, `multiple_choice`).
+### `DELETE /api/v2/canvas/:server_id/clips/:id/reactions/:emoji`
+Remove a clip reaction.
 
-### `POST /api/v1/canvas/:server_id/polls/:id/vote`
-Cast a vote.
+### `POST /api/v2/canvas/:server_id/clips/:id/pin`
+Pin a clip.
 
-### `POST /api/v1/canvas/:server_id/polls/:id/close`
-Close a poll (admin only).
-
-### `GET /api/v1/canvas/:server_id/polls/:id/results`
-Get poll results.
-
-### Clips
-
-### `POST /api/v1/canvas/:server_id/clips/:id/reactions`
-Add a reaction to a clip.
-
-### `DELETE /api/v1/canvas/:server_id/clips/:id/reactions/:emoji`
-Remove a reaction.
-
-### `POST /api/v1/canvas/:server_id/clips/:id/pin`
-Pin a clip (admin only).
-
-### `DELETE /api/v1/canvas/:server_id/clips/:id/pin`
+### `DELETE /api/v2/canvas/:server_id/clips/:id/pin`
 Unpin a clip.
 
-### Events
+### `POST /api/v2/canvas/:server_id/events`
+Create a canvas event.
 
-### `POST /api/v1/canvas/:server_id/events`
-Create a countdown event.
+### `GET /api/v2/canvas/:server_id/events`
+List canvas events.
 
-### `GET /api/v1/canvas/:server_id/events`
-List events.
+### `PATCH /api/v2/canvas/:server_id/events/:id`
+Update a canvas event.
 
-### `PATCH /api/v1/canvas/:server_id/events/:id`
-Update an event.
+### `DELETE /api/v2/canvas/:server_id/events/:id`
+Delete a canvas event.
 
-### `DELETE /api/v1/canvas/:server_id/events/:id`
-Delete an event.
-
-### State
-
-### `GET /api/v1/canvas/:server_id/state`
-Full canvas state hydration (music + polls + clips + events).
+### `GET /api/v2/canvas/:server_id/state`
+Read the hydrated canvas state.
 
 ---
 
-## Media (Upload) — `/api/v1/media/*`
+## Parental Controls
 
-### `POST /api/v1/media/upload-url`
-Get an R2 presigned upload URL.
-```json
-// Request
-{ "media_type": "yap", "content_length": 102400 }   // media_type: yap | clip
+### `POST /api/v2/parental/children`
+Create a child account.
 
-// Response
-{ "upload_url": "https://...", "media_id": "uuid", "expires_in": 300 }
-```
+### `GET /api/v2/parental/children`
+List managed children.
+
+### `GET /api/v2/parental/children/:child_id/overview`
+Read a child's metadata-only overview.
+
+### `GET /api/v2/parental/children/:child_id/notifications`
+Fetch pending parental notifications.
+
+### `PATCH /api/v2/parental/friend-requests/:id/approve`
+Approve a friend request.
+
+### `PATCH /api/v2/parental/friend-requests/:id/decline`
+Decline a friend request.
+
+### `PATCH /api/v2/parental/server-joins/:id/approve`
+Approve a server join request.
+
+### `PATCH /api/v2/parental/server-joins/:id/decline`
+Decline a server join request.
+
+### `GET /api/v2/parental/children/:child_id/screentime?period=today|week|month`
+Read screen-time summaries.
+
+### `PATCH /api/v2/parental/children/:child_id/screentime`
+Update screen-time settings.
 
 ---
 
-## Support — `/api/v1/support/*`
+## Media
 
-### `POST /api/v1/support/tickets`
+### `POST /api/v2/media/upload-url`
+Create a presigned upload URL.
+
+### `GET /api/v2/media/:id/download-url`
+Create a presigned download URL.
+
+---
+
+## Notifications
+
+### `POST /api/v2/notifications/register-device`
+Register a push token for the current device.
+
+### `DELETE /api/v2/notifications/register-device`
+Remove the current device's push token.
+
+---
+
+## Bots
+
+### `GET /api/v2/bots`
+List bots.
+
+### `POST /api/v2/bots/import-discord`
+Import a Discord bot into Yapper.
+
+### `DELETE /api/v2/bots/:id`
+Delete a bot.
+
+---
+
+## Discord
+
+### `GET /api/v2/discord/import-profile`
+Start the Discord profile import flow.
+
+### `GET /api/v2/discord/import-profile/callback`
+Handle the Discord import callback.
+
+---
+
+## Premium
+
+### `GET /api/v2/premium`
+Read premium status.
+
+### `POST /api/v2/premium/activate`
+Activate premium.
+
+### `DELETE /api/v2/premium`
+Deactivate premium.
+
+---
+
+## Support
+
+### `POST /api/v2/support/tickets`
 Create a support ticket.
-```json
-// Request
-{ "ticket_type": "bug", "subject": "...", "description": "...", "priority": "medium" }
 
-// Response 201
-{ "id": "uuid", "status": "open", "created_at": "2026-..." }
-```
+### `GET /api/v2/support/tickets`
+List the authenticated user's support tickets.
 
-### `GET /api/v1/support/tickets`
-List own tickets.
-```json
-{ "tickets": [{ "id": "...", "ticket_type": "bug", "subject": "...", "status": "open", "created_at": "..." }] }
-```
+### `POST /api/v2/support/webhooks/hubspot`
+HubSpot status webhook.
+
+---

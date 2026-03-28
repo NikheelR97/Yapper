@@ -1,10 +1,10 @@
 /**
- * Bots — bot application management and Discord bot migration.
+ * Bots â€” bot application management and Discord bot migration.
  *
- * Routes (mounted under /api/v1/bots):
- *   POST   /import-discord  — import a Discord bot via its token → create bot_application + Yapper token
- *   GET    /                — list the caller's bot applications
- *   DELETE /:id             — delete a bot application (revokes all tokens)
+ * Routes (mounted under /api/v2/bots):
+ *   POST   /import-discord  â€” import a Discord bot via its token â†’ create bot_application + Yapper token
+ *   GET    /                â€” list the caller's bot applications
+ *   DELETE /:id             â€” delete a bot application (revokes all tokens)
  *
  * Token lifecycle:
  *   - Raw token = 32 random bytes encoded as hex (shown ONCE at creation)
@@ -28,7 +28,7 @@ use crate::{
     AppState,
 };
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const DISCORD_BOT_API: &str = "https://discord.com/api/users/@me";
 /// Maximum bot applications per user.
@@ -36,7 +36,7 @@ const MAX_BOTS_PER_USER: i64 = 5;
 /// Raw token length in bytes (encoded to 64 hex chars).
 const TOKEN_BYTES: usize = 32;
 
-// ─── Router ───────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Router â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -45,9 +45,9 @@ pub fn router() -> Router<AppState> {
         .route("/:id", delete(delete_bot))
 }
 
-// ─── List bots ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ List bots â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-/// GET /api/v1/bots
+/// GET /api/v2/bots
 async fn list_bots(auth: AuthUser, State(state): State<AppState>) -> AppResult<impl IntoResponse> {
     let rows = sqlx::query(
         "SELECT id, name, description, avatar_url, discord_bot_id, created_at
@@ -77,7 +77,7 @@ async fn list_bots(auth: AuthUser, State(state): State<AppState>) -> AppResult<i
     Ok(Json(serde_json::json!({ "bots": bots })))
 }
 
-// ─── Import Discord bot ───────────────────────────────────────────────────────
+// â”€â”€â”€ Import Discord bot â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -86,7 +86,7 @@ struct ImportDiscordBotInput {
     discord_token: String,
 }
 
-/// POST /api/v1/bots/import-discord
+/// POST /api/v2/bots/import-discord
 ///
 /// 1. Calls Discord API with the provided bot token to verify it and fetch bot identity
 /// 2. Creates a bot_applications row + a users(bot) stub row
@@ -166,7 +166,7 @@ async fn verify_discord_bot_token(token: &str, state: &AppState) -> AppResult<Di
 
     if !resp.status().is_success() {
         return Err(AppError::BadRequest(
-            "Invalid Discord bot token — Discord API returned an error".into(),
+            "Invalid Discord bot token â€” Discord API returned an error".into(),
         ));
     }
 
@@ -274,9 +274,9 @@ async fn create_bot_app_and_token(
     Ok((app_id, raw_token))
 }
 
-// ─── Delete bot ───────────────────────────────────────────────────────────────
+// â”€â”€â”€ Delete bot â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-/// DELETE /api/v1/bots/:id
+/// DELETE /api/v2/bots/:id
 ///
 /// Deletes the bot application and all associated tokens.
 /// The cascade on bot_tokens (ON DELETE CASCADE) handles token cleanup.

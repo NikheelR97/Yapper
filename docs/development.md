@@ -225,6 +225,20 @@ cd frontend && npm run check   # svelte-check + TypeScript
 make test-e2e
 ```
 
+For live-account Playwright runs, generate local auth-state artifacts before running the suite:
+
+```bash
+cd frontend
+npm run test:setup-auth
+```
+
+This writes `.gitignore`d files under `frontend/tests/auth-state/`:
+
+- `user-a.json` / `user-a.data.json`
+- `user-b.json` / `user-b.data.json` when `E2E_EMAIL_2` and `E2E_PASSWORD_2` are set
+
+Parallel workers must clone fresh browser contexts from those files instead of reusing a single shared authenticated page/session.
+
 ---
 
 ## Linting & Formatting

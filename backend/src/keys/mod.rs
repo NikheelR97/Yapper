@@ -23,9 +23,6 @@ use crate::{
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/identity", post(upload_identity_key))
-        .route("/signed-prekey", post(upload_signed_prekey))
-        .route("/one-time-prekeys", post(upload_one_time_prekeys))
         // Static route must come before :user_id to win priority
         .route("/one-time-prekey-count", get(get_opk_count))
         .route("/backup", get(get_backup).put(put_backup))
@@ -53,6 +50,29 @@ static BACKUP_RETRIEVE_LIMITER: once_cell::sync::Lazy<KeyedLimiter<Uuid>> =
                 .allow_burst(NonZeroU32::new(5).expect("non-zero burst")),
         )
     });
+
+/// Resolve the server-authoritative `signal_device_id` for the authenticated
+/// user's device. The shared upload helpers use this value so that only the
+/// authenticated device can publish its own Signal material.
+///
+/// Bot accounts have no device, so they are rejected outright â€” bots do not
+/// participate in the Signal protocol.
+async fn resolve_signal_device_id(auth: &AuthUser, state: &AppState) -> AppResult<i32> {
+    let device_uuid = auth.device_id.ok_or_else(|| {
+        AppError::BadRequest(
+            "Key endpoints require a device-bound token. Use /api/v2/auth/* to authenticate."
+                .to_string(),
+        )
+    })?;
+    let device = crate::devices::get_device_for_user(auth.user_id, device_uuid, state).await?;
+    if device.revoked_at.is_some() || device.trust_state == DeviceTrustState::Revoked {
+        return Err(AppError::Unauthorized);
+    }
+    if device.trust_state != DeviceTrustState::Trusted {
+        return Err(AppError::Forbidden);
+    }
+    Ok(device.signal_device_id)
+}
 
 /// Reject all-zero X25519 keys, which lie in a small subgroup and would
 /// produce predictable shared secrets.
@@ -110,30 +130,40 @@ async fn verify_signed_prekey_signature(
         .map_err(|_| AppError::BadRequest("Signed prekey signature is invalid".into()))
 }
 
-// ─── Upload Identity Key ─────────────────────────────────────────────────────
+// â”€â”€â”€ Upload Identity Key â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct UploadIdentityKeyReq {
     device_id: i32,
-    /// Base64-encoded X25519 public key (32 bytes) — used for DH in X3DH.
+    /// Base64-encoded X25519 public key (32 bytes) â€” used for DH in X3DH.
     dh_public_key: String,
-    /// Base64-encoded Ed25519 public key (32 bytes) — used to verify signed prekeys.
+    /// Base64-encoded Ed25519 public key (32 bytes) â€” used to verify signed prekeys.
     signing_public_key: String,
 }
 
-/// POST /api/v1/keys/identity — upload or rotate an X25519 + Ed25519 identity key pair.
+/// Shared helper for device-bound identity key upload.
 ///
 /// # E2EE contract
 ///
 /// * `dh_public_key` (X25519) is used in X3DH key agreement.
 /// * `signing_public_key` (Ed25519) is used to verify signed prekeys.
 /// * Both are public-only; the server never receives private keys.
+///
+/// # Security invariant
+///
+/// The caller-supplied `device_id` in the DTO is **ignored**. The server
+/// resolves the authenticated device's `signal_device_id` from the device
+/// table, preventing callers from writing keys for arbitrary device IDs.
 async fn upload_identity_key(
     auth: AuthUser,
     State(state): State<AppState>,
     Json(req): Json<UploadIdentityKeyReq>,
 ) -> AppResult<Json<serde_json::Value>> {
+    // Server-bind: overwrite caller-supplied device_id with the authenticated
+    // device's signal_device_id. This matches the v2 behaviour.
+    let server_device_id = resolve_signal_device_id(&auth, &state).await?;
+
     let dh_key = BASE64
         .decode(&req.dh_public_key)
         .map_err(|_| AppError::BadRequest("Invalid dh_public_key encoding".into()))?;
@@ -164,7 +194,7 @@ async fn upload_identity_key(
         "#,
     )
     .bind(auth.user_id)
-    .bind(req.device_id)
+    .bind(server_device_id)
     .bind(&dh_key)
     .bind(&sig_key)
     .execute(state.db.pool())
@@ -173,7 +203,7 @@ async fn upload_identity_key(
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }
 
-// ─── Upload Signed PreKey ────────────────────────────────────────────────────
+// â”€â”€â”€ Upload Signed PreKey â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -186,15 +216,25 @@ struct UploadSignedPreKeyReq {
     signature: String,
 }
 
-/// POST /api/v1/keys/signed-prekey — upload a signed prekey (rotates weekly).
+/// Shared helper for device-bound signed prekey upload.
 ///
 /// The Ed25519 signature over the X25519 public key is verified server-side
 /// against the device's stored signing key before persisting.
+///
+/// # Security invariant
+///
+/// The caller-supplied `device_id` in the DTO is **ignored**. The server
+/// resolves the authenticated device's `signal_device_id` from the device
+/// table, preventing callers from writing keys for arbitrary device IDs.
 async fn upload_signed_prekey(
     auth: AuthUser,
     State(state): State<AppState>,
     Json(req): Json<UploadSignedPreKeyReq>,
 ) -> AppResult<Json<serde_json::Value>> {
+    // Server-bind: overwrite caller-supplied device_id with the authenticated
+    // device's signal_device_id. This matches the v2 behaviour.
+    let server_device_id = resolve_signal_device_id(&auth, &state).await?;
+
     let public_key = BASE64
         .decode(&req.public_key)
         .map_err(|_| AppError::BadRequest("Invalid public_key encoding".into()))?;
@@ -210,8 +250,14 @@ async fn upload_signed_prekey(
         return Err(AppError::BadRequest("signature must be 64 bytes".into()));
     }
 
-    verify_signed_prekey_signature(&state, auth.user_id, req.device_id, &public_key, &signature)
-        .await?;
+    verify_signed_prekey_signature(
+        &state,
+        auth.user_id,
+        server_device_id,
+        &public_key,
+        &signature,
+    )
+    .await?;
 
     // Signed prekeys rotate weekly.
     let expires_at = chrono::Utc::now() + chrono::Duration::days(7);
@@ -228,7 +274,7 @@ async fn upload_signed_prekey(
         "#,
     )
     .bind(auth.user_id)
-    .bind(req.device_id)
+    .bind(server_device_id)
     .bind(req.key_id)
     .bind(&public_key)
     .bind(&signature)
@@ -239,7 +285,7 @@ async fn upload_signed_prekey(
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }
 
-// ─── Upload One-Time PreKeys ──────────────────────────────────────────────────
+// â”€â”€â”€ Upload One-Time PreKeys â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -256,7 +302,7 @@ struct UploadOtpkReq {
     keys: Vec<OtpkItem>,
 }
 
-/// POST /api/v1/keys/one-time-prekeys — upload a batch of one-time prekeys.
+/// Shared helper for device-bound one-time prekey upload.
 ///
 /// Batch size is capped at [`MAX_OPK_BATCH`](crate::constants::MAX_OPK_BATCH).
 /// Each key is validated (32 bytes, non-trivial) and upserted in a single transaction.
@@ -265,14 +311,24 @@ struct UploadOtpkReq {
 ///
 /// * OPKs are consumed atomically via `FOR UPDATE SKIP LOCKED` during X3DH.
 ///   Each OPK is used at most once, providing forward secrecy for the initial message.
+///
+/// # Security invariant
+///
+/// The caller-supplied `device_id` in the DTO is **ignored**. The server
+/// resolves the authenticated device's `signal_device_id` from the device
+/// table, preventing callers from writing keys for arbitrary device IDs.
 async fn upload_one_time_prekeys(
     auth: AuthUser,
     State(state): State<AppState>,
     Json(req): Json<UploadOtpkReq>,
 ) -> AppResult<Json<serde_json::Value>> {
+    // Server-bind: overwrite caller-supplied device_id with the authenticated
+    // device's signal_device_id. This matches the v2 behaviour.
+    let server_device_id = resolve_signal_device_id(&auth, &state).await?;
+
     if req.keys.is_empty() || req.keys.len() > crate::constants::MAX_OPK_BATCH {
         return Err(AppError::BadRequest(format!(
-            "Provide 1–{} one-time prekeys",
+            "Provide 1â€“{} one-time prekeys",
             crate::constants::MAX_OPK_BATCH
         )));
     }
@@ -298,7 +354,7 @@ async fn upload_one_time_prekeys(
             "#,
         )
         .bind(auth.user_id)
-        .bind(req.device_id)
+        .bind(server_device_id)
         .bind(item.key_id)
         .bind(&pub_key)
         .execute(&mut *tx)
@@ -309,22 +365,30 @@ async fn upload_one_time_prekeys(
     Ok(Json(serde_json::json!({ "uploaded": req.keys.len() })))
 }
 
-// ─── Get OPK Count ────────────────────────────────────────────────────────────
+// â”€â”€â”€ Get OPK Count â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-/// GET /api/v1/keys/one-time-prekey-count — returns the number of unconsumed OPKs
+/// GET /api/v2/keys/one-time-prekey-count â€” returns the number of unconsumed OPKs
 /// and a `low` flag (true when < 10 remain) so clients know when to replenish.
+///
+/// # Security invariant
+///
+/// Uses the authenticated device's `signal_device_id` rather than a hardcoded
+/// value, matching the v2 behaviour.
 async fn get_opk_count(
     auth: AuthUser,
     State(state): State<AppState>,
 ) -> AppResult<Json<serde_json::Value>> {
+    let server_device_id = resolve_signal_device_id(&auth, &state).await?;
+
     let row = sqlx::query(
         r#"
         SELECT COUNT(*) AS count
         FROM one_time_prekeys
-        WHERE user_id = $1 AND device_id = 1 AND consumed = FALSE
+        WHERE user_id = $1 AND device_id = $2 AND consumed = FALSE
         "#,
     )
     .bind(auth.user_id)
+    .bind(server_device_id)
     .fetch_one(state.db.pool())
     .await?;
 
@@ -334,7 +398,7 @@ async fn get_opk_count(
     ))
 }
 
-// ─── Get Key Bundle ───────────────────────────────────────────────────────────
+// â”€â”€â”€ Get Key Bundle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 #[derive(Serialize)]
 struct KeyBundle {
@@ -354,7 +418,7 @@ struct KeyBundle {
     one_time_prekey: Option<String>,
 }
 
-/// GET /api/v1/keys/:user_id — fetch a user's public key bundle for X3DH.
+/// GET /api/v2/keys/:user_id â€” fetch a user's public key bundle for X3DH.
 ///
 /// Returns the identity key pair (DH + signing), latest signed prekey, and
 /// atomically consumes one OPK (if available) via `FOR UPDATE SKIP LOCKED`.
@@ -363,7 +427,7 @@ struct KeyBundle {
 ///
 /// * Access control: caller must share a DM conversation or server membership
 ///   with the target user ([`require_key_bundle_access`]).
-/// * OPK consumption is atomic — concurrent requests never consume the same OPK.
+/// * OPK consumption is atomic â€” concurrent requests never consume the same OPK.
 ///
 /// # E2EE contract
 ///
@@ -456,9 +520,9 @@ async fn get_key_bundle(
     }))
 }
 
-// ─── PIN Key Backup ───────────────────────────────────────────────────────────
+// â”€â”€â”€ PIN Key Backup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // The server stores an opaque encrypted blob; it never sees the PIN or plaintext.
-// Client encrypts: PBKDF2(PIN, salt, 600_000 iters) → AES-256-GCM key.
+// Client encrypts: PBKDF2(PIN, salt, 600_000 iters) â†’ AES-256-GCM key.
 // Blob format (client-defined): base64( salt || iv || ciphertext || tag ).
 
 #[derive(Deserialize)]
@@ -511,15 +575,15 @@ struct KeyBundleV2 {
     one_time_prekey: Option<String>,
 }
 
-/// PUT /api/v1/keys/backup — store an opaque PIN-encrypted key backup blob.
+/// PUT /api/v2/keys/backup â€” store an opaque PIN-encrypted key backup blob.
 ///
 /// The server stores the blob as-is; it never sees the PIN or plaintext.
-/// Client encrypts: `PBKDF2(PIN, salt, 1_200_000) → AES-256-GCM key`.
+/// Client encrypts: `PBKDF2(PIN, salt, 1_200_000) â†’ AES-256-GCM key`.
 ///
 /// # Security invariants
 ///
 /// * Maximum blob size: 10 MB. Minimum: 45 bytes (salt + IV + 1 byte + tag).
-/// * Server cannot decrypt — zero-knowledge backup.
+/// * Server cannot decrypt â€” zero-knowledge backup.
 async fn put_backup(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -533,7 +597,7 @@ async fn put_backup(
     if blob.len() < 45 {
         return Err(AppError::BadRequest("encrypted_blob too short".into()));
     }
-    // 10 MB cap — keystore should be kilobytes even with many sessions
+    // 10 MB cap â€” keystore should be kilobytes even with many sessions
     if blob.len() > 10 * 1024 * 1024 {
         return Err(AppError::BadRequest(
             "encrypted_blob exceeds 10 MB limit".into(),
@@ -557,7 +621,7 @@ async fn put_backup(
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }
 
-/// GET /api/v1/keys/backup — retrieve the PIN-encrypted key backup blob.
+/// GET /api/v2/keys/backup â€” retrieve the PIN-encrypted key backup blob.
 ///
 /// Rate-limited to 5 retrievals per hour per user to prevent offline PIN brute-force.
 async fn get_backup(auth: AuthUser, State(state): State<AppState>) -> AppResult<Json<BackupResp>> {
@@ -587,7 +651,7 @@ async fn get_backup(auth: AuthUser, State(state): State<AppState>) -> AppResult<
     }))
 }
 
-/// POST /api/v2/keys/identity — v2 identity key upload (device-aware, trusted-only).
+/// POST /api/v2/keys/identity â€” v2 identity key upload (device-aware, trusted-only).
 async fn upload_identity_key_v2(
     auth: AuthDevice,
     State(state): State<AppState>,
@@ -607,7 +671,7 @@ async fn upload_identity_key_v2(
     .await
 }
 
-/// POST /api/v2/keys/signed-prekey — v2 signed prekey upload (device-aware, trusted-only).
+/// POST /api/v2/keys/signed-prekey â€” v2 signed prekey upload (device-aware, trusted-only).
 async fn upload_signed_prekey_v2(
     auth: AuthDevice,
     State(state): State<AppState>,
@@ -627,7 +691,7 @@ async fn upload_signed_prekey_v2(
     .await
 }
 
-/// POST /api/v2/keys/one-time-prekeys — v2 OPK batch upload (device-aware, trusted-only).
+/// POST /api/v2/keys/one-time-prekeys â€” v2 OPK batch upload (device-aware, trusted-only).
 async fn upload_one_time_prekeys_v2(
     auth: AuthDevice,
     State(state): State<AppState>,
@@ -647,7 +711,7 @@ async fn upload_one_time_prekeys_v2(
     .await
 }
 
-/// GET /api/v2/keys/one-time-prekey-count — v2 OPK count (device-scoped).
+/// GET /api/v2/keys/one-time-prekey-count â€” v2 OPK count (device-scoped).
 async fn get_opk_count_v2(
     auth: AuthDevice,
     State(state): State<AppState>,
@@ -671,7 +735,7 @@ async fn get_opk_count_v2(
     ))
 }
 
-/// GET /api/v2/keys/:user_id/bundles — fetch key bundles for all (or filtered) devices.
+/// GET /api/v2/keys/:user_id/bundles â€” fetch key bundles for all (or filtered) devices.
 ///
 /// Returns one bundle per non-revoked device. Optionally consumes an OPK per
 /// device when `consume_opk=true`. Device IDs can be filtered via `device_ids`

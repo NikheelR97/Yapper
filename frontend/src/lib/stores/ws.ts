@@ -10,7 +10,7 @@
 
 import { get, writable } from 'svelte/store';
 import { goto } from '$app/navigation';
-import { authStore, clearAuth, refreshAccessToken } from '$stores/auth.js';
+import { authStore, clearAuth, refreshAccessToken, registerSessionResetter } from '$stores/auth.js';
 import { WS_URL } from '$lib/env.js';
 
 type MessageHandler = (payload: unknown) => void;
@@ -55,6 +55,23 @@ const MAX_PENDING = 50;
 const pendingQueue: Record<string, unknown>[] = [];
 // Idempotent message types where only the latest per-type matters.
 const DEDUP_TYPES = new Set(['typing_start', 'read']);
+
+function resetWsTransport(): void {
+	stopped = true;
+	clearTimeout(reconnectTimer ?? undefined);
+	clearInterval(pingTimer ?? undefined);
+	clearTimeout(proactiveReauthTimer ?? undefined);
+	reconnectTimer = null;
+	pingTimer = null;
+	proactiveReauthTimer = null;
+	reconnectDelay = 1000;
+	pendingQueue.length = 0;
+	socket?.close(1000, 'logout');
+	socket = null;
+	wsStore.set({ connected: false, error: null });
+}
+
+registerSessionResetter(resetWsTransport);
 
 // Always-on handler: decrypt and store incoming SenderKey distributions.
 // Lazy-imported to keep @noble/curves (~150KB) and @noble/hashes (~50KB)
@@ -115,7 +132,8 @@ export function sendChannelMessage(
 	channelId: string,
 	wireCiphertext: string,
 	iteration: number,
-	messageType = 'text'
+	messageType = 'text',
+	clientNonce?: string,
 ): boolean {
 	return wsSend({
 		type: 'send_channel',
@@ -123,6 +141,7 @@ export function sendChannelMessage(
 		ciphertext: wireCiphertext,
 		message_type: messageType,
 		msg_num: iteration,
+		client_nonce: clientNonce ?? null,
 	});
 }
 
@@ -155,12 +174,7 @@ export function wsConnect(): void {
 
 /** Disconnect and stop reconnection. Call on logout. */
 export function wsDisconnect(): void {
-	stopped = true;
-	clearTimeout(reconnectTimer ?? undefined);
-	clearInterval(pingTimer ?? undefined);
-	socket?.close(1000, 'logout');
-	socket = null;
-	wsStore.set({ connected: false, error: null });
+	resetWsTransport();
 }
 
 function doConnect(): void {

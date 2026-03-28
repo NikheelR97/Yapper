@@ -39,7 +39,7 @@
 
 	onMount(async () => {
 		try {
-			const status = await api.get<PremiumStatusResponse>('/api/v1/premium');
+			const status = await api.get<PremiumStatusResponse>('/api/v2/premium');
 			premiumSince = status.premium_since;
 			if (status.is_premium !== isPremium) {
 				setPremiumStatus(status.is_premium);
@@ -56,7 +56,7 @@
 		promoSuccess = '';
 		promoLoading = true;
 		try {
-			const status = await api.post<PremiumStatusResponse>('/api/v1/premium/activate', {
+			const status = await api.post<PremiumStatusResponse>('/api/v2/premium/activate', {
 				promo_code: promoCode.trim()
 			});
 			setPremiumStatus(status.is_premium);
@@ -75,7 +75,7 @@
 		cancelError = '';
 		cancelLoading = true;
 		try {
-			const status = await api.delete<PremiumStatusResponse>('/api/v1/premium');
+			const status = await api.delete<PremiumStatusResponse>('/api/v2/premium');
 			setPremiumStatus(status.is_premium);
 			premiumSince = status.premium_since;
 			showCancelConfirm = false;

@@ -61,7 +61,7 @@
 	async function loadTickets() {
 		loadingTickets = true;
 		try {
-			const res = await api.get<{ tickets: Ticket[] }>('/api/v1/support/tickets');
+			const res = await api.get<{ tickets: Ticket[] }>('/api/v2/support/tickets');
 			tickets = res.tickets;
 		} catch {
 			tickets = [];
@@ -74,7 +74,7 @@
 		if (!canSubmit) return;
 		submitting = true;
 		try {
-			await api.post('/api/v1/support/tickets', {
+			await api.post('/api/v2/support/tickets', {
 				ticket_type: ticketType,
 				subject: subject.trim(),
 				description: description.trim(),
@@ -86,8 +86,8 @@
 			priority = 'medium';
 			ticketType = 'bug';
 			await loadTickets();
-		} catch (e: any) {
-			toast.error(e.message ?? 'Failed to submit ticket');
+		} catch (e: unknown) {
+			toast.error(e instanceof Error ? e.message : 'Failed to submit ticket');
 		} finally {
 			submitting = false;
 		}

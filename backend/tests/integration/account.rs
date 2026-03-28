@@ -1,48 +1,35 @@
 //! Integration tests for account deletion and deleted-account retention cleanup.
 
-use super::{
-    authorization_header_name, build_test_state, create_test_user, csrf_header_name,
-    csrf_header_value,
-};
+use super::{register_test_session, spawn_test_server_with_pool, TestClient};
 use axum_test::TestServer;
-use serial_test::serial;
-use sqlx::Row;
+use sqlx::{PgPool, Row};
 use uuid::Uuid;
-use yapper_server::{build_router, retention};
+use yapper_server::retention;
 
-async fn build_account_test_server() -> Option<(yapper_server::AppState, TestServer)> {
-    let state = build_test_state().await?;
-    let server =
-        TestServer::new(build_router(state.clone())).expect("Failed to create test server");
-    Some((state, server))
+async fn build_account_test_server(pool: PgPool) -> Option<(yapper_server::AppState, TestServer)> {
+    spawn_test_server_with_pool(pool).await
 }
 
-async fn delete_account(server: &TestServer, access_token: &str, csrf_token: &str) {
-    let resp = server
-        .delete("/api/v1/account/")
-        .add_header(
-            authorization_header_name(),
-            super::bearer_header(access_token),
-        )
-        .add_header(csrf_header_name(), csrf_header_value(csrf_token))
-        .await;
+async fn delete_account(client: &TestClient<'_>) {
+    let resp = client.delete("/api/v2/account").await;
 
     assert_eq!(
         resp.status_code().as_u16(),
         204,
-        "DELETE /api/v1/account failed: {}",
+        "DELETE /api/v2/account failed: {}",
         resp.text()
     );
 }
 
-#[tokio::test]
-#[serial]
-async fn account_delete_sets_retention_hold_and_cleanup_hard_deletes_eligible_user() {
-    let Some((state, server)) = build_account_test_server().await else {
+#[sqlx::test(migrations = "./migrations")]
+async fn account_delete_sets_retention_hold_and_cleanup_hard_deletes_eligible_user(pool: PgPool) {
+    let Some((state, server)) = build_account_test_server(pool).await else {
         return;
     };
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
-    let (user_id, access_token, csrf_token) = create_test_user(&server, &suffix).await;
+    let session = register_test_session(&server, &suffix).await;
+    let client = TestClient::from_session(&server, &session);
+    let user_id = session.user_id;
 
     sqlx::query(
         "INSERT INTO support_tickets (user_id, ticket_type, subject, description, priority)
@@ -63,7 +50,7 @@ async fn account_delete_sets_retention_hold_and_cleanup_hard_deletes_eligible_us
     .await
     .expect("insert media upload");
 
-    delete_account(&server, &access_token, &csrf_token).await;
+    delete_account(&client).await;
 
     let deleted_user = sqlx::query(
         "SELECT deleted_at, deletion_hold_until, deletion_retention_basis, username, email, display_name, password_hash
@@ -162,14 +149,15 @@ async fn account_delete_sets_retention_hold_and_cleanup_hard_deletes_eligible_us
     );
 }
 
-#[tokio::test]
-#[serial]
-async fn retention_cleanup_preserves_anonymized_shell_when_history_requires_it() {
-    let Some((state, server)) = build_account_test_server().await else {
+#[sqlx::test(migrations = "./migrations")]
+async fn retention_cleanup_preserves_anonymized_shell_when_history_requires_it(pool: PgPool) {
+    let Some((state, server)) = build_account_test_server(pool).await else {
         return;
     };
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
-    let (user_id, access_token, csrf_token) = create_test_user(&server, &suffix).await;
+    let session = register_test_session(&server, &suffix).await;
+    let client = TestClient::from_session(&server, &session);
+    let user_id = session.user_id;
 
     let conversation_id = Uuid::new_v4();
     let message_id = Uuid::new_v4();
@@ -192,7 +180,7 @@ async fn retention_cleanup_preserves_anonymized_shell_when_history_requires_it()
     .await
     .expect("insert historical message");
 
-    delete_account(&server, &access_token, &csrf_token).await;
+    delete_account(&client).await;
 
     sqlx::query(
         "UPDATE users

@@ -1,5 +1,7 @@
 use axum::{
     extract::{Path, State},
+    http::StatusCode,
+    response::IntoResponse,
     routing::{delete, get, post},
     Json, Router,
 };
@@ -163,11 +165,18 @@ struct CreateSyncEventBody {
     payload: serde_json::Value,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AckSyncEventsBody {
+    event_ids: Vec<Uuid>,
+}
+
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(list_devices))
         .route("/trust-requests", post(create_trust_request))
         .route("/sync-events", get(get_sync_events).post(create_sync_event))
+        .route("/sync-events/ack", post(ack_sync_events))
         .route("/:id/approve", post(approve_device))
         .route("/:id", delete(revoke_device))
 }
@@ -384,22 +393,29 @@ pub async fn enqueue_sync_event(
     Ok(())
 }
 
-/// Atomically mark all undelivered sync events for `device_id` as delivered
-/// and return them. Each event is delivered at most once per call.
+/// Fetch all undelivered sync events for `device_id`.
+///
+/// Delivery is acknowledged separately through [`ack_sync_events`] after the
+/// client has actually processed the payload. Returning events from this
+/// endpoint must not mutate delivery state, otherwise a transport failure
+/// between response serialization and client receipt would permanently drop
+/// sync events.
 pub async fn take_sync_events(device_id: Uuid, state: &AppState) -> AppResult<Vec<SyncEvent>> {
     let rows = sqlx::query(
         r#"
-        UPDATE device_sync_events
-        SET delivered_at = NOW()
+        SELECT id, event_type, source_device_id, payload, created_at
+        FROM device_sync_events
         WHERE target_device_id = $1 AND delivered_at IS NULL
-        RETURNING id, event_type, source_device_id, payload, created_at
+        ORDER BY created_at ASC
+        LIMIT 100
         "#,
     )
     .bind(device_id)
     .fetch_all(state.db.pool())
     .await?;
 
-    rows.into_iter()
+    let events: Vec<SyncEvent> = rows
+        .iter()
         .map(|row| {
             Ok(SyncEvent {
                 id: row.try_get("id")?,
@@ -410,7 +426,9 @@ pub async fn take_sync_events(device_id: Uuid, state: &AppState) -> AppResult<Ve
             })
         })
         .collect::<Result<Vec<_>, sqlx::Error>>()
-        .map_err(AppError::from)
+        .map_err(AppError::from)?;
+
+    Ok(events)
 }
 
 /// GET /api/v2/devices — list all devices (including revoked) for the authenticated user.
@@ -632,11 +650,10 @@ async fn revoke_device(
         .bind(target.signal_device_id)
         .execute(state.db.pool())
         .await?;
-    sqlx::query("DELETE FROM key_backup WHERE user_id = $1")
+    sqlx::query("DELETE FROM key_backups WHERE user_id = $1")
         .bind(auth.user_id)
         .execute(state.db.pool())
-        .await
-        .ok(); // backup may not exist — ignore error
+        .await?;
 
     // Invalidate cached trust state so the hub rejects this device immediately
     state
@@ -676,6 +693,30 @@ async fn get_sync_events(
     State(state): State<AppState>,
 ) -> AppResult<Json<Vec<SyncEvent>>> {
     Ok(Json(take_sync_events(auth.device_id, &state).await?))
+}
+
+async fn ack_sync_events(
+    auth: AuthDevice,
+    State(state): State<AppState>,
+    Json(body): Json<AckSyncEventsBody>,
+) -> AppResult<impl IntoResponse> {
+    if body.event_ids.is_empty() {
+        return Ok(StatusCode::NO_CONTENT);
+    }
+
+    sqlx::query(
+        "UPDATE device_sync_events \
+         SET delivered_at = NOW() \
+         WHERE target_device_id = $1 \
+           AND id = ANY($2) \
+           AND delivered_at IS NULL",
+    )
+    .bind(auth.device_id)
+    .bind(&body.event_ids)
+    .execute(state.db.pool())
+    .await?;
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn create_sync_event(

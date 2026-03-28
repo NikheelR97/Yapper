@@ -48,7 +48,7 @@
 				weeklyData: WeeklyData[];
 				bedtimeStart: string | null;
 				bedtimeEnd: string | null;
-			}>(`/api/v1/parental/children/${childId}/screentime?period=${period}`);
+			}>(`/api/v2/parental/children/${childId}/screentime?period=${period}`);
 
 			totalMinutesToday = data.totalMinutesToday;
 			limitMinutes = data.limitMinutes;
@@ -83,15 +83,15 @@
 	async function saveSettings() {
 		saving = true;
 		try {
-			await api.patch(`/api/v1/parental/children/${childId}/screentime`, {
+			await api.patch(`/api/v2/parental/children/${childId}/screentime`, {
 				limitMinutes,
 				bedtimeStart,
 				bedtimeEnd,
 			});
 			toast.success('Screen time settings saved!');
 			editingBedtime = false;
-		} catch (e: any) {
-			toast.error(e.message ?? 'Failed to save');
+		} catch (e: unknown) {
+			toast.error(e instanceof Error ? e.message : 'Failed to save');
 		} finally {
 			saving = false;
 		}

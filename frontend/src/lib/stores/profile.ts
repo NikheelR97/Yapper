@@ -1,5 +1,6 @@
 import { writable } from 'svelte/store';
 import { api } from '$api/client.js';
+import { registerSessionResetter } from '$stores/auth.js';
 
 export interface UserProfile {
 	id: string;
@@ -61,10 +62,14 @@ const initial: ProfileState = {
 
 export const profileStore = writable<ProfileState>(initial);
 
+registerSessionResetter(() => {
+	profileStore.set({ ...initial });
+});
+
 export async function loadProfile(username: string) {
 	profileStore.update((s) => ({ ...s, loading: true, error: null }));
 	try {
-		const profile = await api.get<UserProfile>(`/api/v1/users/by/${username}`);
+		const profile = await api.get<UserProfile>(`/api/v2/users/by/${username}`);
 		profileStore.update((s) => ({ ...s, profile, loading: false }));
 	} catch (e: any) {
 		profileStore.update((s) => ({
@@ -76,7 +81,7 @@ export async function loadProfile(username: string) {
 }
 
 export async function followUser(username: string) {
-	await api.post(`/api/v1/users/by/${username}/follow`);
+	await api.post(`/api/v2/users/by/${username}/follow`);
 	profileStore.update((s) => {
 		if (!s.profile) return s;
 		return {
@@ -91,7 +96,7 @@ export async function followUser(username: string) {
 }
 
 export async function unfollowUser(username: string) {
-	await api.delete(`/api/v1/users/by/${username}/follow`);
+	await api.delete(`/api/v2/users/by/${username}/follow`);
 	profileStore.update((s) => {
 		if (!s.profile) return s;
 		return {
@@ -106,5 +111,5 @@ export async function unfollowUser(username: string) {
 }
 
 export async function sendFriendRequest(username: string) {
-	await api.post(`/api/v1/users/by/${username}/friend-request`);
+	await api.post(`/api/v2/users/by/${username}/friend-request`);
 }

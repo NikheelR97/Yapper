@@ -82,7 +82,7 @@ export async function reportScreenTimeUsage(): Promise<void> {
 		return;
 	}
 
-	await api.post('/api/v1/screentime/report', payload);
+	await api.post('/api/v2/screentime/report', payload);
 }
 
 export function startYapperUsageTracker(): () => void {

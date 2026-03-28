@@ -17,8 +17,8 @@
 				await followUser(profile.username);
 				toast.success('Following!');
 			}
-		} catch (e: any) {
-			toast.error(e.message ?? 'Failed');
+		} catch (e: unknown) {
+			toast.error(e instanceof Error ? e.message : 'Failed');
 		}
 	}
 
@@ -31,8 +31,8 @@
 		try {
 			await sendFriendRequest(profile.username);
 			toast.success('Friend request sent!');
-		} catch (e: any) {
-			toast.error(e.message ?? 'Failed');
+		} catch (e: unknown) {
+			toast.error(e instanceof Error ? e.message : 'Failed');
 		}
 	}
 
@@ -72,7 +72,7 @@
 				</button>
 				<button class="btn-secondary" on:click={handleMessage}>Message</button>
 				{#if !profile.isFriend}
-					<button class="btn-icon" title="Send friend request" on:click={handleFriendRequest}>
+					<button class="btn-icon" title="Send friend request" aria-label="Send friend request" on:click={handleFriendRequest}>
 						+
 					</button>
 				{/if}

@@ -24,10 +24,10 @@ async function setupParentAuth(page: Parameters<typeof mockAuthEndpoints>[0]): P
 	await setInstallationId(page, 'parental-test-install');
 	await mockAuthEndpoints(page, authData);
 
-	await page.route(`**/api/v1/servers`, async (route) => {
+	await page.route(`**/api/v2/servers`, async (route) => {
 		await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
 	});
-	await page.route(`**/api/v1/conversations`, async (route) => {
+	await page.route(`**/api/v2/conversations`, async (route) => {
 		await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
 	});
 }
@@ -184,7 +184,7 @@ test.describe('Parental controls — parent dashboard', () => {
 	test('pending alerts section shows alert items', async ({ page }) => {
 		// The parental store's loadChildren() expects { children: [...] } (snake_case fields),
 		// but mockParentalEndpoints returns a bare array with camelCase — override it here.
-		await page.route(`**/api/v1/parental/children`, async (route) => {
+		await page.route(`**/api/v2/parental/children`, async (route) => {
 			if (route.request().method() === 'GET') {
 				await route.fulfill({
 					status: 200,
@@ -199,7 +199,7 @@ test.describe('Parental controls — parent dashboard', () => {
 		});
 
 		// loadAlerts() fetches per-child notifications, not the generic pending-alerts endpoint.
-		await page.route(`**/api/v1/parental/children/child-1/notifications`, async (route) => {
+		await page.route(`**/api/v2/parental/children/child-1/notifications`, async (route) => {
 			await route.fulfill({
 				status: 200,
 				contentType: 'application/json',

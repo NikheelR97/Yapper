@@ -37,7 +37,7 @@ backend/src/
 /health                     — unauthenticated health check
 /ws                         — WebSocket upgrade
 /auth/oauth/:provider       — OAuth redirect (Discord · Google)
-/api/v1/…                   — original REST API
+/api/v2/…                   — current REST API
 /api/v2/auth/…              — multi-device auth (login · refresh · logout)
 /api/v2/devices/…           — device management
 /api/v2/keys/…              — Signal key distribution (v2 envelope)

@@ -321,7 +321,7 @@ async function fetchConversationHistory(): Promise<CachedDmHistoryMessage[]> {
 
 async function fetchChannelHistory(): Promise<CachedChannelHistoryMessage[]> {
   const servers = await api
-    .get<SyncServer[]>("/api/v1/servers")
+    .get<SyncServer[]>("/api/v2/servers")
     .catch(() => []);
   if (!servers.length) {
     return [];
@@ -331,7 +331,7 @@ async function fetchChannelHistory(): Promise<CachedChannelHistoryMessage[]> {
     await Promise.all(
       servers.map((server) =>
         api
-          .get<SyncChannel[]>(`/api/v1/servers/${server.id}/channels`)
+          .get<SyncChannel[]>(`/api/v2/servers/${server.id}/channels`)
           .catch(() => []),
       ),
     )
@@ -344,7 +344,7 @@ async function fetchChannelHistory(): Promise<CachedChannelHistoryMessage[]> {
   const histories = await Promise.all(
     channels.map((channel) =>
       fetchPaginatedHistory<CachedChannelHistoryMessage>(
-        `/api/v1/channels/${channel.id}/messages`,
+        `/api/v2/channels/${channel.id}/messages`,
       ),
     ),
   );

@@ -51,7 +51,7 @@ function apiHeaders(session: SessionBootstrap) {
 
 async function createServerViaApi(namePrefix: string): Promise<{ serverId: string; channelId: string }> {
 	const session = await createSessionBootstrap();
-	const createResponse = await fetch(`${API_URL}/api/v1/servers`, {
+	const createResponse = await fetch(`${API_URL}/api/v2/servers`, {
 		method: 'POST',
 		headers: apiHeaders(session),
 		body: JSON.stringify({ name: `${namePrefix} ${Date.now()}` }),
@@ -65,7 +65,7 @@ async function createServerViaApi(namePrefix: string): Promise<{ serverId: strin
 		throw new Error('createServerViaApi response missing server id');
 	}
 
-	const channelResponse = await fetch(`${API_URL}/api/v1/servers/${server.id}/channels`, {
+	const channelResponse = await fetch(`${API_URL}/api/v2/servers/${server.id}/channels`, {
 		headers: { Authorization: `Bearer ${session.accessToken}` },
 	});
 	if (!channelResponse.ok) {

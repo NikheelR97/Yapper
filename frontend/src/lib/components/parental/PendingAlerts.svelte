@@ -17,8 +17,8 @@
 		try {
 			await approveAlert(alert.id, alert.type as 'friend_request' | 'server_join');
 			toast.success('Approved');
-		} catch (e: any) {
-			toast.error(e.message ?? 'Failed to approve');
+		} catch (e: unknown) {
+			toast.error(e instanceof Error ? e.message : 'Failed to approve');
 		}
 	}
 
@@ -26,8 +26,8 @@
 		try {
 			await declineAlert(alert.id, alert.type as 'friend_request' | 'server_join');
 			toast.info('Declined');
-		} catch (e: any) {
-			toast.error(e.message ?? 'Failed to decline');
+		} catch (e: unknown) {
+			toast.error(e instanceof Error ? e.message : 'Failed to decline');
 		}
 	}
 

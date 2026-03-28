@@ -3,6 +3,8 @@
 > Generated: 2026-02-27
 > Source: `quizzical-yawning-starfish.md` (Full Implementation Plan)
 > Methodology: 2-week sprints, each with clear deliverables, acceptance criteria, and team assignments
+> Status: Archived delivery snapshot
+> Archive note (2026-03-27): This sprint log predates the `/api/v1` removal. Any `/api/v1/*` routes mentioned below are historical references to the implementation state at that time, not current API guidance.
 
 ---
 

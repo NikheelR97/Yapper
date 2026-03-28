@@ -1,0 +1,104 @@
+name: E2E Security
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  setup-auth:
+    name: Setup E2E Auth State
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate auth-state artifacts
+        run: npm run test:setup-auth
+        env:
+          VITE_API_URL: ${{ vars.E2E_API_URL || 'https://api.yapperhq.com' }}
+          E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+          E2E_EMAIL_2: ${{ secrets.E2E_EMAIL_2 }}
+          E2E_PASSWORD_2: ${{ secrets.E2E_PASSWORD_2 }}
+
+      - name: Upload auth-state artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-auth-state
+          path: frontend/tests/auth-state/
+          retention-days: 1
+
+  security:
+    name: Playwright Security
+    runs-on: ubuntu-latest
+    needs: [setup-auth]
+    timeout-minutes: 12
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download auth-state artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: playwright-auth-state
+          path: frontend/tests/auth-state/
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium
+
+      - name: Install Playwright system deps
+        run: npx playwright install-deps chromium
+
+      - name: Run security tests
+        run: npx playwright test --grep "@security|@xss|@e2ee|@auth"
+        env:
+          CI: "true"
+          E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+          E2E_EMAIL_2: ${{ secrets.E2E_EMAIL_2 }}
+          E2E_PASSWORD_2: ${{ secrets.E2E_PASSWORD_2 }}
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-security-results
+          path: |
+            frontend/test-results/
+            frontend/playwright-report/
+          retention-days: 14

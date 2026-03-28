@@ -1,51 +1,43 @@
 /**
- * Multi-Device Trust — Edge Case Tests
- *
- * Tests the device trust state-machine under adverse conditions:
- *
- *   A — WS 'error' frame (code 4001 / Device revoked) → app clears auth and
- *       redirects to /login
- *   B — Offline approval persists in localStorage across reload (commit 42f981a)
- *   C — sync-events HTTP 500 → app retries and eventually becomes ready
- *   D — PendingDeviceGate shows "Restore from encrypted backup" section
- *
- * All tests are pure-mock (no live backend).
+ * Multi-Device Trust - Edge Case Tests
  *
  * @multidevice @smoke
  */
 
-import { test, expect, type Page } from '@playwright/test';
-import {
-	buildMockAuthData,
-	buildMockDevice,
-	mockAuthEndpoints,
-	setInstallationId,
-	type ServerDevice,
-} from './auth-helper.js';
+import type { Page } from '@playwright/test';
+import { test, expect } from './fixtures/auth.fixture';
+import { buildMockDevice, type ServerDevice } from './auth-helper.js';
 import { mockExploreEndpoints } from './helpers/mock-routes.js';
 import { log } from './helpers/log.js';
 
-// ─── Shared helpers ───────────────────────────────────────────────────────────
+async function getInstallationId(page: Page): Promise<string> {
+	return (
+		(await page.evaluate(() => localStorage.getItem('yapper_installation_id'))) ??
+		'multidevice-install'
+	);
+}
 
-/**
- * Set up a trusted device session (no PendingDeviceGate).
- * Returns the auth data and the mocked device.
- */
 async function setupTrustedDevice(
 	page: Page,
-	installId: string,
-): Promise<{ authData: ReturnType<typeof buildMockAuthData>; device: ServerDevice }> {
+): Promise<{ device: ServerDevice }> {
+	const installationId = await getInstallationId(page);
 	const device = buildMockDevice({
-		installation_id: installId,
+		installation_id: installationId,
 		trust_state: 'trusted',
 		approved_at: new Date().toISOString(),
 	});
-	const authData = buildMockAuthData({ device });
 
-	await setInstallationId(page, installId);
-	await mockAuthEndpoints(page, authData, { devices: [device] });
-
-	await page.route('**/api/v1/servers', async (route) => {
+	await page.route('**/api/v2/devices', async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify([device]),
+		});
+	});
+	await page.route('**/api/v2/devices/trust-requests', async (route) => {
+		await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+	});
+	await page.route('**/api/v2/servers', async (route) => {
 		await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
 	});
 	await page.route('**/api/v2/conversations', async (route) => {
@@ -53,37 +45,37 @@ async function setupTrustedDevice(
 	});
 	await mockExploreEndpoints(page);
 
-	return { authData, device };
+	return { device };
 }
 
-/**
- * Set up a pending-trust device session (shows PendingDeviceGate).
- */
 async function setupPendingDevice(
 	page: Page,
-	installId: string,
-): Promise<{ authData: ReturnType<typeof buildMockAuthData>; pendingDevice: ServerDevice }> {
+): Promise<{ pendingDevice: ServerDevice }> {
+	const installationId = await getInstallationId(page);
 	const pendingDevice = buildMockDevice({
 		id: 'pending-dev-123',
-		installation_id: installId,
+		installation_id: installationId,
 		trust_state: 'pending_trust',
 		approved_at: null,
 	});
-	// Include a trusted device so PendingDeviceGate shows "Restore from encrypted backup"
 	const trustedDevice = buildMockDevice({
 		id: 'trusted-dev-primary',
 		installation_id: 'trusted-primary-install',
 		trust_state: 'trusted',
 		approved_at: new Date().toISOString(),
 	});
-	const authData = buildMockAuthData({ device: pendingDevice });
 
-	await setInstallationId(page, installId);
-	// mockAuthEndpoints with pending + trusted device — layout sees pending_trust state
-	await mockAuthEndpoints(page, authData, { devices: [pendingDevice, trustedDevice] });
-
-	// Stub additional endpoints the layout may call
-	await page.route('**/api/v1/servers', async (route) => {
+	await page.route('**/api/v2/devices', async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify([pendingDevice, trustedDevice]),
+		});
+	});
+	await page.route('**/api/v2/devices/trust-requests', async (route) => {
+		await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+	});
+	await page.route('**/api/v2/servers', async (route) => {
 		await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
 	});
 	await page.route('**/api/v2/conversations', async (route) => {
@@ -91,29 +83,19 @@ async function setupPendingDevice(
 	});
 	await mockExploreEndpoints(page);
 
-	return { authData, pendingDevice };
+	return { pendingDevice };
 }
 
-// ─── Test A: WS code 4001 → redirect to /login ───────────────────────────────
-
-test.describe('Multi-device — WS device revocation @multidevice @smoke', () => {
-	test('WS error frame (code 4001, Device revoked) clears session and redirects to /login', async ({
-		page,
-	}) => {
-		// Replace WebSocket with a fully synthetic mock that never opens a real
-		// connection. The old mock extended the real WebSocket and relied on a real
-		// 'open' event, which was flaky in CI (no backend → open never fires).
-		await page.addInitScript(() => {
+test.describe('Multi-device - WS device revocation @multidevice @smoke', () => {
+	test('WS error frame (code 4001, Device revoked) clears session and redirects to /login', async ({ userPage }) => {
+		await userPage.addInitScript(() => {
 			class MockWebSocket extends EventTarget {
 				static readonly CONNECTING = 0;
 				static readonly OPEN = 1;
-				static readonly CLOSING = 2;
 				static readonly CLOSED = 3;
 				readonly CONNECTING = 0;
 				readonly OPEN = 1;
-				readonly CLOSING = 2;
 				readonly CLOSED = 3;
-
 				readyState = MockWebSocket.CONNECTING;
 				url: string;
 				protocol = '';
@@ -125,238 +107,145 @@ test.describe('Multi-device — WS device revocation @multidevice @smoke', () =>
 				onerror: ((ev: Event) => void) | null = null;
 				onclose: ((ev: CloseEvent) => void) | null = null;
 
-				constructor(url: string | URL, _protocols?: string | string[]) {
+				constructor(url: string | URL) {
 					super();
 					this.url = url.toString();
-					// Simulate async open + ready, then inject device-revoked error
 					setTimeout(() => {
 						this.readyState = MockWebSocket.OPEN;
-						const openEv = new Event('open');
-						this.onopen?.(openEv);
-						this.dispatchEvent(openEv);
-						// Send 'ready' frame so wsStore.connected = true
-						this._injectMessage(JSON.stringify({ type: 'ready' }));
-						// After a delay, inject the device-revoked error frame
+						const openEvent = new Event('open');
+						this.onopen?.(openEvent);
+						this.dispatchEvent(openEvent);
+						this.injectMessage(JSON.stringify({ type: 'ready' }));
 						setTimeout(() => {
-							this._injectMessage(
+							this.injectMessage(
 								JSON.stringify({ type: 'error', code: 4001, message: 'Device revoked' }),
 							);
 						}, 800);
 					}, 50);
 				}
 
-				send(_data: string | ArrayBuffer | Blob | ArrayBufferView): void {
-					/* no-op */
-				}
-				close(_code?: number, _reason?: string): void {
+				send(): void {}
+				close(): void {
 					this.readyState = MockWebSocket.CLOSED;
 				}
 
-				_injectMessage(data: string): void {
-					const ev = new MessageEvent('message', { data });
-					this.onmessage?.(ev);
-					this.dispatchEvent(ev);
+				injectMessage(data: string): void {
+					const event = new MessageEvent('message', { data });
+					this.onmessage?.(event);
+					this.dispatchEvent(event);
 				}
 			}
+
 			window.WebSocket = MockWebSocket as unknown as typeof WebSocket;
 		});
 
-		await setupTrustedDevice(page, 'ws-revoke-install');
-
-		log('NETWORK', 'NAVIGATE', 'Loading /explore — WS will inject device-revoked frame after 1s');
-		await page.goto('/explore');
-		await expect(page.locator('[aria-label="Loading Yapper"]')).toHaveCount(0, {
+		await setupTrustedDevice(userPage);
+		await userPage.goto('/explore');
+		await expect(userPage.locator('[aria-label="Loading Yapper"]')).toHaveCount(0, {
 			timeout: 30_000,
 		});
-
-		// App should redirect to /login within 15 s after the revocation frame arrives
-		log('ASSERTION', 'STATE', 'Waiting for redirect to /login after WS 4001 frame');
-		await expect(page).toHaveURL(/\/login/, { timeout: 15_000 });
-		log('VALIDATION', 'STATE', 'Redirected to /login after device revocation. [PASS]');
+		await expect(userPage).toHaveURL(/\/login/, { timeout: 15_000 });
 	});
 });
 
-// ─── Test B: Offline approval persists across reload ─────────────────────────
+test.describe('Multi-device - offline approval persistence @multidevice @smoke', () => {
+	test('Approved pending device IDs persist in localStorage across reload', async ({ userPage }) => {
+		const { pendingDevice } = await setupPendingDevice(userPage);
 
-test.describe('Multi-device — offline approval persistence @multidevice @smoke', () => {
-	test('Approved pending device IDs persist in localStorage across reload', async ({ page }) => {
-		// Set up a pending device (PendingDeviceGate shown)
-		const { pendingDevice } = await setupPendingDevice(page, 'offline-approval-install');
-
-		log('NETWORK', 'NAVIGATE', 'Loading /explore with pending device — PendingDeviceGate expected');
-		await page.goto('/explore');
-		await expect(page.locator('[aria-label="Loading Yapper"]')).toHaveCount(0, {
+		await userPage.goto('/explore');
+		await expect(userPage.locator('[aria-label="Loading Yapper"]')).toHaveCount(0, {
 			timeout: 30_000,
 		});
 
-		// Simulate the approval action by writing to localStorage directly.
-		// This mirrors what the Approve button in the trust-request panel does.
-		const deviceId = pendingDevice.id;
-		await page.evaluate((id) => {
+		await userPage.evaluate((deviceId) => {
 			const key = 'yapper_approved_unsynced_devices';
 			const existing: string[] = JSON.parse(localStorage.getItem(key) ?? '[]');
-			if (!existing.includes(id)) existing.push(id);
+			if (!existing.includes(deviceId)) {
+				existing.push(deviceId);
+			}
 			localStorage.setItem(key, JSON.stringify(existing));
-		}, deviceId);
+		}, pendingDevice.id);
 
-		const storedBefore = await page.evaluate(() =>
+		const storedBefore = await userPage.evaluate(() =>
 			localStorage.getItem('yapper_approved_unsynced_devices'),
 		);
-		log('ASSERTION', 'STATE', `localStorage before reload: ${storedBefore}`);
-		expect(storedBefore).toContain(deviceId);
+		expect(storedBefore).toContain(pendingDevice.id);
 
-		// Reload and verify the key survived
-		await page.reload();
-		await expect(page.locator('[aria-label="Loading Yapper"]')).toHaveCount(0, {
+		await userPage.reload();
+		await expect(userPage.locator('[aria-label="Loading Yapper"]')).toHaveCount(0, {
 			timeout: 30_000,
 		});
 
-		const storedAfter = await page.evaluate(() =>
+		const storedAfter = await userPage.evaluate(() =>
 			localStorage.getItem('yapper_approved_unsynced_devices'),
 		);
-		log('ASSERTION', 'STATE', `localStorage after reload: ${storedAfter}`);
-		expect(storedAfter, 'Approved device IDs must survive a page reload').toContain(deviceId);
-		log('VALIDATION', 'STATE', 'Offline approval persisted across reload. [PASS]');
+		expect(storedAfter).toContain(pendingDevice.id);
 	});
 });
 
-// ─── Test C: sync-events 500 → retry ─────────────────────────────────────────
-
-test.describe('Multi-device — sync-events retry on 500 @multidevice', () => {
-	test('App retries sync-events on HTTP 500 and eventually becomes ready', async ({ page }) => {
+test.describe('Multi-device - sync-events retry on 500 @multidevice', () => {
+	test('App retries sync-events on HTTP 500 and eventually becomes ready', async ({ userPage }) => {
 		let callCount = 0;
-
+		const installationId = await getInstallationId(userPage);
 		const device = buildMockDevice({
-			installation_id: 'sync-retry-install',
+			installation_id: installationId,
 			trust_state: 'trusted',
 			approved_at: new Date().toISOString(),
 		});
-		const authData = buildMockAuthData({ device });
 
-		await setInstallationId(page, 'sync-retry-install');
-
-		// Override sync-events: fail first 2 GET calls, succeed on 3rd
-		await page.route('**/api/v2/devices/sync-events', async (route) => {
+		await userPage.route('**/api/v2/devices/sync-events', async (route) => {
 			if (route.request().method() !== 'GET') {
 				await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
 				return;
 			}
 			callCount++;
 			if (callCount < 3) {
-				log('MOCK', 'SYNC_EVENTS', `sync-events call ${callCount}: returning 500`);
 				await route.fulfill({ status: 500, contentType: 'application/json', body: '{}' });
-			} else {
-				log('MOCK', 'SYNC_EVENTS', `sync-events call ${callCount}: returning 200 []`);
-				await route.fulfill({
-					status: 200,
-					contentType: 'application/json',
-					body: '[]',
-				});
+				return;
 			}
+			await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
 		});
-
-		// Mount other auth routes WITHOUT the sync-events override (already done above)
-		await page.route('**/api/v2/auth/refresh', async (route) => {
-			await route.fulfill({
-				status: 200,
-				contentType: 'application/json',
-				body: JSON.stringify({
-					access_token: authData.accessToken,
-					csrf_token: authData.csrfToken,
-					user: authData.user,
-					device,
-				}),
-			});
-		});
-		await page.route('**/api/v1/users/me', async (route) => {
-			await route.fulfill({
-				status: 200,
-				contentType: 'application/json',
-				body: JSON.stringify(authData.user),
-			});
-		});
-		await page.route('**/api/v2/devices', async (route) => {
+		await userPage.route('**/api/v2/devices', async (route) => {
 			await route.fulfill({
 				status: 200,
 				contentType: 'application/json',
 				body: JSON.stringify([device]),
 			});
 		});
-		await page.route('**/api/v2/devices/trust-requests', async (route) => {
+		await userPage.route('**/api/v2/devices/trust-requests', async (route) => {
 			await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
 		});
-		await page.route('**/api/v1/servers', async (route) => {
+		await userPage.route('**/api/v2/servers', async (route) => {
 			await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
 		});
-		await page.route('**/api/v2/conversations', async (route) => {
+		await userPage.route('**/api/v2/conversations', async (route) => {
 			await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
 		});
-		await mockExploreEndpoints(page);
+		await mockExploreEndpoints(userPage);
 
-		log('NETWORK', 'NAVIGATE', 'Loading /explore with sync-events 500 (first 2 calls fail)');
-		await page.goto('/explore');
-
-		// App must become ready (loading screen gone) even after 500 retries
-		log('ASSERTION', 'STATE', 'Waiting for loading screen to clear despite sync-events 500s');
-		await expect(page.locator('[aria-label="Loading Yapper"]')).toHaveCount(0, {
+		log('NETWORK', 'NAVIGATE', 'Loading /explore with sync-events 500');
+		await userPage.goto('/explore');
+		await expect(userPage.locator('[aria-label="Loading Yapper"]')).toHaveCount(0, {
 			timeout: 45_000,
 		});
-		log('VALIDATION', 'STATE', 'App became ready after sync-events retries. [PASS]');
-
-		// Wait for background retries to complete (sync-events fires async after ready)
-		await page.waitForTimeout(5_000);
-
-		// Confirm sync-events was called at least once — the app became ready despite 500.
-		// Whether the app retries depends on implementation; the key invariant is readiness.
-		expect(callCount, 'sync-events must have been called at least once').toBeGreaterThanOrEqual(1);
-		log('VALIDATION', 'STATE', `sync-events called ${callCount} times. [PASS]`);
+		await expect.poll(() => callCount, { timeout: 10_000 }).toBeGreaterThanOrEqual(1);
 	});
 });
 
-// ─── Test D: PendingDeviceGate shows restore-from-backup ─────────────────────
+test.describe('Multi-device - PendingDeviceGate backup restore link @multidevice @smoke', () => {
+	test('"Restore from encrypted backup" section visible on PendingDeviceGate and app stays responsive', async ({
+		userPage,
+	}) => {
+		await setupPendingDevice(userPage);
 
-test.describe('Multi-device — PendingDeviceGate backup restore link @multidevice @smoke', () => {
-	test(
-		'"Restore from encrypted backup" section visible on PendingDeviceGate and app stays responsive',
-		async ({ page }) => {
-			await setupPendingDevice(page, 'pending-backup-install');
+		await userPage.goto('/explore');
+		await expect(userPage.locator('[aria-label="Loading Yapper"]')).toHaveCount(0, {
+			timeout: 30_000,
+		});
 
-			log(
-				'NETWORK',
-				'NAVIGATE',
-				'Loading /explore with pending device — PendingDeviceGate expected',
-			);
-			await page.goto('/explore');
-			await expect(page.locator('[aria-label="Loading Yapper"]')).toHaveCount(0, {
-				timeout: 30_000,
-			});
-
-			// PendingDeviceGate should be visible
-			log(
-				'ASSERTION',
-				'UI',
-				'Looking for PendingDeviceGate (Waiting for trust approval heading or backup section)',
-			);
-			const gate = page.locator('text=Restore from encrypted backup');
-			await expect(gate).toBeVisible({ timeout: 15_000 });
-			log('VALIDATION', 'UI', '"Restore from encrypted backup" section is visible. [PASS]');
-
-			// Click into the backup restore section — app must remain responsive
-			await gate.click().catch(() => {});
-			await page.waitForTimeout(500);
-
-			// App shell must still be visible (not crashed/blank)
-			log(
-				'ASSERTION',
-				'STATE',
-				'Verifying app is still responsive after clicking backup restore section',
-			);
-			const isResponsive = await page
-				.locator('body')
-				.isVisible()
-				.catch(() => false);
-			expect(isResponsive, 'App must remain responsive after clicking backup restore').toBe(true);
-			log('VALIDATION', 'STATE', 'App remains responsive after backup restore click. [PASS]');
-		},
-	);
+		const gate = userPage.getByText('Restore from encrypted backup', { exact: true });
+		await expect(gate).toBeVisible({ timeout: 15_000 });
+		await gate.click().catch(() => {});
+		await expect(userPage.locator('body')).toBeVisible();
+	});
 });

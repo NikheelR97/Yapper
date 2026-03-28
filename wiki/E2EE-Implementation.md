@@ -19,7 +19,7 @@ Alice has:
   IKa  — identity key pair (Ed25519 → X25519 for DH)
   EKa  — ephemeral key pair (X25519, generated per session)
 
-Bob's key bundle (fetched from /api/v1/keys/bundle/:bob_id):
+Bob's key bundle (fetched from /api/v2/keys/bundle/:bob_id):
   IKb  — Bob's identity key
   SPKb — Bob's signed prekey + signature
   OPKb — One-time prekey (consumed on use)
@@ -87,7 +87,7 @@ Each sender has:
 
 ```
 1. Check if sender key exists in keystore
-2. If not: call prepareChannel() → POST /api/v1/keys/sender-key-dist
+2. If not: call prepareChannel() → POST /api/v2/keys/sender-key-dist
 3. Server distributes the sender's key bundle to all channel members
 4. Each member decrypts with their identity key (ECIES)
 ```
@@ -143,7 +143,7 @@ Users can back up their Signal keystore with a PIN:
 ```
 1. Derive encryption key from PIN via PBKDF2 (100K iterations, SHA-256)
 2. Encrypt keystore JSON with AES-256-GCM
-3. POST encrypted blob to /api/v1/keys/backup
+3. POST encrypted blob to /api/v2/keys/backup
 4. Server stores opaque ciphertext — cannot read it
 ```
 

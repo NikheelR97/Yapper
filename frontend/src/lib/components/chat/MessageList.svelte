@@ -9,6 +9,7 @@
   import ClipMessage from "./ClipMessage.svelte";
   import ReadReceipt from "./ReadReceipt.svelte";
   import { renderMessageTokens } from "./renderMessageText.js";
+  import { readReceiptsEnabled } from "./readReceiptMode.js";
 
   export let messages: Message[];
   /** Needed for sendMarkRead events. */
@@ -132,7 +133,7 @@
         for (const entry of entries) {
           if (!entry.isIntersecting) continue;
           const msgId = (entry.target as HTMLElement).dataset.msgId;
-          if (msgId) {
+          if (msgId && readReceiptsEnabled(mode)) {
             sendMarkRead(msgId, channelId);
             observer.unobserve(entry.target); // only fire once per message
           }
@@ -147,7 +148,9 @@
   /** Svelte action: attach observer when a message element is mounted. */
   function observe(node: HTMLElement, msgId: string) {
     node.dataset.msgId = msgId;
-    observer?.observe(node);
+    if (readReceiptsEnabled(mode)) {
+      observer?.observe(node);
+    }
     return {
       destroy() {
         observer?.unobserve(node);
@@ -172,9 +175,10 @@
   role="log"
   aria-live="polite"
   aria-label="Messages"
+  data-testid={mode === "dm" ? "dm-message-list" : "message-list"}
 >
   {#if topSpacer > 0}
-    <div class="spacer" style="height: {topSpacer * 52}px" aria-hidden="true" />
+    <div class="spacer" style="height: {topSpacer * 52}px" aria-hidden="true"></div>
   {/if}
 
   {#each visibleMessages as msg (msg.id)}
@@ -182,9 +186,9 @@
     {@const mediaPayload = parseMediaPayload(msg.text)}
     {@const renderedTokens = getTokens(msg)}
 
-    <div class="message" class:own={isOwn} use:observe={msg.id}>
+    <div class="message" class:own={isOwn} use:observe={msg.id} data-testid="message-bubble">
       {#if msg.decryptError}
-        <span class="bubble error" title="Decryption failed"
+        <span class="bubble error" title="Decryption failed" data-testid="message-bubble"
           >🔒 Unable to decrypt</span
         >
       {:else if msg.messageType === "yap" && mediaPayload}

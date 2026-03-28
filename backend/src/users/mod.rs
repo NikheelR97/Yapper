@@ -1,26 +1,26 @@
 /**
- * Users — profile, presence, follow graph, hype moments, settings.
+ * Users â€” profile, presence, follow graph, hype moments, settings.
  *
- * Routes (mounted under /api/v1/users):
- *   GET    /me                              — own full profile
- *   PATCH  /me                              — update profile fields
- *   POST   /me/avatar                       — upload avatar image
- *   POST   /me/banner                       — upload profile banner image
- *   PATCH  /me/username                     — change username (30-day cooldown)
- *   GET    /me/privacy                      — fetch privacy settings
- *   PATCH  /me/privacy                      — update privacy settings
- *   GET    /:id/presence                    — online status + last seen
- *   GET    /by/:username                    — public profile (counts, mutuals, communities)
- *   POST   /by/:username/follow             — follow a user
- *   DELETE /by/:username/follow             — unfollow
- *   POST   /by/:username/friend-request     — send friend request (parental-intercepted)
- *   GET    /me/feed                         — activity feed from followed users
- *   POST   /me/hype-moments                 — pin a message to own profile
- *   GET    /by/:username/hype-moments       — pinned messages for a profile
+ * Routes (mounted under /api/v2/users):
+ *   GET    /me                              â€” own full profile
+ *   PATCH  /me                              â€” update profile fields
+ *   POST   /me/avatar                       â€” upload avatar image
+ *   POST   /me/banner                       â€” upload profile banner image
+ *   PATCH  /me/username                     â€” change username (30-day cooldown)
+ *   GET    /me/privacy                      â€” fetch privacy settings
+ *   PATCH  /me/privacy                      â€” update privacy settings
+ *   GET    /:id/presence                    â€” online status + last seen
+ *   GET    /by/:username                    â€” public profile (counts, mutuals, communities)
+ *   POST   /by/:username/follow             â€” follow a user
+ *   DELETE /by/:username/follow             â€” unfollow
+ *   POST   /by/:username/friend-request     â€” send friend request (parental-intercepted)
+ *   GET    /me/feed                         â€” activity feed from followed users
+ *   POST   /me/hype-moments                 â€” pin a message to own profile
+ *   GET    /by/:username/hype-moments       â€” pinned messages for a profile
  *
- * Routes (mounted under /api/v1/account):
- *   GET    /data-export                     — GDPR data export (ZIP containing JSON)
- *   DELETE /                                — soft-delete account
+ * Routes (mounted under /api/v2/account):
+ *   GET    /data-export                     â€” GDPR data export (ZIP containing JSON)
+ *   DELETE /                                â€” soft-delete account
  */
 use axum::{
     extract::{DefaultBodyLimit, Multipart, Path, State},
@@ -69,7 +69,7 @@ struct UpdateNotificationsReq {
     dnd_end: Option<Option<String>>,
 }
 
-// ─── Validation constants ─────────────────────────────────────────────────────
+// â”€â”€â”€ Validation constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const MAX_DISPLAY_NAME: usize = 50;
 const MAX_ABOUT_ME: usize = 500;
@@ -86,6 +86,50 @@ static USERNAME_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^[a-zA-Z0-9_]{3,3
 static HEX_COLOR_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^#[0-9a-fA-F]{6}$").unwrap());
 
 static HTTPS_URL_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^https://").unwrap());
+
+#[derive(Debug)]
+struct LinkedIdentity {
+    provider: String,
+    provider_subject: String,
+}
+
+async fn fetch_linked_identities(
+    user_id: Uuid,
+    state: &AppState,
+) -> AppResult<Vec<LinkedIdentity>> {
+    let rows = sqlx::query(
+        "SELECT provider, provider_subject FROM user_linked_identities WHERE user_id = $1 ORDER BY provider",
+    )
+    .bind(user_id)
+    .fetch_all(state.db.pool())
+    .await?;
+
+    rows.iter()
+        .map(|row| {
+            Ok(LinkedIdentity {
+                provider: row.try_get("provider")?,
+                provider_subject: row.try_get("provider_subject")?,
+            })
+        })
+        .collect::<Result<Vec<_>, sqlx::Error>>()
+        .map_err(AppError::from)
+}
+
+/// Decide whether the current viewer may see the target user's last-seen timestamp.
+///
+/// Self-view is always allowed; everyone else is gated by the target user's
+/// `show_last_seen` privacy preference.
+pub(crate) fn visible_last_seen(
+    is_self_view: bool,
+    show_last_seen: bool,
+    last_seen_at: Option<String>,
+) -> Option<String> {
+    if is_self_view || show_last_seen {
+        last_seen_at
+    } else {
+        None
+    }
+}
 
 pub fn router() -> Router<AppState> {
     // Upload routes get a generous body limit matching the largest upload (banner = 5 MB).
@@ -125,16 +169,16 @@ pub fn router() -> Router<AppState> {
         .route("/by/:username/hype-moments", get(get_hype_moments))
 }
 
-/// Sub-router mounted at /api/v1/account in main.rs
+/// Sub-router mounted at /api/v2/account in main.rs
 pub fn account_router() -> Router<AppState> {
     Router::new()
         .route("/data-export", get(gdpr_export))
         .route("/", delete(delete_account))
 }
 
-// ─── Own profile ──────────────────────────────────────────────────────────────
+// â”€â”€â”€ Own profile â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-/// GET /api/v1/users/me — return the authenticated user's full profile.
+/// GET /api/v2/users/me â€” return the authenticated user's full profile.
 ///
 /// Includes linked OAuth `connections` (discord, google, apple) and account
 /// metadata (premium status, parental controls). Private fields like
@@ -143,7 +187,7 @@ async fn get_me(auth: AuthUser, State(state): State<AppState>) -> AppResult<impl
     let row = sqlx::query(
         "SELECT id, username, display_name, avatar_url, banner_url, about_me, location,
                 profile_theme_color, account_type, is_premium, parental_controls_enabled,
-                discord_id, created_at
+                created_at
          FROM users WHERE id = $1 AND deleted_at IS NULL",
     )
     .bind(auth.user_id)
@@ -151,21 +195,16 @@ async fn get_me(auth: AuthUser, State(state): State<AppState>) -> AppResult<impl
     .await?
     .ok_or_else(|| AppError::NotFound("User not found".into()))?;
 
-    // discord_id column stores "provider:id" (e.g. "discord:123", "google:456")
-    // or a raw numeric Discord ID from the profile import flow.
-    let discord_id_raw: Option<String> = row.try_get("discord_id").ok().flatten();
-    let discord_linked = discord_id_raw
-        .as_deref()
-        .map(|v| !v.starts_with("google:") && !v.starts_with("apple:"))
-        .unwrap_or(false);
-    let google_linked = discord_id_raw
-        .as_deref()
-        .map(|v| v.starts_with("google:"))
-        .unwrap_or(false);
-    let apple_linked = discord_id_raw
-        .as_deref()
-        .map(|v| v.starts_with("apple:"))
-        .unwrap_or(false);
+    let linked_identities = fetch_linked_identities(auth.user_id, &state).await?;
+    let discord_linked = linked_identities
+        .iter()
+        .any(|identity| identity.provider == "discord");
+    let google_linked = linked_identities
+        .iter()
+        .any(|identity| identity.provider == "google");
+    let apple_linked = linked_identities
+        .iter()
+        .any(|identity| identity.provider == "apple");
 
     Ok(Json(serde_json::json!({
         "id":                        row.try_get::<Uuid, _>("id").ok(),
@@ -189,15 +228,15 @@ async fn get_me(auth: AuthUser, State(state): State<AppState>) -> AppResult<impl
     })))
 }
 
-// ─── Connected accounts ───────────────────────────────────────────────────────
+// â”€â”€â”€ Connected accounts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-/// DELETE /api/v1/users/me/connections/:provider — unlink an OAuth provider.
+/// DELETE /api/v2/users/me/connections/:provider â€” unlink an OAuth provider.
 ///
-/// Clears the `discord_id` column (which stores `"provider:id"` for all providers).
+/// Clears the normalized linked-identity row for the requested provider.
 ///
 /// # Security invariants
 ///
-/// * Prevents unlinking the sole authentication method — returns 409 if the user
+/// * Prevents unlinking the sole authentication method â€” returns 409 if the user
 ///   has no password and no other linked provider. This avoids permanent lockout.
 async fn unlink_connection(
     auth: AuthUser,
@@ -213,37 +252,17 @@ async fn unlink_connection(
         }
     }
 
-    // Verify the provider is actually linked before clearing it
-    let row = sqlx::query(
-        "SELECT discord_id, password_hash FROM users WHERE id = $1 AND deleted_at IS NULL",
-    )
-    .bind(auth.user_id)
-    .fetch_optional(state.db.pool())
-    .await?
-    .ok_or_else(|| AppError::NotFound("User not found".into()))?;
+    let row = sqlx::query("SELECT password_hash FROM users WHERE id = $1 AND deleted_at IS NULL")
+        .bind(auth.user_id)
+        .fetch_optional(state.db.pool())
+        .await?
+        .ok_or_else(|| AppError::NotFound("User not found".into()))?;
 
-    let discord_id_raw: Option<String> = row.try_get("discord_id").ok().flatten();
     let password_hash: Option<String> = row.try_get("password_hash").ok().flatten();
-
-    let is_discord = discord_id_raw
-        .as_deref()
-        .map(|v| !v.starts_with("google:") && !v.starts_with("apple:"))
-        .unwrap_or(false);
-    let is_google = discord_id_raw
-        .as_deref()
-        .map(|v| v.starts_with("google:"))
-        .unwrap_or(false);
-    let is_apple = discord_id_raw
-        .as_deref()
-        .map(|v| v.starts_with("apple:"))
-        .unwrap_or(false);
-
-    let is_linked = match provider.as_str() {
-        "discord" => is_discord,
-        "google" => is_google,
-        "apple" => is_apple,
-        _ => false,
-    };
+    let linked_identities = fetch_linked_identities(auth.user_id, &state).await?;
+    let is_linked = linked_identities
+        .iter()
+        .any(|identity| identity.provider == provider);
 
     if !is_linked {
         return Err(AppError::BadRequest(format!(
@@ -254,11 +273,7 @@ async fn unlink_connection(
     // Safety check: ensure at least one other auth method remains after unlinking.
     // Without this, unlinking the last provider would strand the account.
     let has_password = password_hash.is_some();
-    let other_provider_count = [is_discord, is_google, is_apple]
-        .iter()
-        .filter(|&&linked| linked)
-        .count()
-        - 1; // subtract the one being unlinked
+    let other_provider_count = linked_identities.len().saturating_sub(1);
 
     if !has_password && other_provider_count == 0 {
         return Err(AppError::Conflict(
@@ -267,8 +282,9 @@ async fn unlink_connection(
         ));
     }
 
-    sqlx::query("UPDATE users SET discord_id = NULL WHERE id = $1 AND deleted_at IS NULL")
+    sqlx::query("DELETE FROM user_linked_identities WHERE user_id = $1 AND provider = $2")
         .bind(auth.user_id)
+        .bind(&provider)
         .execute(state.db.pool())
         .await?;
 
@@ -276,23 +292,33 @@ async fn unlink_connection(
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
-// ─── Presence ─────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Presence â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-/// GET /api/v1/users/:id/presence
+/// GET /api/v2/users/:id/presence
 async fn get_presence(
-    _auth: AuthUser,
+    auth: AuthUser,
     State(state): State<AppState>,
     Path(user_id): Path<Uuid>,
 ) -> AppResult<impl IntoResponse> {
     let online = state.hub.is_online(&user_id);
     let away = online && state.hub.is_away(&user_id);
 
-    let row = sqlx::query("SELECT last_seen_at FROM users WHERE id = $1 AND deleted_at IS NULL")
-        .bind(user_id)
-        .fetch_optional(state.db.pool())
-        .await?;
+    let row = sqlx::query(
+        "SELECT u.last_seen_at, COALESCE(ups.show_last_seen, TRUE) AS show_last_seen
+         FROM users u
+         LEFT JOIN user_privacy_settings ups ON ups.user_id = u.id
+         WHERE u.id = $1 AND u.deleted_at IS NULL",
+    )
+    .bind(user_id)
+    .fetch_optional(state.db.pool())
+    .await?;
 
-    let last_seen_at: Option<String> = row.as_ref().and_then(|r| {
+    let is_self_view = auth.user_id == user_id;
+    let show_last_seen = row
+        .as_ref()
+        .and_then(|r| r.try_get::<bool, _>("show_last_seen").ok())
+        .unwrap_or(false);
+    let last_seen_at = row.as_ref().and_then(|r| {
         r.try_get::<chrono::DateTime<chrono::Utc>, _>("last_seen_at")
             .ok()
             .map(|dt| dt.to_rfc3339())
@@ -301,13 +327,13 @@ async fn get_presence(
     Ok(Json(serde_json::json!({
         "online": online,
         "away":   away,
-        "last_seen_at": last_seen_at,
+        "last_seen_at": visible_last_seen(is_self_view, show_last_seen, last_seen_at),
     })))
 }
 
-// ─── Public profile ───────────────────────────────────────────────────────────
+// â”€â”€â”€ Public profile â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-/// GET /api/v1/users/by/:username
+/// GET /api/v2/users/by/:username
 async fn get_profile(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -477,9 +503,9 @@ async fn get_profile(
     })))
 }
 
-// ─── Follow / Unfollow ────────────────────────────────────────────────────────
+// â”€â”€â”€ Follow / Unfollow â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-/// POST /api/v1/users/by/:username/follow
+/// POST /api/v2/users/by/:username/follow
 async fn follow_user(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -512,10 +538,10 @@ async fn purge_account_r2_objects(user_id: Uuid, media_object_keys: &[String]) {
     }
 }
 
-/// DELETE /api/v1/account — soft-delete the user's account (GDPR Art. 17).
+/// DELETE /api/v2/account â€” soft-delete the user's account (GDPR Art. 17).
 ///
 /// In a single transaction:
-/// 1. Anonymises PII (display_name, avatar, email, discord_id).
+/// 1. Anonymises PII (display_name, avatar, email, linked identities).
 /// 2. Purges all operational rows: devices, sessions, keys, OPKs, push tokens,
 ///    support tickets, parental artefacts.
 /// 3. Soft-deletes all messages authored by the user (metadata is PII under GDPR).
@@ -685,6 +711,10 @@ async fn delete_account(
         .bind(auth.user_id)
         .execute(&mut *tx)
         .await?;
+    sqlx::query("DELETE FROM user_linked_identities WHERE user_id = $1")
+        .bind(auth.user_id)
+        .execute(&mut *tx)
+        .await?;
 
     let result = sqlx::query(
         "UPDATE users SET \
@@ -744,7 +774,7 @@ async fn delete_account(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// DELETE /api/v1/users/by/:username/follow
+/// DELETE /api/v2/users/by/:username/follow
 async fn unfollow_user(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -759,10 +789,10 @@ async fn unfollow_user(
     Ok(StatusCode::NO_CONTENT)
 }
 
-// ─── Friend requests ─────────────────────────────────────────────────────────
+// â”€â”€â”€ Friend requests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-/// POST /api/v1/users/by/:username/friend-request
-/// Parental interception: if target has parental_controls_enabled → pending approval.
+/// POST /api/v2/users/by/:username/friend-request
+/// Parental interception: if target has parental_controls_enabled â†’ pending approval.
 pub async fn send_friend_request(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -819,7 +849,7 @@ pub async fn send_friend_request(
         ));
     }
 
-    // Standard flow — insert friendship in pending state (lower UUID first)
+    // Standard flow â€” insert friendship in pending state (lower UUID first)
     let (uid1, uid2) = if auth.user_id < target_id {
         (auth.user_id, target_id)
     } else {
@@ -844,7 +874,7 @@ pub async fn send_friend_request(
     ))
 }
 
-/// GET /api/v1/users/me/friend-requests — list pending incoming friend requests.
+/// GET /api/v2/users/me/friend-requests â€” list pending incoming friend requests.
 async fn list_friend_requests(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -881,7 +911,7 @@ async fn list_friend_requests(
     Ok(Json(serde_json::json!({ "requests": requests })))
 }
 
-/// PUT /api/v1/users/by/:username/friend-request — accept a pending friend request.
+/// PUT /api/v2/users/by/:username/friend-request â€” accept a pending friend request.
 async fn accept_friend_request(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -916,7 +946,7 @@ async fn accept_friend_request(
     Ok(Json(serde_json::json!({ "status": "accepted" })))
 }
 
-/// DELETE /api/v1/users/by/:username/friend-request — reject or cancel a friend request.
+/// DELETE /api/v2/users/by/:username/friend-request â€” reject or cancel a friend request.
 async fn reject_friend_request(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -942,9 +972,9 @@ async fn reject_friend_request(
     Ok(StatusCode::NO_CONTENT)
 }
 
-// ─── Activity feed ────────────────────────────────────────────────────────────
+// â”€â”€â”€ Activity feed â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-/// GET /api/v1/users/me/feed — recent hype moments from followed users.
+/// GET /api/v2/users/me/feed â€” recent hype moments from followed users.
 async fn get_feed(auth: AuthUser, State(state): State<AppState>) -> AppResult<impl IntoResponse> {
     let rows = sqlx::query(
         "SELECT hm.id, hm.user_id, hm.message_id, hm.type, hm.pinned_at,
@@ -982,7 +1012,7 @@ async fn get_feed(auth: AuthUser, State(state): State<AppState>) -> AppResult<im
     Ok(Json(serde_json::json!({ "items": items })))
 }
 
-// ─── Hype moments ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ Hype moments â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -992,7 +1022,7 @@ struct HypeMomentInput {
     moment_type: String,
 }
 
-/// POST /api/v1/users/me/hype-moments
+/// POST /api/v2/users/me/hype-moments
 async fn pin_hype_moment(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -1014,7 +1044,7 @@ async fn pin_hype_moment(
 
     if count >= 9 {
         return Err(AppError::BadRequest(
-            "Maximum 9 hype moments — remove one first".into(),
+            "Maximum 9 hype moments â€” remove one first".into(),
         ));
     }
 
@@ -1031,7 +1061,7 @@ async fn pin_hype_moment(
     Ok((StatusCode::CREATED, Json(serde_json::json!({ "id": id }))))
 }
 
-/// GET /api/v1/users/by/:username/hype-moments
+/// GET /api/v2/users/by/:username/hype-moments
 async fn get_hype_moments(
     _auth: AuthUser,
     State(state): State<AppState>,
@@ -1063,7 +1093,7 @@ async fn get_hype_moments(
     Ok(Json(serde_json::json!({ "moments": moments })))
 }
 
-// ─── Settings: Profile update ─────────────────────────────────────────────────
+// â”€â”€â”€ Settings: Profile update â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1076,7 +1106,7 @@ struct UpdateProfileInput {
     banner_url: Option<String>,
 }
 
-/// PATCH /api/v1/users/me
+/// PATCH /api/v2/users/me
 async fn update_profile(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -1086,7 +1116,7 @@ async fn update_profile(
         let trimmed = v.trim();
         if trimmed.is_empty() || trimmed.len() > MAX_DISPLAY_NAME {
             return Err(AppError::BadRequest(format!(
-                "display_name must be 1–{MAX_DISPLAY_NAME} characters"
+                "display_name must be 1â€“{MAX_DISPLAY_NAME} characters"
             )));
         }
     }
@@ -1147,7 +1177,7 @@ async fn update_profile(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// POST /api/v1/users/me/avatar
+/// POST /api/v2/users/me/avatar
 ///
 /// Multipart form-data:
 ///   - file: image file (png/jpg/webp), max 2MB
@@ -1176,7 +1206,7 @@ async fn upload_avatar(
     Ok(Json(serde_json::json!({ "avatar_url": avatar_url })))
 }
 
-/// POST /api/v1/users/me/banner
+/// POST /api/v2/users/me/banner
 ///
 /// Multipart form-data:
 ///   - file: image file (png/jpg/webp), max 5MB
@@ -1205,7 +1235,7 @@ async fn upload_banner(
     Ok(Json(serde_json::json!({ "banner_url": banner_url })))
 }
 
-// ─── Settings: Username change ────────────────────────────────────────────────
+// â”€â”€â”€ Settings: Username change â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1213,7 +1243,7 @@ struct ChangeUsernameInput {
     username: String,
 }
 
-/// PATCH /api/v1/users/me/username
+/// PATCH /api/v2/users/me/username
 async fn change_username(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -1223,7 +1253,7 @@ async fn change_username(
 
     if !USERNAME_REGEX.is_match(&new_username) {
         return Err(AppError::BadRequest(
-            "username must be 3–32 characters: letters, numbers, underscores only".into(),
+            "username must be 3â€“32 characters: letters, numbers, underscores only".into(),
         ));
     }
 
@@ -1278,9 +1308,9 @@ async fn change_username(
     Ok(StatusCode::NO_CONTENT)
 }
 
-// ─── Settings: Privacy ────────────────────────────────────────────────────────
+// â”€â”€â”€ Settings: Privacy â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-/// GET /api/v1/users/me/privacy
+/// GET /api/v2/users/me/privacy
 async fn get_privacy(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -1321,7 +1351,7 @@ struct UpdatePrivacyInput {
     show_last_seen: Option<bool>,
 }
 
-/// PATCH /api/v1/users/me/privacy
+/// PATCH /api/v2/users/me/privacy
 async fn update_privacy(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -1349,7 +1379,14 @@ async fn update_privacy(
     sqlx::query(
         "INSERT INTO user_privacy_settings
             (user_id, dm_permission, friend_request_permission, search_visible, show_last_seen, updated_at)
-         VALUES ($1, $2, $3, $4, $5, NOW())
+         VALUES (
+            $1,
+            COALESCE($2, 'everyone'),
+            COALESCE($3, 'everyone'),
+            COALESCE($4, TRUE),
+            COALESCE($5, TRUE),
+            NOW()
+         )
          ON CONFLICT (user_id) DO UPDATE SET
             dm_permission             = COALESCE($2, user_privacy_settings.dm_permission),
             friend_request_permission = COALESCE($3, user_privacy_settings.friend_request_permission),
@@ -1368,9 +1405,9 @@ async fn update_privacy(
     Ok(StatusCode::NO_CONTENT)
 }
 
-// ─── Settings: Appearance ─────────────────────────────────────────────────────
+// â”€â”€â”€ Settings: Appearance â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-/// GET /api/v1/users/me/appearance
+/// GET /api/v2/users/me/appearance
 async fn get_appearance(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -1412,7 +1449,7 @@ struct UpdateAppearanceInput {
     reduce_motion: Option<bool>,
 }
 
-/// PATCH /api/v1/users/me/appearance
+/// PATCH /api/v2/users/me/appearance
 async fn update_appearance(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -1462,9 +1499,9 @@ async fn update_appearance(
     Ok(StatusCode::NO_CONTENT)
 }
 
-// ─── Settings: Notifications ──────────────────────────────────────────────────
+// â”€â”€â”€ Settings: Notifications â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-/// GET /api/v1/users/me/notifications
+/// GET /api/v2/users/me/notifications
 async fn get_notifications(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -1507,7 +1544,7 @@ async fn get_notifications(
     Ok(Json(settings))
 }
 
-/// PATCH /api/v1/users/me/notifications
+/// PATCH /api/v2/users/me/notifications
 async fn update_notifications(
     auth: AuthUser,
     State(state): State<AppState>,
@@ -1550,7 +1587,7 @@ async fn update_notifications(
     Ok(StatusCode::NO_CONTENT)
 }
 
-// ─── Account: GDPR export ─────────────────────────────────────────────────────
+// â”€â”€â”€ Account: GDPR export â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async fn gdpr_export(
     auth: AuthUser,
@@ -1560,7 +1597,7 @@ async fn gdpr_export(
         "SELECT username, display_name, email, email_verified, avatar_url, banner_url,
                 about_me, location, profile_theme_color, account_type,
                 parental_controls_enabled, is_premium, date_of_birth,
-                coppa_consent_verified_at, gdpr_consent_at, discord_id,
+                coppa_consent_verified_at, gdpr_consent_at,
                 last_seen_at, created_at
          FROM users WHERE id = $1 AND deleted_at IS NULL",
     )
@@ -1568,6 +1605,8 @@ async fn gdpr_export(
     .fetch_optional(state.db.pool())
     .await?
     .ok_or(AppError::Unauthorized)?;
+
+    let linked_identity_rows = fetch_linked_identities(auth.user_id, &state).await?;
 
     let privacy_row = sqlx::query(
         "SELECT dm_permission, friend_request_permission, search_visible, show_last_seen, updated_at
@@ -1809,7 +1848,10 @@ async fn gdpr_export(
             "date_of_birth": profile_row.try_get::<Option<chrono::NaiveDate>, _>("date_of_birth").ok().flatten().map(|d| d.to_string()),
             "coppa_consent_verified_at": profile_row.try_get::<Option<chrono::DateTime<Utc>>, _>("coppa_consent_verified_at").ok().flatten().map(|t| t.to_rfc3339()),
             "gdpr_consent_at": profile_row.try_get::<Option<chrono::DateTime<Utc>>, _>("gdpr_consent_at").ok().flatten().map(|t| t.to_rfc3339()),
-            "oauth_connection": profile_row.try_get::<Option<String>, _>("discord_id").ok().flatten(),
+            "oauth_connections": linked_identity_rows.iter().map(|identity| serde_json::json!({
+                "provider": identity.provider,
+                "provider_subject": identity.provider_subject,
+            })).collect::<Vec<_>>(),
             "last_seen_at": profile_row.try_get::<Option<chrono::DateTime<Utc>>, _>("last_seen_at").ok().flatten().map(|t| t.to_rfc3339()),
             "created_at": profile_row.try_get::<chrono::DateTime<Utc>, _>("created_at").ok().map(|t| t.to_rfc3339()),
         },
@@ -2071,11 +2113,11 @@ fn build_data_export_zip(json_bytes: &[u8]) -> AppResult<Vec<u8>> {
     Ok(writer.into_inner())
 }
 
-// ─── Account: Soft delete ─────────────────────────────────────────────────────
+// â”€â”€â”€ Account: Soft delete â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-/// DELETE /api/v1/account
+/// DELETE /api/v2/account
 ///
-// ─── Shared helpers ───────────────────────────────────────────────────────────
+// â”€â”€â”€ Shared helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 #[derive(Debug)]
 struct DmAccessContext {
@@ -2182,7 +2224,7 @@ pub async fn require_dm_access(
 ///
 /// # Security invariants
 ///
-/// * Prevents arbitrary key-bundle enumeration — a user can only fetch keys
+/// * Prevents arbitrary key-bundle enumeration â€” a user can only fetch keys
 ///   for peers they already have a social relationship with.
 pub async fn require_key_bundle_access(
     requester_id: Uuid,
@@ -2282,7 +2324,7 @@ fn validate_image_dimensions(data: &[u8]) -> AppResult<(u32, u32)> {
         .map_err(|e| AppError::BadRequest(format!("Cannot read image dimensions: {e}")))?;
     if w > crate::constants::MAX_IMAGE_DIMENSION || h > crate::constants::MAX_IMAGE_DIMENSION {
         return Err(AppError::BadRequest(format!(
-            "Image dimensions {w}×{h} exceed the {max}×{max} limit",
+            "Image dimensions {w}Ã—{h} exceed the {max}Ã—{max} limit",
             max = crate::constants::MAX_IMAGE_DIMENSION,
         )));
     }
@@ -2544,7 +2586,7 @@ mod tests {
 
     #[test]
     fn validate_image_dimensions_accepts_small_png() {
-        let png = tiny_png_bytes(); // 2×2 — well within limits
+        let png = tiny_png_bytes(); // 2Ã—2 â€” well within limits
         let (w, h) = validate_image_dimensions(&png).expect("small png should pass validation");
         assert_eq!(w, 2);
         assert_eq!(h, 2);
@@ -2569,8 +2611,8 @@ mod tests {
 
     #[test]
     fn validate_image_dimensions_rejects_pixel_count_bomb() {
-        // 4096×4097 — each dimension is within MAX_IMAGE_DIMENSION (4096) individually,
-        // but the product (16,781,312) exceeds MAX_DECODED_PIXELS (4096×4096 = 16,777,216).
+        // 4096Ã—4097 â€” each dimension is within MAX_IMAGE_DIMENSION (4096) individually,
+        // but the product (16,781,312) exceeds MAX_DECODED_PIXELS (4096Ã—4096 = 16,777,216).
         // This verifies the pixel-count check catches decompression bombs where both
         // dimensions are just under the single-axis limit.
         let png = craft_png_header(4096, 4097);
@@ -2590,6 +2632,20 @@ mod tests {
     fn validate_image_dimensions_rejects_nonsense_bytes() {
         let garbage = b"not an image at all";
         validate_image_dimensions(garbage).expect_err("garbage bytes must be rejected");
+    }
+
+    #[test]
+    fn visible_last_seen_allows_self_view_even_when_disabled() {
+        let last_seen_at = Some("2026-03-21T12:00:00Z".to_string());
+        let visible = visible_last_seen(true, false, last_seen_at.clone());
+        assert_eq!(visible, last_seen_at);
+    }
+
+    #[test]
+    fn visible_last_seen_redacts_peer_when_disabled() {
+        let last_seen_at = Some("2026-03-21T12:00:00Z".to_string());
+        let visible = visible_last_seen(false, false, last_seen_at);
+        assert!(visible.is_none());
     }
 
     /// Craft a minimal valid PNG file with the given dimensions in the IHDR chunk.

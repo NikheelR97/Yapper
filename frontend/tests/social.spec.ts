@@ -95,13 +95,13 @@ async function getProfile(
 	session: Session,
 	username: string,
 ): Promise<Record<string, unknown>> {
-	const res = await authedFetch(session, `${API_URL}/api/v1/users/by/${username}`);
+	const res = await authedFetch(session, `${API_URL}/api/v2/users/by/${username}`);
 	if (!res.ok) throw new Error(`getProfile failed: ${res.status}`);
 	return res.json() as Promise<Record<string, unknown>>;
 }
 
 async function follow(from: Session, toUsername: string): Promise<void> {
-	const res = await authedFetch(from, `${API_URL}/api/v1/users/by/${toUsername}/follow`, { method: 'POST' });
+	const res = await authedFetch(from, `${API_URL}/api/v2/users/by/${toUsername}/follow`, { method: 'POST' });
 	if (!res.ok && res.status !== 409) {
 		const body = await res.text().catch(() => '');
 		throw new Error(`follow failed: ${res.status} ${body}`);
@@ -109,27 +109,27 @@ async function follow(from: Session, toUsername: string): Promise<void> {
 }
 
 async function unfollow(from: Session, toUsername: string): Promise<void> {
-	const res = await authedFetch(from, `${API_URL}/api/v1/users/by/${toUsername}/follow`, { method: 'DELETE' });
+	const res = await authedFetch(from, `${API_URL}/api/v2/users/by/${toUsername}/follow`, { method: 'DELETE' });
 	if (!res.ok && res.status !== 404) throw new Error(`unfollow failed: ${res.status}`);
 }
 
 async function sendFriendRequest(from: Session, toUsername: string): Promise<void> {
-	const res = await authedFetch(from, `${API_URL}/api/v1/users/by/${toUsername}/friend-request`, { method: 'POST', body: '{}' });
+	const res = await authedFetch(from, `${API_URL}/api/v2/users/by/${toUsername}/friend-request`, { method: 'POST', body: '{}' });
 	if (!res.ok && res.status !== 409) throw new Error(`sendFriendRequest failed: ${res.status}`);
 }
 
 async function acceptFriendRequest(acceptor: Session, fromUsername: string): Promise<void> {
-	const res = await authedFetch(acceptor, `${API_URL}/api/v1/users/by/${fromUsername}/friend-request`, { method: 'PUT', body: '{}' });
+	const res = await authedFetch(acceptor, `${API_URL}/api/v2/users/by/${fromUsername}/friend-request`, { method: 'PUT', body: '{}' });
 	if (!res.ok) throw new Error(`acceptFriendRequest failed: ${res.status}`);
 }
 
 async function rejectFriendRequest(rejector: Session, fromUsername: string): Promise<void> {
-	const res = await authedFetch(rejector, `${API_URL}/api/v1/users/by/${fromUsername}/friend-request`, { method: 'DELETE' });
+	const res = await authedFetch(rejector, `${API_URL}/api/v2/users/by/${fromUsername}/friend-request`, { method: 'DELETE' });
 	if (!res.ok) throw new Error(`rejectFriendRequest failed: ${res.status}`);
 }
 
 async function listIncomingFriendRequests(session: Session): Promise<unknown[]> {
-	const res = await authedFetch(session, `${API_URL}/api/v1/users/me/friend-requests`);
+	const res = await authedFetch(session, `${API_URL}/api/v2/users/me/friend-requests`);
 	if (!res.ok) throw new Error(`listFriendRequests failed: ${res.status}`);
 	const body = await res.json();
 	return Array.isArray(body) ? (body as unknown[]) : ((body as Record<string, unknown>).requests as unknown[] ?? []);

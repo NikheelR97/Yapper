@@ -2,7 +2,13 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { get } from 'svelte/store';
-	import { authStore, setAuth, storeRefreshToken } from '$stores/auth.js';
+	import DesktopVaultGate from '$lib/components/device/DesktopVaultGate.svelte';
+	import {
+		authStore,
+		setAuth,
+		storeRefreshToken,
+		syncNativeRefreshTokenToSecureStorage,
+	} from '$stores/auth.js';
 	import {
 		parentalStore,
 		loadChildren,
@@ -12,9 +18,19 @@
 	import { page } from '$app/stores';
 	import { api } from '$api/client.js';
 	import { normalizeServerDevice } from '$lib/device/bootstrap.js';
+	import { toast } from '$stores/toast.js';
+	import {
+		desktopSignalVaultExists,
+		desktopVaultSupported,
+		isDesktopVaultUnlocked,
+		unlockDesktopVault,
+	} from '$lib/desktop/vault.js';
 	import type { User } from '$stores/auth.js';
 
 	let ready = false;
+	let desktopVaultMode: 'setup' | 'unlock' | null = null;
+	let desktopVaultBusy = false;
+	let desktopVaultError: string | null = null;
 
 	$: isSetupPage = $page.url.pathname === '/parent/children/setup';
 
@@ -38,8 +54,13 @@
 					revoked_at: string | null;
 				};
 			}>('/api/v2/auth/refresh');
-			if (res.refresh_token) storeRefreshToken(res.refresh_token);
+			const storageWarning = res.refresh_token
+				? await storeRefreshToken(res.refresh_token)
+				: null;
 			setAuth(res.user, res.access_token, res.csrf_token, normalizeServerDevice(res.device));
+			if (storageWarning) {
+				toast.warning(storageWarning, 0);
+			}
 			return true;
 		} catch {
 			return false;
@@ -47,6 +68,10 @@
 	}
 
 	onMount(async () => {
+		if (!(await ensureDesktopVaultReady())) {
+			return;
+		}
+
 		let state = get(authStore);
 		if (!state.user) {
 			const restored = await refreshSession();
@@ -70,6 +95,52 @@
 		ready = true;
 	});
 
+	async function ensureDesktopVaultReady(): Promise<boolean> {
+		if (!desktopVaultSupported() || isDesktopVaultUnlocked()) {
+			return true;
+		}
+
+		desktopVaultMode = (await desktopSignalVaultExists()) ? 'unlock' : 'setup';
+		return false;
+	}
+
+	async function submitDesktopVaultPassphrase(passphrase: string): Promise<void> {
+		desktopVaultBusy = true;
+		desktopVaultError = null;
+		try {
+			await unlockDesktopVault(passphrase);
+			await syncNativeRefreshTokenToSecureStorage();
+			desktopVaultMode = null;
+			let state = get(authStore);
+			if (!state.user) {
+				const restored = await refreshSession();
+				if (!restored) {
+					await goto('/login');
+					return;
+				}
+				state = get(authStore);
+			}
+
+			if (state.user?.accountType !== 'parent' && !get(page).url.pathname.startsWith('/parent/children/setup')) {
+				await goto('/');
+				return;
+			}
+
+			if (state.user?.accountType === 'parent') {
+				await loadChildren();
+				await loadAlerts();
+			}
+			ready = true;
+		} catch (e) {
+			desktopVaultError =
+				e instanceof Error && e.message.trim()
+					? e.message
+					: 'Unable to unlock secure vault';
+		} finally {
+			desktopVaultBusy = false;
+		}
+	}
+
 	$: children = $parentalStore.children;
 	$: selectedId = $parentalStore.selectedChildId;
 	$: user = $authStore.user;
@@ -80,7 +151,14 @@
 	}
 </script>
 
-{#if ready}
+{#if desktopVaultMode}
+	<DesktopVaultGate
+		mode={desktopVaultMode}
+		busy={desktopVaultBusy}
+		error={desktopVaultError}
+		onSubmit={submitDesktopVaultPassphrase}
+	/>
+{:else if ready}
 	{#if isSetupPage}
 		<slot />
 	{:else}

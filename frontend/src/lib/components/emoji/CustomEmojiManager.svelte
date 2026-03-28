@@ -33,9 +33,9 @@
 	async function loadEmojis() {
 		loading = true;
 		try {
-			emojis = await api.get<CustomEmoji[]>(`/api/v1/servers/${serverId}/emojis`);
-		} catch (e: any) {
-			toast.error(e.message ?? 'Failed to load emojis');
+			emojis = await api.get<CustomEmoji[]>(`/api/v2/servers/${serverId}/emojis`);
+		} catch (e: unknown) {
+			toast.error(e instanceof Error ? e.message : 'Failed to load emojis');
 		} finally {
 			loading = false;
 		}
@@ -43,11 +43,11 @@
 
 	async function deleteEmoji(id: string, name: string) {
 		try {
-			await api.delete(`/api/v1/servers/${serverId}/emojis/${id}`);
+			await api.delete(`/api/v2/servers/${serverId}/emojis/${id}`);
 			emojis = emojis.filter((e) => e.id !== id);
 			toast.success(`:${name}: deleted.`);
-		} catch (e: any) {
-			toast.error(e.message ?? 'Failed to delete emoji');
+		} catch (e: unknown) {
+			toast.error(e instanceof Error ? e.message : 'Failed to delete emoji');
 		}
 	}
 
@@ -116,7 +116,7 @@
 						{/if}
 					</div>
 					<span class="emoji-date">{relativeDate(emoji.createdAt)}</span>
-					<button class="delete-btn" on:click={() => deleteEmoji(emoji.id, emoji.name)} title="Delete emoji">
+					<button class="delete-btn" on:click={() => deleteEmoji(emoji.id, emoji.name)} title="Delete emoji" aria-label="Delete emoji">
 						🗑
 					</button>
 				</div>

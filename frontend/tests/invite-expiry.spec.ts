@@ -11,7 +11,7 @@
  * @smoke
  */
 
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/auth.fixture';
 import { buildMockAuthData, buildMockDevice, mockAuthEndpoints, setInstallationId } from './auth-helper.js';
 import { log } from './helpers/log.js';
 
@@ -22,7 +22,7 @@ async function setupAuth(page: Parameters<typeof mockAuthEndpoints>[0]): Promise
 	await mockAuthEndpoints(page, authData);
 
 	// Mock servers — return one server so the sidebar shows server mode with the join form.
-	await page.route('**/api/v1/servers', async (route) => {
+	await page.route('**/api/v2/servers', async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
@@ -31,11 +31,11 @@ async function setupAuth(page: Parameters<typeof mockAuthEndpoints>[0]): Promise
 			]),
 		});
 	});
-	await page.route('**/api/v1/conversations', async (route) => {
+	await page.route('**/api/v2/conversations', async (route) => {
 		await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
 	});
 	// Mock channels for the server
-	await page.route('**/api/v1/servers/srv-1/channels', async (route) => {
+	await page.route('**/api/v2/servers/srv-1/channels', async (route) => {
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
@@ -47,13 +47,16 @@ async function setupAuth(page: Parameters<typeof mockAuthEndpoints>[0]): Promise
 }
 
 test.describe('Invite expiry @security @auth', () => {
-	test('expired or invalid invite code shows rejection message @smoke', async ({ page }) => {
+	test('expired or invalid invite code shows rejection message @smoke', async ({
+		userAPage: _userAPage,
+		userBPage: page,
+	}) => {
 		await setupAuth(page);
 
 		log('INVITE', 'SETUP', 'Configuring 404 response on join-by-invite to simulate expired invite');
 
 		// Mock the join endpoint to return 404 (expired/invalid invite).
-		await page.route('**/api/v1/servers/join/**', async (route) => {
+		await page.route('**/api/v2/servers/join/**', async (route) => {
 			log('INVITE', 'INTERCEPT', `404 on POST ${route.request().url()} — invite expired`);
 			await route.fulfill({
 				status: 404,
@@ -90,7 +93,10 @@ test.describe('Invite expiry @security @auth', () => {
 		log('VALIDATION', 'STATE', 'User remains on server page — no server was joined. [PASS]');
 	});
 
-	test('empty invite code does not submit @smoke', async ({ page }) => {
+	test('empty invite code does not submit @smoke', async ({
+		userAPage: _userAPage,
+		userBPage: page,
+	}) => {
 		await setupAuth(page);
 
 		log('INVITE', 'SETUP', 'Testing that empty invite code cannot be submitted');

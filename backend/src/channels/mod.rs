@@ -5,7 +5,7 @@ use axum::{extract::DefaultBodyLimit, routing::get, Router};
 
 use crate::AppState;
 
-/// Mounted at /api/v1/channels — handles message and key-distribution operations.
+/// Mounted at /api/v2/channels â€” handles message and key-distribution operations.
 /// Channel CRUD (list/create) lives in servers::router() under /:id/channels.
 pub fn router() -> Router<AppState> {
     let message_routes = Router::new()

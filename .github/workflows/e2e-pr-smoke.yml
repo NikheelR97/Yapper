@@ -4,16 +4,17 @@ on:
   pull_request:
     paths:
       - 'frontend/**'
+      - 'backend/**'
       - '.github/workflows/e2e-pr-smoke.yml'
 
 permissions:
   contents: read
 
 jobs:
-  smoke:
-    name: Playwright Smoke
+  setup-auth:
+    name: Setup E2E Auth State
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
 
     defaults:
       run:
@@ -32,6 +33,54 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Generate auth-state artifacts
+        if: ${{ secrets.E2E_EMAIL != '' && secrets.E2E_PASSWORD != '' }}
+        run: npm run test:setup-auth
+        env:
+          VITE_API_URL: ${{ vars.E2E_API_URL || 'https://api.yapperhq.com' }}
+          E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+          E2E_EMAIL_2: ${{ secrets.E2E_EMAIL_2 }}
+          E2E_PASSWORD_2: ${{ secrets.E2E_PASSWORD_2 }}
+
+      - name: Upload auth-state artifact
+        if: ${{ secrets.E2E_EMAIL != '' && secrets.E2E_PASSWORD != '' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-auth-state
+          path: frontend/tests/auth-state/
+          retention-days: 1
+
+  smoke:
+    name: Playwright Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [setup-auth]
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download auth-state artifact
+        if: ${{ secrets.E2E_EMAIL != '' && secrets.E2E_PASSWORD != '' }}
+        uses: actions/download-artifact@v8
+        with:
+          name: playwright-auth-state
+          path: frontend/tests/auth-state/
+
       - name: Cache Playwright browsers
         id: pw-cache
         uses: actions/cache@v5
@@ -47,9 +96,13 @@ jobs:
         run: npx playwright install-deps chromium webkit
 
       - name: Run smoke tests
-        run: npx playwright test --grep "@smoke"
+        run: npx playwright test --grep "@smoke" --workers=4
         env:
           CI: 'true'
+          E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+          E2E_EMAIL_2: ${{ secrets.E2E_EMAIL_2 }}
+          E2E_PASSWORD_2: ${{ secrets.E2E_PASSWORD_2 }}
 
       - name: Upload test results on failure
         if: failure()

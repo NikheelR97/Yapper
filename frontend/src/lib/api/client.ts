@@ -44,7 +44,7 @@ async function request<T>(
 	// so we send the stored refresh token as a header. getStoredRefreshToken()
 	// returns null on web browsers, so this header is never sent from a browser.
 	if (path.includes('/auth/refresh')) {
-		const rt = getStoredRefreshToken();
+		const rt = await getStoredRefreshToken();
 		if (rt) headers['X-Refresh-Token'] = rt;
 	}
 

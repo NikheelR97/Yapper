@@ -7,15 +7,15 @@ pub struct Database {
 
 impl Database {
     pub async fn connect(url: &str) -> anyhow::Result<Self> {
-        let pool = PgPoolOptions::new()
-            .max_connections(20)
-            .min_connections(1)
-            .acquire_timeout(std::time::Duration::from_secs(15))
-            .test_before_acquire(true)
-            .connect(url)
-            .await?;
+        Self::connect_inner(url, None).await
+    }
 
-        Ok(Self { pool })
+    pub async fn connect_with_schema(url: &str, schema: &str) -> anyhow::Result<Self> {
+        Self::connect_inner(url, Some(schema.to_string())).await
+    }
+
+    pub fn from_pool(pool: PgPool) -> Self {
+        Self { pool }
     }
 
     /// Spawn a background task that pings the database every 4 minutes to prevent
@@ -49,33 +49,31 @@ impl Database {
     pub fn pool(&self) -> &PgPool {
         &self.pool
     }
-}
 
-/// Sets up a PostgreSQL LISTEN/NOTIFY listener for the given channel.
-/// The callback receives the payload string for each notification.
-#[allow(dead_code)]
-pub async fn listen_notify(
-    pool: &PgPool,
-    channel: &str,
-    mut callback: impl FnMut(String) + Send + 'static,
-) -> anyhow::Result<()> {
-    let mut listener = sqlx::postgres::PgListener::connect_with(pool).await?;
-    listener.listen(channel).await?;
+    async fn connect_inner(url: &str, schema: Option<String>) -> anyhow::Result<Self> {
+        let pool = PgPoolOptions::new()
+            .max_connections(20)
+            .min_connections(1)
+            .acquire_timeout(std::time::Duration::from_secs(15))
+            .test_before_acquire(true)
+            .after_connect(move |conn, _meta| {
+                let schema = schema.clone();
+                Box::pin(async move {
+                    if let Some(schema) = schema {
+                        let search_path = format!("{schema},public");
+                        sqlx::query("SELECT set_config('search_path', $1, false)")
+                            .bind(search_path)
+                            .execute(conn)
+                            .await?;
+                    }
+                    Ok(())
+                })
+            })
+            .connect(url)
+            .await?;
 
-    tokio::spawn(async move {
-        loop {
-            match listener.recv().await {
-                Ok(notification) => callback(notification.payload().to_string()),
-                Err(e) => {
-                    tracing::error!("LISTEN/NOTIFY error: {e}");
-                    // Back off briefly then continue
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                }
-            }
-        }
-    });
-
-    Ok(())
+        Ok(Self { pool })
+    }
 }
 
 #[cfg(test)]

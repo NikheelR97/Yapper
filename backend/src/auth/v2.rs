@@ -105,11 +105,12 @@ async fn register(
     }
 
     let pool = state.db.pool();
+    let email = req.auth.email.trim().to_lowercase();
     let exists = sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS(SELECT 1 FROM users WHERE username = $1 OR email = $2)",
     )
     .bind(&req.auth.username)
-    .bind(req.auth.email.to_lowercase())
+    .bind(&email)
     .fetch_one(pool)
     .await
     .unwrap_or(false);
@@ -138,7 +139,7 @@ async fn register(
         "#,
     )
     .bind(&req.auth.username)
-    .bind(req.auth.email.to_lowercase())
+    .bind(&email)
     .bind(display_name)
     .bind(password_hash)
     .bind(email_token.clone())
@@ -175,6 +176,8 @@ async fn login(
         return Err(AppError::RateLimited);
     }
 
+    let email = req.auth.email.trim().to_lowercase();
+
     let row = sqlx::query(
         r#"
         SELECT id, username, display_name, avatar_url, account_type, is_premium,
@@ -183,7 +186,7 @@ async fn login(
         WHERE email = $1 AND deleted_at IS NULL
         "#,
     )
-    .bind(req.auth.email.to_lowercase())
+    .bind(&email)
     .fetch_optional(state.db.pool())
     .await?;
 

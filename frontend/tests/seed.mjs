@@ -26,14 +26,6 @@ async function login(email, password) {
 		}),
 		credentials: 'include',
 	});
-	if (res.status === 404) {
-		res = await fetch(`${API}/api/v1/auth/login`, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ email, password }),
-			credentials: 'include',
-		});
-	}
 	if (!res.ok) {
 		const text = await res.text();
 		throw new Error(`Login failed for ${email}: ${res.status} ${text}`);
@@ -58,7 +50,7 @@ function headers(session) {
 }
 
 async function createDmConversation(session, peerId) {
-	const res = await fetch(`${API}/api/v1/conversations`, {
+	const res = await fetch(`${API}/api/v2/conversations`, {
 		method: 'POST',
 		headers: headers(session),
 		body: JSON.stringify({ peer_id: peerId }),
@@ -71,7 +63,7 @@ async function createDmConversation(session, peerId) {
 }
 
 async function listMyServers(session) {
-	const res = await fetch(`${API}/api/v1/servers`, {
+	const res = await fetch(`${API}/api/v2/servers`, {
 		headers: { 'Authorization': `Bearer ${session.accessToken}` },
 	});
 	if (!res.ok) throw new Error(`listMyServers failed: ${res.status}`);
@@ -79,7 +71,7 @@ async function listMyServers(session) {
 }
 
 async function createServer(session, name) {
-	const res = await fetch(`${API}/api/v1/servers`, {
+	const res = await fetch(`${API}/api/v2/servers`, {
 		method: 'POST',
 		headers: headers(session),
 		body: JSON.stringify({ name }),
@@ -110,13 +102,13 @@ async function main() {
 	const sessionB = await login(emailB, passB);
 	console.log(`  USER_B id: ${sessionB.userId} (@${sessionB.username})`);
 
-	// ── Seed 1: DM conversation ────────────────────────────────────────────────
+	// Ã¢â€â‚¬Ã¢â€â‚¬ Seed 1: DM conversation Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 	console.log('\nCreating DM conversation between USER_A and USER_B...');
 	const convo = await createDmConversation(sessionA, sessionB.userId);
 	console.log(`  Conversation id: ${convo.id} (already existed or freshly created)`);
 
-	// ── Seed 2: Joinable public server ─────────────────────────────────────────
-	// Check USER_A's current servers — we need a server USER_A is NOT in.
+	// Ã¢â€â‚¬Ã¢â€â‚¬ Seed 2: Joinable public server Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+	// Check USER_A's current servers Ã¢â‚¬â€ we need a server USER_A is NOT in.
 	// Create one owned by USER_B with a stable name so re-runs are idempotent-ish.
 	const serversB = await listMyServers(sessionB);
 	const seedName = 'E2E Joinable Server';
@@ -138,10 +130,10 @@ async function main() {
 	const serversA = await listMyServers(sessionA);
 	const alreadyMember = Array.isArray(serversA) && serversA.some((s) => s.id === server.id);
 	if (alreadyMember) {
-		console.log(`  USER_A is already a member of "${seedName}" — test 24 may still skip.`);
+		console.log(`  USER_A is already a member of "${seedName}" Ã¢â‚¬â€ test 24 may still skip.`);
 		console.log('  Tip: create a new server manually or use a third account.');
 	} else {
-		console.log(`  USER_A is NOT a member of "${seedName}" — test 24 should pass.`);
+		console.log(`  USER_A is NOT a member of "${seedName}" Ã¢â‚¬â€ test 24 should pass.`);
 	}
 
 	console.log('\nSeeding complete.');

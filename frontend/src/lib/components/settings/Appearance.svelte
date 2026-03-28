@@ -16,7 +16,7 @@
 				fontSize: number;
 				density: 'comfortable' | 'compact';
 				reduceMotion: boolean;
-			}>('/api/v1/users/me/appearance');
+			}>('/api/v2/users/me/appearance');
 			theme = res.theme;
 			fontSize = res.fontSize;
 			density = res.density;
@@ -41,7 +41,7 @@
 	async function save() {
 		saving = true;
 		try {
-			await api.patch('/api/v1/users/me/appearance', {
+			await api.patch('/api/v2/users/me/appearance', {
 				theme,
 				fontSize,
 				density,
@@ -49,8 +49,8 @@
 			});
 			applyToDocument();
 			toast.success('Appearance saved!');
-		} catch (e: any) {
-			toast.error(e.message ?? 'Failed to save');
+		} catch (e: unknown) {
+			toast.error(e instanceof Error ? e.message : 'Failed to save');
 		} finally {
 			saving = false;
 		}

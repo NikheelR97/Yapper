@@ -1,8 +1,13 @@
 # INFRASTRUCTURE & HOSTING PLAN
 
 **Last updated:** 2026-03-04
-**Status:** Living document — update when providers or pricing change
+**Status:** Archived infrastructure snapshot
 **Current tier:** Tier 0 (Free MVP)
+
+> **Archive note (2026-03-27):**
+> This document captures the infrastructure plan before the `/api/v1` removal and later stabilization passes.
+> Any `/api/v1/*` endpoint examples or rollout assumptions below are historical references, not the current live API contract.
+> Use `dev docs/HANDOVER.md`, `docs/deployment.md`, and `docs/api.md` for current operational guidance.
 
 ---
 

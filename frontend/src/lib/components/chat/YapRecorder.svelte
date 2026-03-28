@@ -20,7 +20,7 @@
 	const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB (free tier)
 	const PREFERRED_MIME = "audio/webm;codecs=opus";
 	const FALLBACK_MIME = "audio/webm";
-	const UPLOAD_URL_PATH = "/api/v1/media/upload-url";
+	const UPLOAD_URL_PATH = "/api/v2/media/upload-url";
 
 	// ── State ──────────────────────────────────────────────────────────────────
 	let recording = false;

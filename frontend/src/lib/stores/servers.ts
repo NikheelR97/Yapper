@@ -15,7 +15,7 @@ import {
 	prepareChannel,
 } from '$signal/index.js';
 import { onWsMessage, sendChannelMessage as wsSendChannel } from '$stores/ws.js';
-import { authStore } from '$stores/auth.js';
+import { authStore, registerSessionResetter } from '$stores/auth.js';
 import type { Message } from '$stores/conversations.js';
 import {
 	beginBatch,
@@ -91,6 +91,21 @@ function capChannelMessages(msgs: Message[]): Message[] {
 }
 const pendingChannelDecryptTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
+function resetServerState(): void {
+	serversStore.set({ servers: [], loading: false });
+	for (const store of channelMessageStores.values()) {
+		store.set([]);
+	}
+	channelMessageStores.clear();
+	channelsCache.clear();
+	for (const timer of pendingChannelDecryptTimers.values()) {
+		clearTimeout(timer);
+	}
+	pendingChannelDecryptTimers.clear();
+}
+
+registerSessionResetter(resetServerState);
+
 function appendLocalChannelMessage(
 	channelId: string,
 	text: string,
@@ -98,9 +113,14 @@ function appendLocalChannelMessage(
 		messageId?: string;
 		createdAt?: string;
 		messageType?: string;
+		senderDeviceId?: string | null;
+		pendingMsgNum?: number | null;
+		deliveryState?: 'pending' | 'sent';
+		clientNonce?: string;
 	} = {}
 ): void {
 	const userId = get(authStore).user?.id ?? '';
+	const deviceId = get(authStore).device?.id ?? null;
 	const store = getChannelMessageStore(channelId);
 	store.update((msgs) => capChannelMessages([
 		...msgs,
@@ -108,12 +128,103 @@ function appendLocalChannelMessage(
 			id: options.messageId ?? crypto.randomUUID(),
 			conversationId: channelId,
 			senderId: userId,
+			senderDeviceId: options.senderDeviceId ?? deviceId,
 			text,
 			decryptError: false,
 			createdAt: options.createdAt ?? new Date().toISOString(),
 			messageType: options.messageType ?? 'text',
+			pendingMsgNum: options.pendingMsgNum ?? null,
+			deliveryState: options.deliveryState,
+			clientNonce: options.clientNonce,
 		},
 	]));
+}
+
+function reconcileOwnChannelMessage(
+	channelId: string,
+	msg: {
+		id: string;
+		sender_id: string;
+		sender_device_id?: string | null;
+		message_type?: string;
+		msg_num: number | null;
+		created_at?: string;
+		client_nonce?: string | null;
+	},
+	myId: string,
+	myDeviceId: string | null
+): boolean {
+	const store = getChannelMessageStore(channelId);
+	const createdAt = msg.created_at ?? new Date().toISOString();
+	let matched = false;
+
+	store.update((messages) => {
+		// 1. Match by server-assigned ID (already reconciled or HTTP fallback)
+		const byId = messages.findIndex((message) => message.id === msg.id);
+		if (byId !== -1) {
+			const updated = [...messages];
+			updated[byId] = {
+				...updated[byId],
+				id: msg.id,
+				createdAt,
+				messageType: msg.message_type ?? updated[byId].messageType,
+				senderDeviceId: msg.sender_device_id ?? updated[byId].senderDeviceId ?? myDeviceId,
+				pendingMsgNum: null,
+				clientNonce: undefined,
+				deliveryState: 'sent',
+			};
+			matched = true;
+			return capChannelMessages(updated);
+		}
+
+		// 2. Match by client_nonce (most reliable for WS optimistic sends)
+		if (msg.client_nonce) {
+			const nonceIndex = messages.findIndex(
+				(message) => message.clientNonce === msg.client_nonce
+			);
+			if (nonceIndex !== -1) {
+				const updated = [...messages];
+				updated[nonceIndex] = {
+					...updated[nonceIndex],
+					id: msg.id,
+					createdAt,
+					messageType: msg.message_type ?? updated[nonceIndex].messageType,
+					senderDeviceId: msg.sender_device_id ?? updated[nonceIndex].senderDeviceId ?? myDeviceId,
+					pendingMsgNum: null,
+					clientNonce: undefined,
+					deliveryState: 'sent',
+				};
+				matched = true;
+				return capChannelMessages(updated);
+			}
+		}
+
+		// 3. Fallback: match by pendingMsgNum (ratchet iteration)
+		const pendingIndex = messages.findIndex((message) =>
+			message.senderId === myId &&
+			message.senderDeviceId === (msg.sender_device_id ?? myDeviceId) &&
+			message.pendingMsgNum === msg.msg_num
+		);
+		if (pendingIndex !== -1) {
+			const updated = [...messages];
+			updated[pendingIndex] = {
+				...updated[pendingIndex],
+				id: msg.id,
+				createdAt,
+				messageType: msg.message_type ?? updated[pendingIndex].messageType,
+				senderDeviceId: msg.sender_device_id ?? updated[pendingIndex].senderDeviceId ?? myDeviceId,
+				pendingMsgNum: null,
+				clientNonce: undefined,
+				deliveryState: 'sent',
+			};
+			matched = true;
+			return capChannelMessages(updated);
+		}
+
+		return messages;
+	});
+
+	return matched;
 }
 
 export function getChannelMessageStore(channelId: string) {
@@ -230,7 +341,7 @@ export async function fetchServers(): Promise<void> {
 				icon_url: string | null;
 				member_count: number;
 			}[]
-		>('/api/v1/servers');
+		>('/api/v2/servers');
 
 		const userId = get(authStore).user?.id ?? '';
 		serversStore.set({
@@ -263,7 +374,7 @@ export async function fetchChannels(serverId: string): Promise<Channel[]> {
 			type: string;
 			position: number;
 		}[]
-	>(`/api/v1/servers/${serverId}/channels`);
+	>(`/api/v2/servers/${serverId}/channels`);
 
 	const channels = raw.map((c) => ({
 		id: c.id,
@@ -282,7 +393,7 @@ export async function loadChannelMessages(channelId: string): Promise<void> {
 	const store = getChannelMessageStore(channelId);
 
 	const [remoteMessages, cachedMessages] = await Promise.all([
-		api.get<CachedChannelHistoryMessage[]>(`/api/v1/channels/${channelId}/messages`),
+		api.get<CachedChannelHistoryMessage[]>(`/api/v2/channels/${channelId}/messages`),
 		listChannelHistoryMessages(channelId),
 	]);
 	const raw = mergeChannelHistoryMessages(remoteMessages, cachedMessages);
@@ -366,12 +477,26 @@ export async function loadChannelMessages(channelId: string): Promise<void> {
 
 // ─── Send Channel Message ─────────────────────────────────────────────────────
 
-export async function sendMessage(channelId: string, text: string): Promise<void> {
+export async function sendMessage(
+	channelId: string,
+	text: string,
+	options: {
+		messageType?: string;
+	} = {}
+): Promise<void> {
+	const messageType = options.messageType ?? 'text';
+	const clientNonce = crypto.randomUUID();
 	const { wireCiphertext, iteration } = await encryptChannel(channelId, text);
-	const sent = wsSendChannel(channelId, wireCiphertext, iteration);
+	const sent = wsSendChannel(channelId, wireCiphertext, iteration, messageType, clientNonce);
 
 	if (sent) {
-		appendLocalChannelMessage(channelId, text);
+		appendLocalChannelMessage(channelId, text, {
+			messageType,
+			pendingMsgNum: iteration,
+			senderDeviceId: get(authStore).device?.id ?? null,
+			deliveryState: 'pending',
+			clientNonce,
+		});
 		return;
 	}
 
@@ -379,16 +504,19 @@ export async function sendMessage(channelId: string, text: string): Promise<void
 		id?: string;
 		created_at?: string;
 		message_type?: string;
-	}>(`/api/v1/channels/${channelId}/messages`, {
+	}>(`/api/v2/channels/${channelId}/messages`, {
 		ciphertext: wireCiphertext,
-		message_type: 'text',
+		message_type: messageType,
 		msg_num: iteration,
 	});
 
 	appendLocalChannelMessage(channelId, text, {
 		messageId: response.id,
 		createdAt: response.created_at,
-		messageType: response.message_type ?? 'text',
+		messageType: response.message_type ?? messageType,
+		senderDeviceId: get(authStore).device?.id ?? null,
+		pendingMsgNum: iteration,
+		deliveryState: 'sent',
 	});
 }
 
@@ -408,16 +536,15 @@ export function registerChannelHandler(): () => void {
 			message_type?: string;
 			msg_num: number | null;
 			created_at?: string;
+			client_nonce?: string | null;
 		};
 
-		// Own messages are already added optimistically on send
 		const myId = get(authStore).user?.id ?? '';
 		const myDeviceId = get(authStore).device?.id ?? null;
-		if (
-			msg.sender_id === myId &&
-			(!msg.sender_device_id || msg.sender_device_id === myDeviceId)
-		) {
-			return;
+		if (msg.sender_id === myId && (msg.sender_device_id ?? myDeviceId) === myDeviceId) {
+			if (reconcileOwnChannelMessage(msg.channel_id, msg, myId, myDeviceId)) {
+				return;
+			}
 		}
 
 		const createdAt = msg.created_at ?? new Date().toISOString();
@@ -445,6 +572,7 @@ export function registerChannelHandler(): () => void {
 					id: msg.id,
 					conversationId: msg.channel_id,
 					senderId: msg.sender_id,
+					senderDeviceId: msg.sender_device_id ?? null,
 					text: msg.plaintext!,
 					decryptError: false,
 					createdAt,
@@ -455,18 +583,18 @@ export function registerChannelHandler(): () => void {
 		}
 
 		await storeChannelHistoryMessages([
-			{
-				id: msg.id,
-				channel_id: msg.channel_id,
-				sender_id: msg.sender_id,
-				sender_device_id: msg.sender_device_id ?? null,
-				ciphertext: msg.ciphertext ?? '',
-				plaintext: null,
-				message_type: 'text',
-				msg_num: msg.msg_num,
-				created_at: createdAt,
-			},
-		]);
+				{
+					id: msg.id,
+					channel_id: msg.channel_id,
+					sender_id: msg.sender_id,
+					sender_device_id: msg.sender_device_id ?? null,
+					ciphertext: msg.ciphertext ?? '',
+					plaintext: null,
+					message_type: msg.message_type ?? 'text',
+					msg_num: msg.msg_num,
+					created_at: createdAt,
+				},
+			]);
 
 		let text: string | null = null;
 		let decryptError = false;
@@ -491,14 +619,15 @@ export function registerChannelHandler(): () => void {
 		const store = getChannelMessageStore(msg.channel_id);
 		store.update((msgs) => capChannelMessages([
 			...msgs,
-			{
-				id: msg.id,
-				conversationId: msg.channel_id,
-				senderId: msg.sender_id,
-				text,
-				decryptError,
-				createdAt,
-				messageType: msg.message_type ?? 'text',
+				{
+					id: msg.id,
+					conversationId: msg.channel_id,
+					senderId: msg.sender_id,
+					senderDeviceId: msg.sender_device_id ?? null,
+					text,
+					decryptError,
+					createdAt,
+					messageType: msg.message_type ?? 'text',
 			},
 		]));
 	});
@@ -531,7 +660,7 @@ export async function createServer(name: string): Promise<Server> {
 		owner_id: string;
 		icon_url: string | null;
 		member_count: number;
-	}>('/api/v1/servers', { name });
+	}>('/api/v2/servers', { name });
 
 	const userId = get(authStore).user?.id ?? '';
 	const server: Server = {
@@ -551,7 +680,7 @@ export async function createServer(name: string): Promise<Server> {
 
 export async function createInvite(serverId: string): Promise<string> {
 	const resp = await api.post<{ code: string }>(
-		`/api/v1/servers/${serverId}/invite`,
+		`/api/v2/servers/${serverId}/invite`,
 		{}
 	);
 	return resp.code;
@@ -560,7 +689,7 @@ export async function createInvite(serverId: string): Promise<string> {
 // ─── Join by Invite ───────────────────────────────────────────────────────────
 
 export async function joinByInvite(code: string): Promise<void> {
-	await api.post(`/api/v1/servers/join/${code}`, {});
+	await api.post(`/api/v2/servers/join/${code}`, {});
 	await fetchServers();
 }
 
@@ -590,7 +719,7 @@ export async function fetchServerEmojis(serverId: string): Promise<void> {
 	try {
 		const res = await api.get<{
 			emojis: { id: string; name: string; image_url: string }[];
-		}>(`/api/v1/servers/${serverId}/emojis`);
+	}>(`/api/v2/servers/${serverId}/emojis`);
 
 		const emojis: ServerEmoji[] = (res.emojis ?? []).map((e) => ({
 			id: e.id,

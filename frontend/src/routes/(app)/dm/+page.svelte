@@ -18,7 +18,7 @@
 
 	async function loadRequests() {
 		try {
-			const res = await api.get<{ requests: FriendRequest[] }>('/api/v1/users/me/friend-requests');
+			const res = await api.get<{ requests: FriendRequest[] }>('/api/v2/users/me/friend-requests');
 			requests = res.requests;
 		} catch {
 			// non-fatal
@@ -31,7 +31,7 @@
 		if (!addUsername.trim()) return;
 		adding = true;
 		try {
-			await api.post(`/api/v1/users/by/${encodeURIComponent(addUsername.trim())}/friend-request`, {});
+			await api.post(`/api/v2/users/by/${encodeURIComponent(addUsername.trim())}/friend-request`, {});
 			toast.success('Friend request sent!');
 			addUsername = '';
 		} catch (e: any) {
@@ -43,7 +43,7 @@
 
 	async function accept(username: string) {
 		try {
-			await api.put(`/api/v1/users/by/${encodeURIComponent(username)}/friend-request`, {});
+			await api.put(`/api/v2/users/by/${encodeURIComponent(username)}/friend-request`, {});
 			toast.success('Friend request accepted!');
 			requests = requests.filter((r) => r.username !== username);
 		} catch (e: any) {
@@ -53,7 +53,7 @@
 
 	async function reject(username: string) {
 		try {
-			await api.delete(`/api/v1/users/by/${encodeURIComponent(username)}/friend-request`);
+			await api.delete(`/api/v2/users/by/${encodeURIComponent(username)}/friend-request`);
 			requests = requests.filter((r) => r.username !== username);
 		} catch (e: any) {
 			toast.error(e.message ?? 'Failed to reject');

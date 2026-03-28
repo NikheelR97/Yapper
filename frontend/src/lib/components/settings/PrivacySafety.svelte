@@ -20,7 +20,7 @@
 				dm_permission: string;
 				friend_request_permission: string;
 				show_last_seen: boolean;
-			}>("/api/v1/users/me/privacy");
+			}>("/api/v2/users/me/privacy");
 			dm_permission = priv.dm_permission as typeof dm_permission;
 			friend_request_permission =
 				priv.friend_request_permission as typeof friend_request_permission;
@@ -33,14 +33,14 @@
 	async function save() {
 		saving = true;
 		try {
-			await api.patch("/api/v1/users/me/privacy", {
+			await api.patch("/api/v2/users/me/privacy", {
 				dm_permission,
 				friend_request_permission,
 				show_last_seen,
 			});
 			toast.success("Privacy settings saved!");
-		} catch (e: any) {
-			toast.error(e.message ?? "Failed to save");
+		} catch (e: unknown) {
+			toast.error(e instanceof Error ? e.message : "Failed to save");
 		} finally {
 			saving = false;
 		}

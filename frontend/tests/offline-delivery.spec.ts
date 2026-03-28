@@ -25,6 +25,43 @@ const USER_B_PASS = process.env.E2E_PASSWORD_2 ?? '';
 
 const client = new E2EApiClient();
 
+async function loginAndBootstrapSignal(
+	page: Awaited<ReturnType<Browser['newPage']>>,
+	email: string,
+	password: string,
+	installationId: string,
+) {
+	const keyUploads = [
+		page.waitForResponse(
+			(response) =>
+				response.request().method() === 'POST' &&
+				response.url().includes('/api/v2/keys/identity') &&
+				response.ok(),
+		),
+		page.waitForResponse(
+			(response) =>
+				response.request().method() === 'POST' &&
+				response.url().includes('/api/v2/keys/signed-prekey') &&
+				response.ok(),
+		),
+		page.waitForResponse(
+			(response) =>
+				response.request().method() === 'POST' &&
+				response.url().includes('/api/v2/keys/one-time-prekeys') &&
+				response.ok(),
+		),
+	];
+
+	await setInstallationId(page, installationId);
+	await page.goto('/login');
+	await page.fill('#email', email);
+	await page.fill('#password', password);
+	await page.getByRole('button', { name: /Sign In/i }).click();
+	await page.waitForURL(/\/explore/, { timeout: 20_000 });
+	await waitForAppReady(page);
+	await Promise.all(keyUploads);
+}
+
 test.describe('Offline message delivery', () => {
 	test.use({ storageState: { cookies: [], origins: [] } });
 
@@ -73,23 +110,12 @@ test.describe('Offline message delivery', () => {
 
 		try {
 			// Step 1: User B logs in and uploads prekeys, then idles on /explore.
-			await setInstallationId(pageB, B_PRIMARY_INSTALLATION_ID);
-			await pageB.goto('/login');
-			await pageB.fill('#email', USER_B_EMAIL);
-			await pageB.fill('#password', USER_B_PASS);
-			await pageB.getByRole('button', { name: /Sign In/i }).click();
-			await pageB.waitForURL(/\/explore/, { timeout: 20_000 });
-			await waitForAppReady(pageB);
+			await loginAndBootstrapSignal(pageB, USER_B_EMAIL, USER_B_PASS, B_PRIMARY_INSTALLATION_ID);
+			await ctxB.setOffline(true);
 			// B stays on /explore — not in the DM conversation (simulates "offline from DM")
 
 			// Step 2: User A logs in.
-			await setInstallationId(pageA, PRIMARY_INSTALLATION_ID);
-			await pageA.goto('/login');
-			await pageA.fill('#email', USER_A_EMAIL);
-			await pageA.fill('#password', USER_A_PASS);
-			await pageA.getByRole('button', { name: /Sign In/i }).click();
-			await pageA.waitForURL(/\/explore/, { timeout: 20_000 });
-			await waitForAppReady(pageA);
+			await loginAndBootstrapSignal(pageA, USER_A_EMAIL, USER_A_PASS, PRIMARY_INSTALLATION_ID);
 
 			// Wait for BOTH users' key bundles to land on the server before A
 			// sends. initializeSignalKeys() runs as a background promise after the
@@ -104,29 +130,18 @@ test.describe('Offline message delivery', () => {
 			await expect(inputA).toBeEnabled({ timeout: 60_000 });
 			await inputA.fill(testMsg);
 			await inputA.press('Enter');
-			// Drain A logs immediately after send to capture any encryptDm errors
-			await pageA.waitForTimeout(3_000);
 			for (const log of aLogs.splice(0)) console.log(log);
-			await expect(pageA.getByText(testMsg)).toBeVisible({ timeout: 60_000 });
+			await expect(pageA.getByTestId('dm-message-list')).toContainText(testMsg, { timeout: 10_000 });
 
 			// Step 3: User B opens the conversation in the same context (same IndexedDB →
 			// same private key → can decrypt A's message).
-			// Drain A logs after send
+			await ctxB.setOffline(false);
 			for (const log of aLogs.splice(0)) console.log(log);
 			console.log('[test] Navigating B to DM');
 			await navigateClientSide(pageB, `/dm/${conversationId}`);
-			// Drain B logs before waiting
 			for (const log of bLogs.splice(0)) console.log(log);
-			// Poll with diagnostics
-			let bFound = false;
-			for (let i = 0; i < 30; i++) {
-				await pageB.waitForTimeout(2_000);
-				const visible = await pageB.getByText(testMsg).isVisible().catch(() => false);
-				console.log(`[test] B t+${(i+1)*2}s: visible=${visible}`);
-				for (const log of bLogs.splice(0)) console.log(log);
-				if (visible) { bFound = true; break; }
-			}
-			expect(bFound, 'B should see decrypted message within 60s').toBe(true);
+			await expect(pageB.getByTestId('dm-message-list')).toContainText(testMsg, { timeout: 15_000 });
+			for (const log of bLogs.splice(0)) console.log(log);
 		} finally {
 			await ctxA.close();
 			await ctxB.close();

@@ -7,6 +7,7 @@ on:
     branches: [main]
   schedule:
     - cron: "23 3 * * *"
+  workflow_call:
 
 permissions:
   contents: read
@@ -48,9 +49,17 @@ jobs:
             --ignore RUSTSEC-2024-0421
         working-directory: backend
 
-      - name: Run npm audit
+      - name: Install marketing dependencies
+        run: npm ci
+        working-directory: marketing
+
+      - name: Run npm audit (frontend)
         run: npm audit --omit=dev
         working-directory: frontend
+
+      - name: Run npm audit (marketing)
+        run: npm audit --omit=dev
+        working-directory: marketing
 
       - name: Run gitleaks
         uses: gitleaks/gitleaks-action@v2
@@ -68,7 +77,6 @@ jobs:
 
       - name: Run OSV-Scanner
         run: ~/go/bin/osv-scanner scan source --recursive .
-        continue-on-error: true
 
       - name: Generate CycloneDX SBOM
         uses: anchore/sbom-action@v0
@@ -91,10 +99,10 @@ jobs:
           scan-type: fs
           scan-ref: .
           scanners: vuln,secret,config
+          skip-dirs: frontend/node_modules,marketing/node_modules,scripts/node_modules
           severity: HIGH,CRITICAL
           ignore-unfixed: true
-          exit-code: 0
-        continue-on-error: true
+          exit-code: 1
 
       - name: Build backend image for scanning
         run: docker build -t yapper-backend-security-scan -f backend/Dockerfile backend
@@ -107,5 +115,4 @@ jobs:
           scanners: vuln,secret,config
           severity: HIGH,CRITICAL
           ignore-unfixed: true
-          exit-code: 0
-        continue-on-error: true
+          exit-code: 1

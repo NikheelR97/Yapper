@@ -1,9 +1,9 @@
 /**
- * Push notifications — register FCM/APNS tokens and send push via FCM HTTP v1.
+ * Push notifications â€” register FCM/APNS tokens and send push via FCM HTTP v1.
  *
- * Routes (mounted under /api/v1/notifications):
- *   PUT    /push-token  — register or update push token for the current device
- *   DELETE /push-token  — remove push token for the current device
+ * Routes (mounted under /api/v2/notifications):
+ *   PUT    /push-token  â€” register or update push token for the current device
+ *   DELETE /push-token  â€” remove push token for the current device
  *
  * FCM integration:
  *   - Requires FCM_SERVICE_ACCOUNT_JSON env var (path or inline JSON).
@@ -30,7 +30,7 @@ use crate::{
     AppState,
 };
 
-// ─── Router ───────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Router â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -38,7 +38,7 @@ pub fn router() -> Router<AppState> {
         .route("/push-token", delete(remove_push_token))
 }
 
-// ─── Input types ──────────────────────────────────────────────────────────────
+// â”€â”€â”€ Input types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -49,9 +49,9 @@ struct RegisterPushTokenReq {
     platform: String,
 }
 
-// ─── Handlers ─────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-/// PUT /api/v1/notifications/push-token — register or update a push token.
+/// PUT /api/v2/notifications/push-token â€” register or update a push token.
 ///
 /// Enforces a per-user cap ([`MAX_PUSH_TOKENS_PER_USER`](crate::constants::MAX_PUSH_TOKENS_PER_USER));
 /// when the limit is reached the oldest token is evicted before inserting.
@@ -59,7 +59,7 @@ struct RegisterPushTokenReq {
 /// # Security invariants
 ///
 /// * Requires a trusted device.
-/// * Token is stored per-device, not per-user — revoking a device clears its token.
+/// * Token is stored per-device, not per-user â€” revoking a device clears its token.
 async fn register_push_token(
     auth: AuthDevice,
     State(state): State<AppState>,
@@ -74,7 +74,7 @@ async fn register_push_token(
     }
     if req.token.is_empty() || req.token.len() > 4096 {
         return Err(AppError::BadRequest(
-            "token must be 1–4096 characters".into(),
+            "token must be 1â€“4096 characters".into(),
         ));
     }
 
@@ -121,7 +121,7 @@ async fn register_push_token(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// DELETE /api/v1/notifications/push-token — clear the push token for the current device.
+/// DELETE /api/v2/notifications/push-token â€” clear the push token for the current device.
 async fn remove_push_token(
     auth: AuthDevice,
     State(state): State<AppState>,
@@ -136,7 +136,7 @@ async fn remove_push_token(
     Ok(StatusCode::NO_CONTENT)
 }
 
-// ─── FCM HTTP v1 push delivery ──────────────────────────────────────────────
+// â”€â”€â”€ FCM HTTP v1 push delivery â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /// Cached OAuth2 access token for FCM.
 struct CachedToken {

@@ -73,6 +73,26 @@ async function loginAndWaitReady(
 	pass: string,
 	installId: string,
 ): Promise<void> {
+	const keyUploads = [
+		page.waitForResponse(
+			(response) =>
+				response.request().method() === 'POST' &&
+				response.url().includes('/api/v2/keys/identity') &&
+				response.ok(),
+		),
+		page.waitForResponse(
+			(response) =>
+				response.request().method() === 'POST' &&
+				response.url().includes('/api/v2/keys/signed-prekey') &&
+				response.ok(),
+		),
+		page.waitForResponse(
+			(response) =>
+				response.request().method() === 'POST' &&
+				response.url().includes('/api/v2/keys/one-time-prekeys') &&
+				response.ok(),
+		),
+	];
 	await setInstallationId(page, installId);
 	await page.goto('/login');
 	await page.fill('#email', email);
@@ -82,10 +102,11 @@ async function loginAndWaitReady(
 	await expect(page.locator('[aria-label="Loading Yapper"]')).toHaveCount(0, {
 		timeout: 45_000,
 	});
+	await Promise.all(keyUploads);
 }
 
 async function createDmConversation(session: Session, peerId: string): Promise<string> {
-	const res = await fetch(`${API_URL}/api/v1/conversations`, {
+	const res = await fetch(`${API_URL}/api/v2/conversations`, {
 		method: 'POST',
 		headers: apiHeaders(session),
 		body: JSON.stringify({ peer_id: peerId }),
@@ -97,7 +118,7 @@ async function createDmConversation(session: Session, peerId: string): Promise<s
 }
 
 async function createServer(session: Session): Promise<{ serverId: string; channelId: string }> {
-	const createRes = await fetch(`${API_URL}/api/v1/servers`, {
+	const createRes = await fetch(`${API_URL}/api/v2/servers`, {
 		method: 'POST',
 		headers: apiHeaders(session),
 		body: JSON.stringify({ name: `E2E Decrypt ${Date.now()}` }),
@@ -105,7 +126,7 @@ async function createServer(session: Session): Promise<{ serverId: string; chann
 	if (!createRes.ok) throw new Error(`createServer failed: ${createRes.status}`);
 	const server = (await createRes.json()) as { id: string };
 
-	const chRes = await fetch(`${API_URL}/api/v1/servers/${server.id}/channels`, {
+	const chRes = await fetch(`${API_URL}/api/v2/servers/${server.id}/channels`, {
 		headers: { Authorization: `Bearer ${session.accessToken}` },
 	});
 	if (!chRes.ok) throw new Error(`listChannels failed: ${chRes.status}`);
@@ -115,7 +136,7 @@ async function createServer(session: Session): Promise<{ serverId: string; chann
 }
 
 async function createInvite(session: Session, serverId: string): Promise<string> {
-	const res = await fetch(`${API_URL}/api/v1/servers/${serverId}/invite`, {
+	const res = await fetch(`${API_URL}/api/v2/servers/${serverId}/invite`, {
 		method: 'POST',
 		headers: apiHeaders(session),
 		body: JSON.stringify({ max_uses: 5 }),
@@ -125,7 +146,7 @@ async function createInvite(session: Session, serverId: string): Promise<string>
 }
 
 async function joinByInvite(session: Session, code: string): Promise<void> {
-	const res = await fetch(`${API_URL}/api/v1/servers/join/${code}`, {
+	const res = await fetch(`${API_URL}/api/v2/servers/join/${code}`, {
 		method: 'POST',
 		headers: apiHeaders(session),
 		body: '{}',
@@ -169,7 +190,8 @@ async function sendAndConfirm(page: Page, text: string): Promise<void> {
 	await expect(input).toBeEnabled({ timeout: 60_000 });
 	await input.fill(text);
 	await input.press('Enter');
-	await expect(page.getByText(text)).toBeVisible({ timeout: 20_000 });
+	const listTestId = page.url().includes('/dm/') ? 'dm-message-list' : 'message-list';
+	await expect(page.getByTestId(listTestId)).toContainText(text, { timeout: 10_000 });
 }
 
 /**
@@ -177,14 +199,8 @@ async function sendAndConfirm(page: Page, text: string): Promise<void> {
  * to handle key-exchange latency.
  */
 async function waitForMessage(page: Page, text: string, timeoutMs = 60_000): Promise<void> {
-	const interval = 2_000;
-	const iterations = Math.ceil(timeoutMs / interval);
-	for (let i = 0; i < iterations; i++) {
-		const visible = await page.getByText(text).isVisible().catch(() => false);
-		if (visible) return;
-		await page.waitForTimeout(interval);
-	}
-	throw new Error(`Message "${text}" not visible after ${timeoutMs / 1000}s`);
+	const listTestId = page.url().includes('/dm/') ? 'dm-message-list' : 'message-list';
+	await expect(page.getByTestId(listTestId)).toContainText(text, { timeout: timeoutMs });
 }
 
 // ─── DM Decryption Integrity ─────────────────────────────────────────────────
@@ -269,7 +285,6 @@ test.describe('DM decryption integrity', () => {
 			// 10 s settle — with 50+ historical messages each rendered as a DOM node,
 			// 2 s was insufficient for all "Unable to decrypt" nodes to finish mounting
 			// before the baseline count was captured.
-			await pageA.waitForTimeout(10_000);
 			const baselineA = await countDecryptErrors(pageA);
 			await sendAndConfirm(pageA, msgFromA);
 			await assertNoDecryptErrors(pageA, 'User A after sending', baselineA);
@@ -296,7 +311,6 @@ test.describe('DM decryption integrity', () => {
 			// often triggered by the WS push of A's new message, not the initial load.
 			// Capturing before waitForMessage yields baseline=0, making assertNoDecryptErrors
 			// count those historical errors as "new" and fail.
-			await pageB.waitForTimeout(5_000);
 			const baselineB = await countDecryptErrors(pageB);
 
 			// ── B sends reply ─────────────────────────────────────────────────────
@@ -374,7 +388,6 @@ test.describe('Channel decryption integrity', () => {
 			// bundles from a prior run exist, so without this extra wait A's joinChannel()
 			// would encrypt the SenderKey for B's OLD public key, which B's fresh context
 			// has since replaced. 15 s comfortably covers CI load spikes.
-			await Promise.all([pageA.waitForTimeout(15_000), pageB.waitForTimeout(15_000)]);
 
 			await Promise.all([
 				waitForKeyBundles(sessionA.accessToken, sessionA.userId),
@@ -393,14 +406,12 @@ test.describe('Channel decryption integrity', () => {
 			await expect(pageB.locator('textarea[aria-label="Message"]').first()).toBeEnabled({ timeout: 60_000 });
 
 			// Wait for key_dist_request → redistribution cycle via WS
-			await pageB.waitForTimeout(10_000);
 
 			// B re-navigates to fetch redistributed SenderKey from DB
 			await navigateClientSide(pageB, '/explore');
 			await navigateClientSide(pageB, `/servers/${serverId}/channels/${channelId}`);
 			const inputB = pageB.locator('textarea[aria-label="Message"]').first();
 			await expect(inputB).toBeEnabled({ timeout: 60_000 });
-			await pageB.waitForTimeout(5_000);
 
 			// ── A sends AFTER key exchange is complete ────────────────────────────
 			const baselineA = await countDecryptErrors(pageA);
@@ -412,15 +423,21 @@ test.describe('Channel decryption integrity', () => {
 			// If B doesn't see the message via WS within 30s, re-navigate to
 			// trigger prepareChannel() which fetches pending key distributions
 			// and reloads messages from the server.
-			const bSeesIt = await pageB.getByText(msgFromA).isVisible().catch(() => false);
+			const bSeesIt = await pageB
+				.getByTestId('message-list')
+				.textContent()
+				.then((content) => content?.includes(msgFromA) ?? false)
+				.catch(() => false);
 			if (!bSeesIt) {
-				await pageB.waitForTimeout(15_000);
-				const bSeesItRetry = await pageB.getByText(msgFromA).isVisible().catch(() => false);
+				const bSeesItRetry = await pageB
+					.getByTestId('message-list')
+					.textContent()
+					.then((content) => content?.includes(msgFromA) ?? false)
+					.catch(() => false);
 				if (!bSeesItRetry) {
 					await navigateClientSide(pageB, '/explore');
 					await navigateClientSide(pageB, `/servers/${serverId}/channels/${channelId}`);
 					await expect(pageB.locator('textarea[aria-label="Message"]').first()).toBeEnabled({ timeout: 60_000 });
-					await pageB.waitForTimeout(5_000);
 				}
 			}
 			await waitForMessage(pageB, msgFromA, 60_000);
@@ -437,20 +454,18 @@ test.describe('Channel decryption integrity', () => {
 			const inputARe = pageA.locator('textarea[aria-label="Message"]').first();
 			await expect(inputARe).toBeEnabled({ timeout: 60_000 });
 			// Wait for key exchange cycle from A's re-navigation
-			await pageA.waitForTimeout(10_000);
 			// Second re-navigation to ensure A has B's latest SenderKey after any
 			// key_dist_request redistribution triggered by A's own prepareChannel().
 			await navigateClientSide(pageA, '/explore');
 			await navigateClientSide(pageA, `/servers/${serverId}/channels/${channelId}`);
 			await expect(pageA.locator('textarea[aria-label="Message"]').first()).toBeEnabled({ timeout: 60_000 });
-			await pageA.waitForTimeout(5_000);
 			const baselineARe = await countDecryptErrors(pageA);
 			await waitForMessage(pageA, msgFromB, 120_000);
 			await assertNoDecryptErrors(pageA, 'User A after re-entering channel', baselineARe);
 
 			// Both messages visible on both pages, zero decrypt errors
-			await expect(pageA.getByText(msgFromA)).toBeVisible();
-			await expect(pageB.getByText(msgFromA)).toBeVisible();
+			await expect(pageA.getByTestId('message-list')).toContainText(msgFromA);
+			await expect(pageB.getByTestId('message-list')).toContainText(msgFromA);
 		} finally {
 			await ctxA.close();
 			await ctxB.close();
@@ -508,7 +523,6 @@ test.describe('Channel decryption integrity', () => {
 			// Same race as the channel test: fresh browser contexts upload NEW Signal keys
 			// as a background void promise (initializeSignalKeys). Without this wait,
 			// A's joinChannel() may encrypt using B's stale (pre-session) public key.
-			await Promise.all([pageA.waitForTimeout(15_000), pageB.waitForTimeout(15_000)]);
 
 			await Promise.all([
 				waitForKeyBundles(sessionA.accessToken, sessionA.userId),
@@ -539,7 +553,6 @@ test.describe('Channel decryption integrity', () => {
 			await expect(inputB).toBeEnabled({ timeout: 60_000 });
 
 			// Give A time to receive key_dist_request and redistribute its SenderKey.
-			await pageB.waitForTimeout(10_000);
 
 			// Navigate B away and back to force fetchPendingKeyDists (DB fallback path).
 			// If the real-time key_dist_v2 WS event was missed, this GET call returns
@@ -552,7 +565,6 @@ test.describe('Channel decryption integrity', () => {
 			// Wait for messages to finish rendering (including any "Unable to decrypt"
 			// nodes for A's pre-join message).  Capture the baseline AFTER the second
 			// navigation so it includes pre-existing decrypt errors from earlyMsg.
-			await pageB.waitForTimeout(10_000);
 			const baselineLate = await countDecryptErrors(pageB);
 
 			// A sends the post-join message — B now holds A's SenderKey (either from

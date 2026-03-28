@@ -165,7 +165,7 @@ Located in Settings → Yapper for Developers tab.
 │                                                          │
 │  Discord                    →  Yapper                   │
 │  client.on('messageCreate') →  ws.on('message')        │
-│  client.channels.send()     →  POST /api/v1/channels/.. │
+│  client.channels.send()     →  POST /api/v2/channels/.. │
 │  Discord.js Client          →  yapper-bot-sdk (future) │
 │                                                          │
 │  [View Full API Docs]                                    │

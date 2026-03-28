@@ -56,7 +56,7 @@
 
 	async function handleAddFriend(username: string) {
 		try {
-			await api.post(`/api/v1/users/by/${encodeURIComponent(username)}/friend-request`, {});
+			await api.post(`/api/v2/users/by/${encodeURIComponent(username)}/friend-request`, {});
 			sentRequests = new Set([...sentRequests, username]);
 			toast.success('Friend request sent!');
 		} catch (e: any) {
@@ -152,7 +152,7 @@
 
 			<!-- Search results -->
 			{#if isSearching}
-				<section class="results-section">
+				<section class="results-section" data-testid="search-results">
 					{#if state.searchServers.length > 0}
 						<h2 class="section-title">Servers</h2>
 						<div class="cards-grid" class:list-mode={viewMode === 'list'}>

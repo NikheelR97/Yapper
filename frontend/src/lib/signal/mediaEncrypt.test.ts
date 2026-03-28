@@ -7,6 +7,15 @@
 import { describe, it, expect } from "vitest";
 import { encryptMedia, decryptMedia } from "./mediaEncrypt.js";
 
+function b64ToBytes(b64: string): Uint8Array {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
+}
+
 describe("mediaEncrypt", () => {
   it("round-trips a blob: encrypt then decrypt returns original bytes", async () => {
     const original = new Uint8Array([1, 2, 3, 4, 5, 42, 255]);
@@ -41,6 +50,23 @@ describe("mediaEncrypt", () => {
 
     // Ciphertext sizes should match but content will differ
     expect(first.encrypted.byteLength).toBe(second.encrypted.byteLength);
+  });
+
+  it("returns a 32-byte key and 12-byte IV", async () => {
+    const blob = new Blob([new Uint8Array([9, 8, 7, 6])]);
+    const { key, iv } = await encryptMedia(blob);
+
+    expect(b64ToBytes(key)).toHaveLength(32);
+    expect(b64ToBytes(iv)).toHaveLength(12);
+  });
+
+  it("adds only the AES-GCM tag to the encrypted payload", async () => {
+    const original = new Uint8Array([1, 2, 3, 4, 5, 42, 255]);
+    const blob = new Blob([original], { type: "application/octet-stream" });
+
+    const { encrypted } = await encryptMedia(blob);
+
+    expect(encrypted.byteLength).toBe(original.byteLength + 16);
   });
 
   it("decrypt with wrong key throws", async () => {

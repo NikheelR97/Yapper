@@ -34,7 +34,7 @@ fn check_upload_rate(user_id: Uuid) -> AppResult<()> {
     }
 
     if entry.is_empty() {
-        // All timestamps expired — clean up the entry entirely
+        // All timestamps expired â€” clean up the entry entirely
         // to prevent unbounded growth of empty Vec entries over time.
         drop(entry);
         UPLOAD_TIMESTAMPS.remove(&user_id);
@@ -46,7 +46,7 @@ fn check_upload_rate(user_id: Uuid) -> AppResult<()> {
     Ok(())
 }
 
-// ─── Request / Response types ─────────────────────────────────────────────────
+// â”€â”€â”€ Request / Response types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -60,16 +60,16 @@ pub struct UploadUrlReq {
 pub struct UploadUrlResp {
     upload_url: String,
     object_key: String,
-    /// Seconds until the pre-signed URL expires (informational — not enforced here).
+    /// Seconds until the pre-signed URL expires (informational â€” not enforced here).
     expires_in: u64,
 }
 
-// ─── Handler ─────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-/// `POST /api/v1/media/upload-url`
+/// `POST /api/v2/media/upload-url`
 ///
 /// Generates a pre-signed Cloudflare R2 PUT URL for the client to upload an
-/// AES-256-GCM–encrypted media blob directly (no server proxy).
+/// AES-256-GCMâ€“encrypted media blob directly (no server proxy).
 ///
 /// The client MUST:
 ///   1. Encrypt the blob client-side with AES-256-GCM before uploading.
@@ -95,7 +95,7 @@ pub async fn upload_url(
     }
 
     // Enforce upload size cap based on premium status.
-    // Propagate DB errors rather than silently defaulting — a transient Neon
+    // Propagate DB errors rather than silently defaulting â€” a transient Neon
     // failure should surface as 500, not silently cap premium users at 10 MB.
     let is_premium: bool = sqlx::query("SELECT is_premium FROM users WHERE id = $1")
         .bind(auth.user_id)
@@ -106,7 +106,7 @@ pub async fn upload_url(
             AppError::Internal(e.into())
         })?
         .try_get::<bool, _>("is_premium")
-        .unwrap_or(false); // Column may be NULL — default to free tier is safe
+        .unwrap_or(false); // Column may be NULL â€” default to free tier is safe
 
     let max_size = if is_premium {
         constants::MAX_UPLOAD_SIZE_PREMIUM
@@ -129,15 +129,16 @@ pub async fn upload_url(
 
     let target = r2::generate_upload_url(&media_type, req.content_length).await?;
 
-    // Track the upload for quota/GC (best-effort — don't fail the request)
+    // Track the upload for quota/GC (best-effort â€” don't fail the request)
     if let Err(e) = sqlx::query(
-        "INSERT INTO media_uploads (user_id, object_key, media_type, size_bytes) \
-         VALUES ($1, $2, $3, $4)",
+        "INSERT INTO media_uploads (user_id, object_key, media_type, size_bytes, expires_at) \
+         VALUES ($1, $2, $3, $4, NOW() + ($5::int * INTERVAL '1 day'))",
     )
     .bind(auth.user_id)
     .bind(&target.object_key)
     .bind(&media_type)
     .bind(req.content_length as i64)
+    .bind(constants::MEDIA_UPLOAD_EXPIRY_DAYS)
     .execute(_state.db.pool())
     .await
     {
@@ -151,7 +152,7 @@ pub async fn upload_url(
     }))
 }
 
-// ─── Tests ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 #[cfg(test)]
 mod tests {
