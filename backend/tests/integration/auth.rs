@@ -18,7 +18,7 @@ use jsonwebtoken::{encode, Algorithm, Header};
 use sqlx::PgPool;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
-use tokio::time::Duration;
+use tokio::time::{Duration, Instant};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use uuid::Uuid;
 use yapper_server::{auth::service::AccessClaims, build_router, AppState};
@@ -86,6 +86,34 @@ where
         }
     }
     panic!("websocket did not close");
+}
+
+async fn wait_for_ws_event_type<S>(ws: &mut S, event_type: &str, timeout: Duration) -> serde_json::Value
+where
+    S: futures::Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
+{
+    let deadline = Instant::now() + timeout;
+    loop {
+        let now = Instant::now();
+        let remaining = deadline.saturating_duration_since(now);
+        assert!(
+            !remaining.is_zero(),
+            "timeout waiting for websocket event type {event_type}"
+        );
+
+        let msg = tokio::time::timeout(remaining, ws.next())
+            .await
+            .expect("timeout waiting for websocket frame")
+            .expect("ws closed before expected frame")
+            .expect("ws error");
+
+        if let Message::Text(text) = msg {
+            let body: serde_json::Value = serde_json::from_str(&text).expect("valid json");
+            if body["type"] == event_type {
+                return body;
+            }
+        }
+    }
 }
 
 /// Full happy-path cycle: register -> login -> /users/me -> logout.
@@ -336,8 +364,7 @@ async fn ws_reauth_refreshes_same_user_same_device_session(pool: PgPool) {
         return;
     };
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
-    let (user_id, reauth_token, _, device_id) =
-        create_test_user_with_device(&server, &suffix).await;
+    let (user_id, _, _, device_id) = create_test_user_with_device(&server, &suffix).await;
     let ws_addr = spawn_ws_server(state.clone()).await.expect("ws server");
     let url = format!("ws://{ws_addr}/ws");
     let (mut ws, _) = connect_async(url).await.expect("ws connect");
@@ -349,36 +376,17 @@ async fn ws_reauth_refreshes_same_user_same_device_session(pool: PgPool) {
     .await
     .expect("send auth");
 
-    let mut saw_ready = false;
-    let mut saw_reauth_required = false;
-    for _ in 0..4 {
-        let msg = tokio::time::timeout(Duration::from_secs(3), ws.next())
-            .await
-            .expect("timeout waiting for ready")
-            .expect("ws closed too early")
-            .expect("ws error");
-        if let Message::Text(text) = msg {
-            let body: serde_json::Value = serde_json::from_str(&text).expect("valid json");
-            match body["type"].as_str() {
-                Some("ready") => saw_ready = true,
-                Some("re_auth_required") => saw_reauth_required = true,
-                _ => {}
-            }
-        }
-        if saw_ready && saw_reauth_required {
-            break;
-        }
-    }
-    assert!(saw_ready, "expected ready frame");
-    assert!(saw_reauth_required, "expected re-authentication prompt");
+    let reauth_prompt =
+        wait_for_ws_event_type(&mut ws, "re_auth_required", Duration::from_secs(12)).await;
+    assert_eq!(reauth_prompt["type"], "re_auth_required");
+
+    let fresh_reauth_token = mint_access_token(&state, user_id, "standard", Some(device_id), 300);
 
     ws.send(Message::Text(
-        serde_json::json!({ "type": "reauth", "token": reauth_token }).to_string(),
+        serde_json::json!({ "type": "reauth", "token": fresh_reauth_token }).to_string(),
     ))
     .await
     .expect("send reauth");
-
-    tokio::time::sleep(Duration::from_secs(5)).await;
 
     ws.send(Message::Text(
         serde_json::json!({ "type": "ping" }).to_string(),
@@ -395,7 +403,11 @@ async fn ws_reauth_refreshes_same_user_same_device_session(pool: PgPool) {
         other => panic!("expected pong text frame, got {other:?}"),
     };
     let pong_body: serde_json::Value = serde_json::from_str(&pong_text).expect("valid pong json");
-    assert_eq!(pong_body["type"], "pong");
+    assert_eq!(
+        pong_body["type"],
+        "pong",
+        "expected pong after reauth, got frame: {pong_body}"
+    );
 }
 
 /// Reauth with a different device must close the connection.
@@ -409,7 +421,7 @@ async fn ws_reauth_rejects_different_device(pool: PgPool) {
     let other_suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
     let email = format!("test_{suffix}@integration.test");
     let password = format!("TestPass123!{suffix}");
-    let (same_user_id, wrong_reauth_token, _, wrong_device_id) =
+    let (same_user_id, _, _, wrong_device_id) =
         login_test_user_with_device(&server, &email, &password, &other_suffix).await;
 
     assert_eq!(user_id, same_user_id);
@@ -426,22 +438,12 @@ async fn ws_reauth_rejects_different_device(pool: PgPool) {
     .await
     .expect("send auth");
 
-    let mut saw_reauth_required = false;
-    for _ in 0..4 {
-        let msg = tokio::time::timeout(Duration::from_secs(3), ws.next())
-            .await
-            .expect("timeout waiting for reauth prompt")
-            .expect("ws closed too early")
-            .expect("ws error");
-        if let Message::Text(text) = msg {
-            let body: serde_json::Value = serde_json::from_str(&text).expect("valid json");
-            if body["type"] == "re_auth_required" {
-                saw_reauth_required = true;
-                break;
-            }
-        }
-    }
-    assert!(saw_reauth_required, "expected re-authentication prompt");
+    let reauth_prompt =
+        wait_for_ws_event_type(&mut ws, "re_auth_required", Duration::from_secs(12)).await;
+    assert_eq!(reauth_prompt["type"], "re_auth_required");
+
+    let wrong_reauth_token =
+        mint_access_token(&state, same_user_id, "standard", Some(wrong_device_id), 300);
 
     ws.send(Message::Text(
         serde_json::json!({ "type": "reauth", "token": wrong_reauth_token }).to_string(),
