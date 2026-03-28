@@ -1,9 +1,6 @@
 //! Integration tests for parental pending-request deduplication.
 
-use super::{
-    authorization_header_name, bearer_header, create_test_user_with_device, csrf_header_name,
-    csrf_header_value, spawn_test_server_with_pool,
-};
+use super::{register_test_session, spawn_test_server_with_pool, TestClient};
 use axum_test::TestServer;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -19,16 +16,15 @@ async fn duplicate_pending_friend_requests_are_deduplicated(pool: PgPool) {
     };
 
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
-    let (_, parent_access, parent_csrf, _) =
-        create_test_user_with_device(&server, &format!("parent_{suffix}")).await;
-    let (requester_id, requester_access, requester_csrf, _) =
-        create_test_user_with_device(&server, &format!("requester_{suffix}")).await;
+    let parent_session = register_test_session(&server, &format!("parent_{suffix}")).await;
+    let requester_session = register_test_session(&server, &format!("requester_{suffix}")).await;
+    let parent_client = TestClient::from_session(&server, &parent_session);
+    let requester_client = TestClient::from_session(&server, &requester_session);
+    let requester_id = requester_session.user_id;
 
     let child_username = format!("child_{suffix}");
-    let child_resp = server
+    let child_resp = parent_client
         .post("/api/v2/parental/children")
-        .add_header(authorization_header_name(), bearer_header(&parent_access))
-        .add_header(csrf_header_name(), csrf_header_value(&parent_csrf))
         .json(&serde_json::json!({
             "username": &child_username,
             "display_name": "Pending Child",
@@ -41,11 +37,7 @@ async fn duplicate_pending_friend_requests_are_deduplicated(pool: PgPool) {
 
     let request_path = format!("/api/v2/users/by/{child_username}/friend-request");
     for _ in 0..2 {
-        let response = server
-            .post(&request_path)
-            .add_header(authorization_header_name(), bearer_header(&requester_access))
-            .add_header(csrf_header_name(), csrf_header_value(&requester_csrf))
-            .await;
+        let response = requester_client.post(&request_path).await;
 
         assert!(
             response.status_code().is_success() || response.status_code().as_u16() == 202,

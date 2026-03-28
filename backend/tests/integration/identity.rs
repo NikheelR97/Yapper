@@ -1,8 +1,8 @@
 //! Integration tests for email normalization and linked identity storage.
 
 use super::{
-    authorization_header_name, bearer_header, csrf_header_name, csrf_header_value,
-    create_test_user_with_device, spawn_test_server_with_pool, test_device_bootstrap,
+    login_test_session, register_test_session, spawn_test_server_with_pool, test_device_bootstrap,
+    TestClient,
 };
 use axum_test::{TestResponse, TestServer};
 use sqlx::PgPool;
@@ -30,31 +30,6 @@ async fn submit_v2_register(
         .await
 }
 
-async fn login_v2_user(
-    server: &TestServer,
-    email: &str,
-    password: &str,
-) -> serde_json::Value {
-    let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
-    let resp = server
-        .post("/api/v2/auth/login")
-        .json(&serde_json::json!({
-            "email": email,
-            "password": password,
-            "device": test_device_bootstrap(&suffix),
-        }))
-        .await;
-
-    assert!(
-        resp.status_code().is_success(),
-        "v2 login failed: {} - {}",
-        resp.status_code(),
-        resp.text()
-    );
-
-    resp.json()
-}
-
 #[sqlx::test(migrations = "./migrations")]
 async fn mixed_case_child_email_is_normalized_and_duplicate_rejected(pool: PgPool) {
     let Some((state, server)) = build_identity_test_server(pool).await else {
@@ -63,18 +38,16 @@ async fn mixed_case_child_email_is_normalized_and_duplicate_rejected(pool: PgPoo
 
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
     let parent_suffix = format!("parent_{suffix}");
-    let (_parent_id, parent_access, parent_csrf, _) =
-        create_test_user_with_device(&server, &parent_suffix).await;
+    let parent_session = register_test_session(&server, &parent_suffix).await;
+    let parent_client = TestClient::from_session(&server, &parent_session);
 
     let child_email = format!("MiXeD_{suffix}@Integration.Test");
     let child_username = format!("child_{suffix}");
     let child_password = format!("ChildPass123!{suffix}");
     let child_dob = "2015-03-26";
 
-    let child_resp = server
+    let child_resp = parent_client
         .post("/api/v2/parental/children")
-        .add_header(authorization_header_name(), bearer_header(&parent_access))
-        .add_header(csrf_header_name(), csrf_header_value(&parent_csrf))
         .json(&serde_json::json!({
             "username": child_username,
             "display_name": "Mixed Case Child",
@@ -104,9 +77,15 @@ async fn mixed_case_child_email_is_normalized_and_duplicate_rejected(pool: PgPoo
         .expect("load child email");
     assert_eq!(stored_email, child_email.to_lowercase());
 
-    let login_body = login_v2_user(&server, &child_email, &child_password).await;
+    let login_body = login_test_session(
+        &server,
+        &child_email,
+        &child_password,
+        &format!("child_login_{suffix}"),
+    )
+    .await;
     assert!(
-        login_body["access_token"].is_string(),
+        !login_body.access_token.is_empty(),
         "mixed-case login should succeed after normalization"
     );
 
@@ -130,15 +109,9 @@ async fn linked_identities_coexist_and_unlink_individually(pool: PgPool) {
     };
 
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
-    let (_, access_token, csrf_token, _) = create_test_user_with_device(&server, &suffix).await;
-
-    let user_id: Uuid = sqlx::query_scalar(
-        "SELECT id FROM users WHERE email = $1 AND deleted_at IS NULL",
-    )
-    .bind(format!("test_{suffix}@integration.test"))
-    .fetch_one(state.db.pool())
-    .await
-    .expect("load user id");
+    let session = register_test_session(&server, &suffix).await;
+    let client = TestClient::from_session(&server, &session);
+    let user_id = session.user_id;
 
     for (provider, subject) in [
         ("discord", format!("discord-{suffix}")),
@@ -158,29 +131,17 @@ async fn linked_identities_coexist_and_unlink_individually(pool: PgPool) {
         .expect("seed linked identity");
     }
 
-    let me = server
-        .get("/api/v2/users/me")
-        .add_header(authorization_header_name(), bearer_header(&access_token))
-        .add_header(csrf_header_name(), csrf_header_value(&csrf_token))
-        .await;
+    let me = client.get("/api/v2/users/me").await;
     assert!(me.status_code().is_success(), "GET /users/me failed: {}", me.text());
     let me_body: serde_json::Value = me.json();
     assert_eq!(me_body["connections"]["discord"], true);
     assert_eq!(me_body["connections"]["google"], true);
     assert_eq!(me_body["connections"]["apple"], true);
 
-    let unlink = server
-        .delete("/api/v2/users/me/connections/google")
-        .add_header(authorization_header_name(), bearer_header(&access_token))
-        .add_header(csrf_header_name(), csrf_header_value(&csrf_token))
-        .await;
+    let unlink = client.delete("/api/v2/users/me/connections/google").await;
     assert_eq!(unlink.status_code().as_u16(), 204, "unlink failed: {}", unlink.text());
 
-    let me_after = server
-        .get("/api/v2/users/me")
-        .add_header(authorization_header_name(), bearer_header(&access_token))
-        .add_header(csrf_header_name(), csrf_header_value(&csrf_token))
-        .await;
+    let me_after = client.get("/api/v2/users/me").await;
     assert!(
         me_after.status_code().is_success(),
         "GET /users/me after unlink failed: {}",

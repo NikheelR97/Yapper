@@ -4,7 +4,8 @@
 
 use super::{
     authorization_header_name, bearer_header, create_test_user, create_test_user_with_device,
-    csrf_header_name, csrf_header_value, spawn_test_server_from_pool,
+    csrf_header_name, csrf_header_value, register_test_session, spawn_test_server_from_pool,
+    TestClient,
 };
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -92,13 +93,12 @@ async fn sync_events_require_explicit_ack_before_delivery_is_committed(pool: PgP
         return;
     };
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
-    let (_user_id, access_token, csrf_token, device_id) =
-        create_test_user_with_device(&server, &suffix).await;
+    let session = register_test_session(&server, &suffix).await;
+    let client = TestClient::from_session(&server, &session);
+    let device_id = session.device_id.expect("missing device id");
 
-    let enqueue = server
+    let enqueue = client
         .post("/api/v2/devices/sync-events")
-        .add_header(authorization_header_name(), bearer_header(&access_token))
-        .add_header(csrf_header_name(), csrf_header_value(&csrf_token))
         .json(&serde_json::json!({
             "target_device_id": device_id,
             "event_type": "device_sync_chunk",
@@ -116,11 +116,7 @@ async fn sync_events_require_explicit_ack_before_delivery_is_committed(pool: PgP
         enqueue.text()
     );
 
-    let first_fetch = server
-        .get("/api/v2/devices/sync-events")
-        .add_header(authorization_header_name(), bearer_header(&access_token))
-        .add_header(csrf_header_name(), csrf_header_value(&csrf_token))
-        .await;
+    let first_fetch = client.get("/api/v2/devices/sync-events").await;
     assert!(
         first_fetch.status_code().is_success(),
         "first sync-events fetch failed: {}",
@@ -136,11 +132,7 @@ async fn sync_events_require_explicit_ack_before_delivery_is_committed(pool: PgP
         .expect("sync event id missing")
         .to_string();
 
-    let second_fetch = server
-        .get("/api/v2/devices/sync-events")
-        .add_header(authorization_header_name(), bearer_header(&access_token))
-        .add_header(csrf_header_name(), csrf_header_value(&csrf_token))
-        .await;
+    let second_fetch = client.get("/api/v2/devices/sync-events").await;
     assert!(
         second_fetch.status_code().is_success(),
         "second sync-events fetch failed: {}",
@@ -156,10 +148,8 @@ async fn sync_events_require_explicit_ack_before_delivery_is_committed(pool: PgP
         "fetching without ack must not consume sync events"
     );
 
-    let ack = server
+    let ack = client
         .post("/api/v2/devices/sync-events/ack")
-        .add_header(authorization_header_name(), bearer_header(&access_token))
-        .add_header(csrf_header_name(), csrf_header_value(&csrf_token))
         .json(&serde_json::json!({ "event_ids": [event_id] }))
         .await;
     assert_eq!(
@@ -169,11 +159,7 @@ async fn sync_events_require_explicit_ack_before_delivery_is_committed(pool: PgP
         ack.text()
     );
 
-    let post_ack_fetch = server
-        .get("/api/v2/devices/sync-events")
-        .add_header(authorization_header_name(), bearer_header(&access_token))
-        .add_header(csrf_header_name(), csrf_header_value(&csrf_token))
-        .await;
+    let post_ack_fetch = client.get("/api/v2/devices/sync-events").await;
     assert!(
         post_ack_fetch.status_code().is_success(),
         "post-ack sync-events fetch failed: {}",

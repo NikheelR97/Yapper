@@ -8,8 +8,8 @@
 
 use super::{
     authorization_header_name, bearer_header, create_test_user,
-    create_test_user_with_device, csrf_header_name, csrf_header_value, login_test_session,
-    login_test_user_with_device, spawn_test_server_from_pool, spawn_test_server_with_pool,
+    create_test_user_with_device, login_test_session, login_test_user_with_device,
+    register_test_session, spawn_test_server_from_pool, spawn_test_server_with_pool,
     test_device_bootstrap, TestClient,
 };
 use axum_test::TestServer;
@@ -222,12 +222,20 @@ async fn auth_refresh_returns_new_token(pool: PgPool) {
         return;
     };
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
-    let (_user_id, access_token, csrf_token) = create_test_user(&server, &suffix).await;
+    let session = register_test_session(&server, &suffix).await;
+    let refresh_token = session
+        .refresh_token
+        .as_ref()
+        .expect("refresh token should be set in auth session");
 
     let refresh = server
         .post("/api/v2/auth/refresh")
-        .add_header(authorization_header_name(), bearer_header(&access_token))
-        .add_header(csrf_header_name(), csrf_header_value(&csrf_token))
+        .clear_cookies()
+        .add_header(
+            axum::http::header::COOKIE,
+            axum::http::HeaderValue::from_str(&format!("refresh_token={refresh_token}"))
+                .expect("valid refresh cookie header"),
+        )
         .json(&serde_json::json!({}))
         .await;
 
