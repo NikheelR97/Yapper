@@ -211,9 +211,9 @@ test.describe('Media messaging — Yap cancel flow', () => {
 		if (!await recorderLocator.isVisible({ timeout: 10_000 }).catch(() => false)) return;
 
 		// Brief recording then Cancel
-		await page.waitForTimeout(500);
 		const cancelBtn = page.locator('button[aria-label*="cancel" i], button:has-text("Cancel")').first();
 		if (await cancelBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
+			await expect(cancelBtn).toBeVisible({ timeout: 3_000 });
 			await cancelBtn.click();
 		}
 

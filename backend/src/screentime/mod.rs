@@ -73,6 +73,11 @@ async fn report_screentime(
     }
 
     let recorded_date = parse_date(&body.recorded_date)?;
+    if recorded_date > Utc::now().date_naive() {
+        return Err(AppError::BadRequest(
+            "recordedDate must not be in the future".into(),
+        ));
+    }
     let platform = parse_platform(&body.platform)?;
 
     let mut tx = state.db.pool().begin().await?;
@@ -412,22 +417,6 @@ fn app_icon(app_name: &str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqlx::postgres::PgPoolOptions;
-
-    async fn test_pool() -> Option<PgPool> {
-        let url = std::env::var("DATABASE_URL").ok()?;
-        let pool = PgPoolOptions::new()
-            .max_connections(1)
-            .connect(&url)
-            .await
-            .ok()?;
-
-        if sqlx::migrate!("./migrations").run(&pool).await.is_err() {
-            return None;
-        }
-
-        Some(pool)
-    }
 
     async fn insert_user(pool: &PgPool, email: &str, username: &str, account_type: &str) -> Uuid {
         let row = sqlx::query(
@@ -459,11 +448,8 @@ mod tests {
         assert!(matches!(result, Err(AppError::BadRequest(_))));
     }
 
-    #[tokio::test]
-    async fn require_parent_of_pool_allows_linked_parent() {
-        let Some(pool) = test_pool().await else {
-            return;
-        };
+    #[sqlx::test(migrations = "./migrations")]
+    async fn require_parent_of_pool_allows_linked_parent(pool: PgPool) {
         let suffix = Uuid::new_v4().simple().to_string();
         let parent = insert_user(
             &pool,
@@ -494,11 +480,8 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    #[tokio::test]
-    async fn require_parent_of_pool_denies_unlinked_parent() {
-        let Some(pool) = test_pool().await else {
-            return;
-        };
+    #[sqlx::test(migrations = "./migrations")]
+    async fn require_parent_of_pool_denies_unlinked_parent(pool: PgPool) {
         let suffix = Uuid::new_v4().simple().to_string();
         let parent = insert_user(
             &pool,
@@ -519,11 +502,8 @@ mod tests {
         assert!(matches!(result, Err(AppError::Forbidden)));
     }
 
-    #[tokio::test]
-    async fn refresh_daily_summary_aggregates_by_app_type() {
-        let Some(pool) = test_pool().await else {
-            return;
-        };
+    #[sqlx::test(migrations = "./migrations")]
+    async fn refresh_daily_summary_aggregates_by_app_type(pool: PgPool) {
         let suffix = Uuid::new_v4().simple().to_string();
         let user = insert_user(
             &pool,
@@ -574,11 +554,8 @@ mod tests {
         assert_eq!(other_seconds, 3000);
     }
 
-    #[tokio::test]
-    async fn upsert_screentime_settings_updates_existing_row() {
-        let Some(pool) = test_pool().await else {
-            return;
-        };
+    #[sqlx::test(migrations = "./migrations")]
+    async fn upsert_screentime_settings_updates_existing_row(pool: PgPool) {
         let suffix = Uuid::new_v4().simple().to_string();
         let child = insert_user(
             &pool,

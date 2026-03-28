@@ -38,7 +38,7 @@
 </script>
 
 {#if readReceiptsEnabled(mode) && readCount > 0}
-	<span class="read-receipt">Seen by {readCount}</span>
+	<span class="read-receipt" data-testid="read-receipt-indicator">Seen by {readCount}</span>
 {/if}
 
 <style>

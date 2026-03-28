@@ -156,4 +156,23 @@ describe("signal backup restore", () => {
     await expect(backupKeys("2468")).rejects.toThrow(/at least 12 characters/i);
     expect(api.put).not.toHaveBeenCalled();
   });
+
+  it("rejects a 4-digit PIN recovery passphrase", async () => {
+    await expect(backupKeys("1234")).rejects.toThrow(/at least 12 characters/i);
+    expect(api.put).not.toHaveBeenCalled();
+  });
+
+  it("rejects restore with the wrong recovery passphrase", async () => {
+    const snapshot = JSON.stringify({ bootstrapComplete: true });
+    vi.mocked(api.get).mockResolvedValue({
+      encrypted_blob: await encryptBackupBlob("AlphaPass2468", snapshot),
+    });
+
+    await expect(
+      restoreKeys("WrongPass2468", "source-device-1", {
+        currentDeviceId: "pending-device-1",
+      }),
+    ).rejects.toThrow(/decryption failed/i);
+    expect(importSignalSnapshot).not.toHaveBeenCalled();
+  });
 });

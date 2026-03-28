@@ -1,24 +1,20 @@
 //! Integration tests for parental pending-request deduplication.
 
 use super::{
-    authorization_header_name, bearer_header, build_test_state, create_test_user_with_device,
-    csrf_header_name, csrf_header_value,
+    authorization_header_name, bearer_header, create_test_user_with_device, csrf_header_name,
+    csrf_header_value, spawn_test_server_with_pool,
 };
 use axum_test::TestServer;
-use serial_test::serial;
+use sqlx::PgPool;
 use uuid::Uuid;
-use yapper_server::build_router;
 
-async fn build_parental_test_server() -> Option<(yapper_server::AppState, TestServer)> {
-    let state = build_test_state().await?;
-    let server = TestServer::new(build_router(state.clone())).expect("Failed to create test server");
-    Some((state, server))
+async fn build_parental_test_server(pool: PgPool) -> Option<(yapper_server::AppState, TestServer)> {
+    spawn_test_server_with_pool(pool).await
 }
 
-#[tokio::test]
-#[serial]
-async fn duplicate_pending_friend_requests_are_deduplicated() {
-    let Some((state, server)) = build_parental_test_server().await else {
+#[sqlx::test(migrations = "./migrations")]
+async fn duplicate_pending_friend_requests_are_deduplicated(pool: PgPool) {
+    let Some((state, server)) = build_parental_test_server(pool).await else {
         return;
     };
 

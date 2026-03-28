@@ -272,12 +272,15 @@ test.describe('UAT-06 · E2EE — Client-Observable Behaviour', () => {
 		await page.goto('/login');
 		await page.fill('#email', USER_EMAIL);
 		await page.fill('#password', USER_PASS);
-		await page.getByRole('button', { name: /Sign In/i }).click();
+		const [loginResponse] = await Promise.all([
+			page.waitForResponse((resp) => resp.url().includes('/api/v2/auth/login') && resp.status() !== 0),
+			page.getByRole('button', { name: /Sign In/i }).click(),
+		]);
+		expect(loginResponse.status()).toBeLessThan(500);
 		await page.waitForURL(/\/(explore|servers)/, { timeout: 20_000 });
 		await waitForAppReady(page);
 
-		// Wait for WS to connect
-		await page.waitForTimeout(8_000);
+		await expect.poll(() => wsUrls.length, { timeout: 8_000 }).toBeGreaterThan(0);
 
 		// Check that the WS URL used by the app (stored in env.ts) doesn't use query-string auth
 		const wsUrl = await page.evaluate(() => {

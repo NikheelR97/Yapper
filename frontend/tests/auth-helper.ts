@@ -7,6 +7,7 @@ export interface AuthData {
 	csrfToken: string;
 	user: Record<string, unknown>;
 	device?: ServerDevice;
+	refreshToken?: string;
 }
 
 export interface ServerDevice {
@@ -97,13 +98,17 @@ export function buildMockAuthData(
  * Returns null if auth-data.json doesn't exist yet (first run / no E2E_EMAIL set).
  */
 export function loadAuthData(): AuthData | null {
-	const path = 'tests/auth-data.json';
-	if (!existsSync(path)) return null;
-	try {
-		return JSON.parse(readFileSync(path, 'utf-8')) as AuthData;
-	} catch {
-		return null;
+	for (const path of ['tests/auth-state/user-a.data.json', 'tests/auth-data.json']) {
+		if (!existsSync(path)) {
+			continue;
+		}
+		try {
+			return JSON.parse(readFileSync(path, 'utf-8')) as AuthData;
+		} catch {
+			continue;
+		}
 	}
+	return null;
 }
 
 /**
@@ -115,11 +120,13 @@ export async function loginViaApi(
 	options?: {
 		installationId?: string;
 		label?: string;
+		platform?: ServerDevice['platform'];
 	},
 ): Promise<AuthData> {
 	const installationId = options?.installationId ?? 'e2e-installation';
 	const label = options?.label ?? 'E2E Browser';
-	const cacheKey = `${email}:${installationId}`;
+	const platform = options?.platform ?? 'web';
+	const cacheKey = `${email}:${installationId}:${platform}`;
 	const cached = apiLoginCache.get(cacheKey);
 	if (cached) {
 		return cached;
@@ -132,7 +139,7 @@ export async function loginViaApi(
 			password,
 			device: {
 				installation_id: installationId,
-				platform: 'web',
+				platform,
 				label,
 			},
 		}),
@@ -145,6 +152,7 @@ export async function loginViaApi(
 	const body = (await response.json()) as {
 		access_token?: string;
 		csrf_token?: string;
+		refresh_token?: string;
 		user?: Record<string, unknown>;
 		device?: ServerDevice;
 	};
@@ -156,8 +164,9 @@ export async function loginViaApi(
 	const authData = {
 		accessToken: body.access_token,
 		csrfToken: body.csrf_token,
+		refreshToken: body.refresh_token,
 		user: body.user,
-		device: body.device ?? buildMockDevice({ installation_id: installationId, label }),
+		device: body.device ?? buildMockDevice({ installation_id: installationId, label, platform }),
 	};
 	apiLoginCache.set(cacheKey, authData);
 	return authData;

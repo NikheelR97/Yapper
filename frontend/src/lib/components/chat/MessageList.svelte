@@ -175,6 +175,7 @@
   role="log"
   aria-live="polite"
   aria-label="Messages"
+  data-testid={mode === "dm" ? "dm-message-list" : "message-list"}
 >
   {#if topSpacer > 0}
     <div class="spacer" style="height: {topSpacer * 52}px" aria-hidden="true"></div>
@@ -185,9 +186,9 @@
     {@const mediaPayload = parseMediaPayload(msg.text)}
     {@const renderedTokens = getTokens(msg)}
 
-    <div class="message" class:own={isOwn} use:observe={msg.id}>
+    <div class="message" class:own={isOwn} use:observe={msg.id} data-testid="message-bubble">
       {#if msg.decryptError}
-        <span class="bubble error" title="Decryption failed"
+        <span class="bubble error" title="Decryption failed" data-testid="message-bubble"
           >🔒 Unable to decrypt</span
         >
       {:else if msg.messageType === "yap" && mediaPayload}

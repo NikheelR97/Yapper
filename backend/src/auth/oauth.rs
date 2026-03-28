@@ -990,22 +990,8 @@ fn oauth_error_redirect(reason: &str) -> axum::response::Response {
 #[cfg(test)]
 mod tests {
     use super::ensure_linked_identity;
-    use sqlx::postgres::PgPoolOptions;
     use sqlx::{PgPool, Row};
     use uuid::Uuid;
-
-    async fn test_pool() -> Option<PgPool> {
-        let url = std::env::var("DATABASE_URL").ok()?;
-        let pool = PgPoolOptions::new()
-            .max_connections(1)
-            .connect(&url)
-            .await
-            .ok()?;
-        if sqlx::migrate!("./migrations").run(&pool).await.is_err() {
-            return None;
-        }
-        Some(pool)
-    }
 
     async fn insert_user(pool: &PgPool, suffix: &str) -> Uuid {
         let row = sqlx::query(
@@ -1021,11 +1007,8 @@ mod tests {
         row.try_get("id").expect("id")
     }
 
-    #[tokio::test]
-    async fn linked_identity_allows_same_subject_reuse() {
-        let Some(pool) = test_pool().await else {
-            return;
-        };
+    #[sqlx::test(migrations = "./migrations")]
+    async fn linked_identity_allows_same_subject_reuse(pool: PgPool) {
         let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
         let user_id = insert_user(&pool, &suffix).await;
         let mut tx = pool.begin().await.expect("begin");
@@ -1040,11 +1023,8 @@ mod tests {
         tx.rollback().await.expect("rollback");
     }
 
-    #[tokio::test]
-    async fn linked_identity_rejects_subject_mismatch_for_same_provider() {
-        let Some(pool) = test_pool().await else {
-            return;
-        };
+    #[sqlx::test(migrations = "./migrations")]
+    async fn linked_identity_rejects_subject_mismatch_for_same_provider(pool: PgPool) {
         let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
         let user_id = insert_user(&pool, &suffix).await;
         let mut tx = pool.begin().await.expect("begin");

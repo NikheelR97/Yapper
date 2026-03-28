@@ -554,6 +554,7 @@ pub async fn send_message(
     let ciphertext = BASE64
         .decode(&ciphertext_b64)
         .map_err(|_| AppError::BadRequest("Invalid ciphertext encoding".into()))?;
+    // Channel sends are validated against ciphertext wire bytes after encryption.
     if ciphertext.is_empty() || ciphertext.len() > constants::MAX_MESSAGE_LENGTH {
         return Err(AppError::BadRequest("Ciphertext exceeds size limit".into()));
     }
@@ -673,22 +674,8 @@ async fn fanout_to_members(
 
 #[cfg(test)]
 mod tests {
-    use sqlx::postgres::PgPoolOptions;
     use sqlx::{PgPool, Row};
     use uuid::Uuid;
-
-    async fn test_pool() -> Option<PgPool> {
-        let url = std::env::var("DATABASE_URL").ok()?;
-        let pool = PgPoolOptions::new()
-            .max_connections(1)
-            .connect(&url)
-            .await
-            .ok()?;
-        if sqlx::migrate!("./migrations").run(&pool).await.is_err() {
-            return None;
-        }
-        Some(pool)
-    }
 
     async fn insert_user(pool: &PgPool, suffix: &str) -> Uuid {
         let row = sqlx::query(
@@ -745,12 +732,8 @@ mod tests {
     /// `server_memberships` table (not `server_members`). A wrong table name
     /// caused the query to silently fail via `.unwrap_or_default()`, preventing
     /// SenderKey redistribution on multi-device setups.
-    #[tokio::test]
-    async fn key_dist_member_lookup_uses_correct_table() {
-        let Some(pool) = test_pool().await else {
-            return;
-        };
-
+    #[sqlx::test(migrations = "./migrations")]
+    async fn key_dist_member_lookup_uses_correct_table(pool: PgPool) {
         let suffix = Uuid::new_v4().simple().to_string();
         let user_a = insert_user(&pool, &format!("a_{suffix}")).await;
         let user_b = insert_user(&pool, &format!("b_{suffix}")).await;

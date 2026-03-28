@@ -152,7 +152,7 @@
 
 			<!-- Search results -->
 			{#if isSearching}
-				<section class="results-section">
+				<section class="results-section" data-testid="search-results">
 					{#if state.searchServers.length > 0}
 						<h2 class="section-title">Servers</h2>
 						<div class="cards-grid" class:list-mode={viewMode === 'list'}>

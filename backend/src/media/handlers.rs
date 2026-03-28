@@ -131,13 +131,14 @@ pub async fn upload_url(
 
     // Track the upload for quota/GC (best-effort â€” don't fail the request)
     if let Err(e) = sqlx::query(
-        "INSERT INTO media_uploads (user_id, object_key, media_type, size_bytes) \
-         VALUES ($1, $2, $3, $4)",
+        "INSERT INTO media_uploads (user_id, object_key, media_type, size_bytes, expires_at) \
+         VALUES ($1, $2, $3, $4, NOW() + ($5::int * INTERVAL '1 day'))",
     )
     .bind(auth.user_id)
     .bind(&target.object_key)
     .bind(&media_type)
     .bind(req.content_length as i64)
+    .bind(constants::MEDIA_UPLOAD_EXPIRY_DAYS)
     .execute(_state.db.pool())
     .await
     {

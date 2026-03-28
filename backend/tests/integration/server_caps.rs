@@ -1,55 +1,20 @@
 //! Integration tests for transactional server member-cap enforcement.
 
 use super::{
-    authorization_header_name, bearer_header, build_test_state, csrf_header_name,
-    csrf_header_value, create_test_user_with_device, test_device_bootstrap,
+    login_test_session, register_test_session, spawn_test_server_from_state,
+    spawn_test_server_with_pool, TestClient,
 };
 use axum_test::TestServer;
-use serial_test::serial;
+use sqlx::PgPool;
 use uuid::Uuid;
-use yapper_server::build_router;
 
-async fn build_server_caps_test_server() -> Option<(yapper_server::AppState, TestServer)> {
-    let state = build_test_state().await?;
-    let server = TestServer::new(build_router(state.clone())).expect("Failed to create test server");
-    Some((state, server))
+async fn build_server_caps_test_server(pool: PgPool) -> Option<(yapper_server::AppState, TestServer)> {
+    spawn_test_server_with_pool(pool).await
 }
 
-async fn login_v2_user(
-    server: &TestServer,
-    email: &str,
-    password: &str,
-) -> serde_json::Value {
-    let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
-    let resp = server
-        .post("/api/v2/auth/login")
-        .json(&serde_json::json!({
-            "email": email,
-            "password": password,
-            "device": test_device_bootstrap(&suffix),
-        }))
-        .await;
-
-    assert!(
-        resp.status_code().is_success(),
-        "v2 login failed: {} - {}",
-        resp.status_code(),
-        resp.text()
-    );
-
-    resp.json()
-}
-
-async fn create_public_server(
-    server: &TestServer,
-    access_token: &str,
-    csrf_token: &str,
-    name: &str,
-) -> Uuid {
-    let resp = server
-        .post("/api/v2/servers/")
-        .add_header(authorization_header_name(), bearer_header(access_token))
-        .add_header(csrf_header_name(), csrf_header_value(csrf_token))
+async fn create_public_server(client: &TestClient<'_>, name: &str) -> Uuid {
+    let resp = client
+        .post("/api/v2/servers")
         .json(&serde_json::json!({
             "name": name,
             "description": "integration cap test",
@@ -71,18 +36,10 @@ async fn create_public_server(
         .expect("missing server id")
 }
 
-async fn create_invite(
-    server: &TestServer,
-    access_token: &str,
-    csrf_token: &str,
-    server_id: Uuid,
-    max_uses: i32,
-) -> String {
+async fn create_invite(client: &TestClient<'_>, server_id: Uuid, max_uses: i32) -> String {
     let path = format!("/api/v2/servers/{server_id}/invite");
-    let response = server
+    let response = client
         .post(&path)
-        .add_header(authorization_header_name(), bearer_header(access_token))
-        .add_header(csrf_header_name(), csrf_header_value(csrf_token))
         .json(&serde_json::json!({
             "max_uses": max_uses,
             "expires_in_hours": 24,
@@ -111,16 +68,45 @@ async fn cleanup_user_prefix(state: &yapper_server::AppState, prefix: &str) {
         .await;
 }
 
-#[tokio::test]
-#[serial]
-async fn server_member_cap_is_atomic_under_concurrent_joins() {
-    let Some((state, server)) = build_server_caps_test_server().await else {
+#[sqlx::test(migrations = "./migrations")]
+async fn server_slug_is_unique_for_same_name(pool: PgPool) {
+    let Some((state, server)) = build_server_caps_test_server(pool).await else {
         return;
     };
 
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
-    let (_, owner_access, owner_csrf, _) = create_test_user_with_device(&server, &format!("owner_{suffix}")).await;
-    let server_id = create_public_server(&server, &owner_access, &owner_csrf, &format!("Cap Test {suffix}")).await;
+    let owner_session = register_test_session(&server, &format!("slug_owner_{suffix}")).await;
+    let owner_client = TestClient::from_session(&server, &owner_session);
+
+    let server_name = format!("Slug Collision {suffix}");
+    let server_a = create_public_server(&owner_client, &server_name).await;
+    let server_b = create_public_server(&owner_client, &server_name).await;
+
+    let slug_a: String = sqlx::query_scalar("SELECT slug FROM servers WHERE id = $1")
+        .bind(server_a)
+        .fetch_one(state.db.pool())
+        .await
+        .expect("server a slug");
+    let slug_b: String = sqlx::query_scalar("SELECT slug FROM servers WHERE id = $1")
+        .bind(server_b)
+        .fetch_one(state.db.pool())
+        .await
+        .expect("server b slug");
+
+    assert_ne!(slug_a, slug_b, "same-name servers should still get unique slugs");
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn server_member_cap_is_atomic_under_concurrent_joins(pool: PgPool) {
+    let Some((state, server)) = build_server_caps_test_server(pool).await else {
+        return;
+    };
+    let concurrent_server = spawn_test_server_from_state(state.clone());
+
+    let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
+    let owner_session = register_test_session(&server, &format!("owner_{suffix}")).await;
+    let owner_client = TestClient::from_session(&server, &owner_session);
+    let server_id = create_public_server(&owner_client, &format!("Cap Test {suffix}")).await;
 
     let marker = server_id.to_string().replace('-', "");
     let dummy_prefix = format!("cap_{marker}_");
@@ -152,25 +138,17 @@ async fn server_member_cap_is_atomic_under_concurrent_joins() {
     .await
     .expect("seed dummy memberships");
 
-    let (_, joiner_a_access, joiner_a_csrf, _) =
-        create_test_user_with_device(&server, &format!("joiner_a_{suffix}")).await;
-    let (_, joiner_b_access, joiner_b_csrf, _) =
-        create_test_user_with_device(&server, &format!("joiner_b_{suffix}")).await;
+    let joiner_a_session = register_test_session(&server, &format!("joiner_a_{suffix}")).await;
+    let joiner_b_session = register_test_session(&server, &format!("joiner_b_{suffix}")).await;
+    let joiner_a_client = TestClient::from_session(&server, &joiner_a_session);
+    let joiner_b_client = TestClient::from_session(&concurrent_server, &joiner_b_session);
     let join_path = format!("/api/v2/servers/{server_id}/join");
 
     let join_a = async {
-        server
-            .post(&join_path)
-            .add_header(authorization_header_name(), bearer_header(&joiner_a_access))
-            .add_header(csrf_header_name(), csrf_header_value(&joiner_a_csrf))
-            .await
+        joiner_a_client.post(&join_path).await
     };
     let join_b = async {
-        server
-            .post(&join_path)
-            .add_header(authorization_header_name(), bearer_header(&joiner_b_access))
-            .add_header(csrf_header_name(), csrf_header_value(&joiner_b_csrf))
-            .await
+        joiner_b_client.post(&join_path).await
     };
 
     let (resp_a, resp_b) = tokio::join!(join_a, join_b);
@@ -195,22 +173,20 @@ async fn server_member_cap_is_atomic_under_concurrent_joins() {
     cleanup_user_prefix(&state, &format!("test_joiner_b_{suffix}")).await;
 }
 
-#[tokio::test]
-#[serial]
-async fn parental_server_join_respects_cap_and_rolls_back_approval() {
-    let Some((state, server)) = build_server_caps_test_server().await else {
+#[sqlx::test(migrations = "./migrations")]
+async fn parental_server_join_respects_cap_and_rolls_back_approval(pool: PgPool) {
+    let Some((state, server)) = build_server_caps_test_server(pool).await else {
         return;
     };
 
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
-    let (_, parent_access, parent_csrf, _) = create_test_user_with_device(&server, &format!("parent_{suffix}")).await;
+    let parent_session = register_test_session(&server, &format!("parent_{suffix}")).await;
+    let parent_client = TestClient::from_session(&server, &parent_session);
 
     let child_email = format!("MiXeDChild_{suffix}@Integration.Test");
     let child_password = format!("ChildPass123!{suffix}");
-    let child_resp = server
+    let child_resp = parent_client
         .post("/api/v2/parental/children")
-        .add_header(authorization_header_name(), bearer_header(&parent_access))
-        .add_header(csrf_header_name(), csrf_header_value(&parent_csrf))
         .json(&serde_json::json!({
             "username": format!("child_{suffix}"),
             "display_name": "Parented Child",
@@ -232,17 +208,11 @@ async fn parental_server_join_respects_cap_and_rolls_back_approval() {
         .and_then(|value| value.parse().ok())
         .expect("missing child id");
 
-    let child_login = login_v2_user(&server, &child_email, &child_password).await;
-    let child_access = child_login["access_token"]
-        .as_str()
-        .expect("missing child access token")
-        .to_string();
-    let child_csrf = child_login["csrf_token"]
-        .as_str()
-        .expect("missing child csrf token")
-        .to_string();
+    let child_session =
+        login_test_session(&server, &child_email, &child_password, &format!("child_{suffix}")).await;
+    let child_client = TestClient::from_session(&server, &child_session);
 
-    let server_id = create_public_server(&server, &parent_access, &parent_csrf, &format!("Parental Cap {suffix}")).await;
+    let server_id = create_public_server(&parent_client, &format!("Parental Cap {suffix}")).await;
 
     let marker = server_id.to_string().replace('-', "");
     let dummy_prefix = format!("parent_cap_{marker}_");
@@ -275,11 +245,7 @@ async fn parental_server_join_respects_cap_and_rolls_back_approval() {
     .expect("seed dummy memberships");
 
     let join_path = format!("/api/v2/servers/{server_id}/join");
-    let join = server
-        .post(&join_path)
-        .add_header(authorization_header_name(), bearer_header(&child_access))
-        .add_header(csrf_header_name(), csrf_header_value(&child_csrf))
-        .await;
+    let join = child_client.post(&join_path).await;
     assert!(join.status_code().is_success(), "child join should create a pending request: {}", join.text());
     let join_body: serde_json::Value = join.json();
     assert_eq!(join_body["status"], "pending_approval");
@@ -294,11 +260,7 @@ async fn parental_server_join_respects_cap_and_rolls_back_approval() {
     .expect("load pending server join");
 
     let approve_path = format!("/api/v2/parental/server-joins/{pending_id}/approve");
-    let approve = server
-        .patch(&approve_path)
-        .add_header(authorization_header_name(), bearer_header(&parent_access))
-        .add_header(csrf_header_name(), csrf_header_value(&parent_csrf))
-        .await;
+    let approve = parent_client.patch(&approve_path).await;
     assert_eq!(approve.status_code().as_u16(), 403, "approval should fail at cap: {}", approve.text());
 
     let pending_status: String = sqlx::query_scalar(
@@ -327,24 +289,21 @@ async fn parental_server_join_respects_cap_and_rolls_back_approval() {
     cleanup_user_prefix(&state, &format!("mixedchild_{suffix}")).await;
 }
 
-#[tokio::test]
-#[serial]
-async fn parental_server_join_requests_are_deduplicated() {
-    let Some((state, server)) = build_server_caps_test_server().await else {
+#[sqlx::test(migrations = "./migrations")]
+async fn parental_server_join_requests_are_deduplicated(pool: PgPool) {
+    let Some((state, server)) = build_server_caps_test_server(pool).await else {
         return;
     };
 
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
-    let (_, parent_access, parent_csrf, _) =
-        create_test_user_with_device(&server, &format!("parent_dedup_{suffix}")).await;
+    let parent_session = register_test_session(&server, &format!("parent_dedup_{suffix}")).await;
+    let parent_client = TestClient::from_session(&server, &parent_session);
 
     let child_username = format!("child_dedup_{suffix}");
     let child_email = format!("child_dedup_{suffix}@integration.test");
     let child_password = format!("ChildPass123!{suffix}");
-    let child_resp = server
+    let child_resp = parent_client
         .post("/api/v2/parental/children")
-        .add_header(authorization_header_name(), bearer_header(&parent_access))
-        .add_header(csrf_header_name(), csrf_header_value(&parent_csrf))
         .json(&serde_json::json!({
             "username": &child_username,
             "display_name": "Pending Join Child",
@@ -360,25 +319,20 @@ async fn parental_server_join_requests_are_deduplicated() {
         .and_then(|value| value.parse().ok())
         .expect("missing child id");
 
-    let child_login = login_v2_user(&server, &child_email, &child_password).await;
-    let child_access = child_login["access_token"].as_str().expect("missing access token");
-    let child_csrf = child_login["csrf_token"].as_str().expect("missing csrf token");
-
-    let server_id = create_public_server(
+    let child_session = login_test_session(
         &server,
-        &parent_access,
-        &parent_csrf,
-        &format!("Pending Join Dedup {suffix}"),
+        &child_email,
+        &child_password,
+        &format!("child_dedup_login_{suffix}"),
     )
     .await;
+    let child_client = TestClient::from_session(&server, &child_session);
+
+    let server_id = create_public_server(&parent_client, &format!("Pending Join Dedup {suffix}")).await;
     let join_path = format!("/api/v2/servers/{server_id}/join");
 
     for _ in 0..2 {
-        let response = server
-            .post(&join_path)
-            .add_header(authorization_header_name(), bearer_header(child_access))
-            .add_header(csrf_header_name(), csrf_header_value(child_csrf))
-            .await;
+        let response = child_client.post(&join_path).await;
         assert!(response.status_code().is_success(), "join intercept failed: {}", response.text());
     }
 
@@ -394,23 +348,20 @@ async fn parental_server_join_requests_are_deduplicated() {
     assert_eq!(pending_count, 1);
 }
 
-#[tokio::test]
-#[serial]
-async fn invite_use_is_consumed_only_after_approved_membership() {
-    let Some((state, server)) = build_server_caps_test_server().await else {
+#[sqlx::test(migrations = "./migrations")]
+async fn invite_use_is_consumed_only_after_approved_membership(pool: PgPool) {
+    let Some((state, server)) = build_server_caps_test_server(pool).await else {
         return;
     };
 
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
-    let (_, parent_access, parent_csrf, _) =
-        create_test_user_with_device(&server, &format!("invite_parent_{suffix}")).await;
+    let parent_session = register_test_session(&server, &format!("invite_parent_{suffix}")).await;
+    let parent_client = TestClient::from_session(&server, &parent_session);
 
     let child_email = format!("invite_child_{suffix}@integration.test");
     let child_password = format!("ChildPass123!{suffix}");
-    let child_resp = server
+    let child_resp = parent_client
         .post("/api/v2/parental/children")
-        .add_header(authorization_header_name(), bearer_header(&parent_access))
-        .add_header(csrf_header_name(), csrf_header_value(&parent_csrf))
         .json(&serde_json::json!({
             "username": format!("invite_child_{suffix}"),
             "display_name": "Invite Child",
@@ -426,25 +377,20 @@ async fn invite_use_is_consumed_only_after_approved_membership() {
         .and_then(|value| value.parse().ok())
         .expect("missing child id");
 
-    let child_login = login_v2_user(&server, &child_email, &child_password).await;
-    let child_access = child_login["access_token"].as_str().expect("missing access token");
-    let child_csrf = child_login["csrf_token"].as_str().expect("missing csrf token");
-
-    let server_id = create_public_server(
+    let child_session = login_test_session(
         &server,
-        &parent_access,
-        &parent_csrf,
-        &format!("Invite Approval {suffix}"),
+        &child_email,
+        &child_password,
+        &format!("invite_child_login_{suffix}"),
     )
     .await;
-    let invite_code = create_invite(&server, &parent_access, &parent_csrf, server_id, 1).await;
+    let child_client = TestClient::from_session(&server, &child_session);
+
+    let server_id = create_public_server(&parent_client, &format!("Invite Approval {suffix}")).await;
+    let invite_code = create_invite(&parent_client, server_id, 1).await;
 
     let join_path = format!("/api/v2/servers/join/{invite_code}");
-    let join = server
-        .post(&join_path)
-        .add_header(authorization_header_name(), bearer_header(child_access))
-        .add_header(csrf_header_name(), csrf_header_value(child_csrf))
-        .await;
+    let join = child_client.post(&join_path).await;
     assert!(join.status_code().is_success(), "invite join failed: {}", join.text());
     let join_body: serde_json::Value = join.json();
     assert_eq!(join_body["status"], "pending_approval");
@@ -470,11 +416,7 @@ async fn invite_use_is_consumed_only_after_approved_membership() {
     .expect("pending join id");
 
     let approve_path = format!("/api/v2/parental/server-joins/{pending_id}/approve");
-    let approve = server
-        .patch(&approve_path)
-        .add_header(authorization_header_name(), bearer_header(&parent_access))
-        .add_header(csrf_header_name(), csrf_header_value(&parent_csrf))
-        .await;
+    let approve = parent_client.patch(&approve_path).await;
     assert_eq!(approve.status_code().as_u16(), 204, "approval failed: {}", approve.text());
 
     let uses_after: i32 = sqlx::query_scalar(

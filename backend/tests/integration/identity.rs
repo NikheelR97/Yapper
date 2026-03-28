@@ -1,18 +1,15 @@
 //! Integration tests for email normalization and linked identity storage.
 
 use super::{
-    authorization_header_name, bearer_header, build_test_state, csrf_header_name,
-    csrf_header_value, create_test_user_with_device, test_device_bootstrap,
+    authorization_header_name, bearer_header, csrf_header_name, csrf_header_value,
+    create_test_user_with_device, spawn_test_server_with_pool, test_device_bootstrap,
 };
 use axum_test::{TestResponse, TestServer};
-use serial_test::serial;
+use sqlx::PgPool;
 use uuid::Uuid;
-use yapper_server::build_router;
 
-async fn build_identity_test_server() -> Option<(yapper_server::AppState, TestServer)> {
-    let state = build_test_state().await?;
-    let server = TestServer::new(build_router(state.clone())).expect("Failed to create test server");
-    Some((state, server))
+async fn build_identity_test_server(pool: PgPool) -> Option<(yapper_server::AppState, TestServer)> {
+    spawn_test_server_with_pool(pool).await
 }
 
 async fn submit_v2_register(
@@ -58,10 +55,9 @@ async fn login_v2_user(
     resp.json()
 }
 
-#[tokio::test]
-#[serial]
-async fn mixed_case_child_email_is_normalized_and_duplicate_rejected() {
-    let Some((state, server)) = build_identity_test_server().await else {
+#[sqlx::test(migrations = "./migrations")]
+async fn mixed_case_child_email_is_normalized_and_duplicate_rejected(pool: PgPool) {
+    let Some((state, server)) = build_identity_test_server(pool).await else {
         return;
     };
 
@@ -127,10 +123,9 @@ async fn mixed_case_child_email_is_normalized_and_duplicate_rejected() {
     );
 }
 
-#[tokio::test]
-#[serial]
-async fn linked_identities_coexist_and_unlink_individually() {
-    let Some((state, server)) = build_identity_test_server().await else {
+#[sqlx::test(migrations = "./migrations")]
+async fn linked_identities_coexist_and_unlink_individually(pool: PgPool) {
+    let Some((state, server)) = build_identity_test_server(pool).await else {
         return;
     };
 

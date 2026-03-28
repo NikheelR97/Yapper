@@ -1,29 +1,30 @@
 //! Integration tests for presence privacy and read-receipt authorization.
 
-use super::{authorization_header_name, bearer_header, build_test_state, create_test_user};
+use super::{
+    create_test_user, register_test_session, spawn_test_server_with_pool, TestClient,
+};
 use axum_test::TestServer;
-use serial_test::serial;
+use sqlx::PgPool;
 use uuid::Uuid;
-use yapper_server::{build_router, hub::load_read_receipt_member_ids};
+use yapper_server::hub::load_read_receipt_member_ids;
 
-async fn build_privacy_test_server() -> Option<(yapper_server::AppState, TestServer)> {
-    let state = build_test_state().await?;
-    let server =
-        TestServer::new(build_router(state.clone())).expect("Failed to create test server");
-    Some((state, server))
+async fn build_privacy_test_server(pool: PgPool) -> Option<(yapper_server::AppState, TestServer)> {
+    spawn_test_server_with_pool(pool).await
 }
 
-#[tokio::test]
-#[serial]
-async fn presence_hides_last_seen_for_peers_and_keeps_self_view() {
-    let Some((state, server)) = build_privacy_test_server().await else {
+#[sqlx::test(migrations = "./migrations")]
+async fn presence_hides_last_seen_for_peers_and_keeps_self_view(pool: PgPool) {
+    let Some((state, server)) = build_privacy_test_server(pool).await else {
         return;
     };
 
     let suffix_a = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
     let suffix_b = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
-    let (_viewer_id, viewer_at, _) = create_test_user(&server, &suffix_a).await;
-    let (target_id, target_at, target_csrf) = create_test_user(&server, &suffix_b).await;
+    let viewer_session = register_test_session(&server, &suffix_a).await;
+    let target_session = register_test_session(&server, &suffix_b).await;
+    let viewer_client = TestClient::from_session(&server, &viewer_session);
+    let target_client = TestClient::from_session(&server, &target_session);
+    let target_id = target_session.user_id;
 
     sqlx::query(
         "UPDATE users SET last_seen_at = TIMESTAMPTZ '2026-03-21 12:00:00+00' WHERE id = $1",
@@ -33,13 +34,10 @@ async fn presence_hides_last_seen_for_peers_and_keeps_self_view() {
     .await
     .expect("set last_seen_at");
 
-    let privacy_update = server
+    // Regression note: this used to 500 when the first privacy write inserted
+    // NULL into NOT NULL columns in `user_privacy_settings`.
+    let privacy_update = target_client
         .patch("/api/v2/users/me/privacy")
-        .add_header(authorization_header_name(), bearer_header(&target_at))
-        .add_header(
-            super::csrf_header_name(),
-            super::csrf_header_value(&target_csrf),
-        )
         .json(&serde_json::json!({
             "show_last_seen": false
         }))
@@ -52,10 +50,7 @@ async fn presence_hides_last_seen_for_peers_and_keeps_self_view() {
     );
 
     let peer_path = format!("/api/v2/users/{target_id}/presence");
-    let peer_resp = server
-        .get(&peer_path)
-        .add_header(authorization_header_name(), bearer_header(&viewer_at))
-        .await;
+    let peer_resp = viewer_client.get(&peer_path).await;
     assert!(
         peer_resp.status_code().is_success(),
         "peer presence failed: {}",
@@ -68,10 +63,7 @@ async fn presence_hides_last_seen_for_peers_and_keeps_self_view() {
     );
 
     let self_path = format!("/api/v2/users/{target_id}/presence");
-    let self_resp = server
-        .get(&self_path)
-        .add_header(authorization_header_name(), bearer_header(&target_at))
-        .await;
+    let self_resp = target_client.get(&self_path).await;
     assert!(
         self_resp.status_code().is_success(),
         "self presence failed: {}",
@@ -84,10 +76,9 @@ async fn presence_hides_last_seen_for_peers_and_keeps_self_view() {
     );
 }
 
-#[tokio::test]
-#[serial]
-async fn read_receipt_helper_requires_the_message_real_channel() {
-    let Some((state, server)) = build_privacy_test_server().await else {
+#[sqlx::test(migrations = "./migrations")]
+async fn read_receipt_helper_requires_the_message_real_channel(pool: PgPool) {
+    let Some((state, server)) = build_privacy_test_server(pool).await else {
         return;
     };
 

@@ -1,5 +1,5 @@
-import { test, expect, type Page } from '@playwright/test';
-import { PRIMARY_INSTALLATION_ID, seedTrustedPrimaryDevice, setInstallationId } from './auth-helper.js';
+import { test as base, expect } from '@playwright/test';
+import { test as authedTest } from './fixtures/auth.fixture';
 
 /**
  * Explore page E2E tests.
@@ -7,20 +7,8 @@ import { PRIMARY_INSTALLATION_ID, seedTrustedPrimaryDevice, setInstallationId } 
  * Covers: search, community listing, and join affordances.
  */
 
-const TEST_EMAIL = process.env.E2E_EMAIL ?? '';
-const TEST_PASSWORD = process.env.E2E_PASSWORD ?? '';
-
-async function loginAs(page: Page) {
-	await setInstallationId(page, PRIMARY_INSTALLATION_ID);
-	await page.goto('/login');
-	await page.fill('#email', TEST_EMAIL);
-	await page.fill('#password', TEST_PASSWORD);
-	await page.getByRole('button', { name: /Sign In/i }).click();
-	await page.waitForURL(/\/explore/, { timeout: 20_000 });
-}
-
-test.describe('Explore - unauthenticated', () => {
-	test('redirects to /login', async ({ page }) => {
+base.describe('Explore - unauthenticated', () => {
+	base('redirects to /login', async ({ page }) => {
 		const apiURL = process.env.VITE_API_URL ?? 'https://api.yapperhq.com';
 		await page.route(`${apiURL}/api/v2/auth/refresh`, (route) =>
 			route.fulfill({ status: 401, contentType: 'application/json', body: '{}' }),
@@ -31,49 +19,55 @@ test.describe('Explore - unauthenticated', () => {
 	});
 });
 
-test.describe('Explore - authenticated', () => {
-	test.skip(!TEST_EMAIL || !TEST_PASSWORD, 'Set E2E_EMAIL / E2E_PASSWORD to run these tests');
-
-	test.beforeAll(() => {
-		seedTrustedPrimaryDevice();
-	});
-
-	test('renders core explore controls and handles join attempts', async ({ page }) => {
-		test.slow(); // real login + Signal key bootstrap can push past the 30 s default
-		await loginAs(page);
-		const searchInput = page.getByRole('searchbox', { name: 'Search' });
+authedTest.describe('Explore - authenticated', () => {
+	authedTest('renders core explore controls and handles join attempts', async ({ userPage }) => {
+		await userPage.goto('/explore');
+		const searchInput = userPage.getByRole('searchbox', { name: 'Search' });
 		await expect(searchInput).toBeVisible({ timeout: 30_000 });
-		await expect(page.getByText(/Communities/i)).toBeVisible({ timeout: 10_000 });
+		await expect(userPage.getByText(/Communities/i)).toBeVisible({ timeout: 10_000 });
 
 		await searchInput.fill('test');
-		await page.waitForTimeout(500);
 		await expect(searchInput).toHaveValue('test');
 
-		const toggleBtn = page
+		const toggleButton = userPage
 			.locator('button[title*="grid"], button[aria-label*="grid"], .view-toggle button')
 			.first();
-		if (await toggleBtn.isVisible().catch(() => false)) {
-			await toggleBtn.click();
+		if (await toggleButton.isVisible().catch(() => false)) {
+			await toggleButton.click();
 		}
 
-		await page.waitForSelector('.community-card, .empty-msg', { timeout: 20_000 }).catch(() => {});
-		const joinBtn = page.locator('.join-btn').first();
-		const visible = await joinBtn.isVisible({ timeout: 5_000 }).catch(() => false);
+		await userPage.waitForSelector('.community-card, .empty-msg', { timeout: 20_000 }).catch(() => {});
+		const joinButton = userPage.getByRole('button', { name: /join/i }).first();
+		const visible = await joinButton.isVisible({ timeout: 5_000 }).catch(() => false);
 
 		if (!visible) {
-			await expect(page.locator('body')).toBeVisible();
+			await expect(userPage.locator('body')).toBeVisible();
 			return;
 		}
 
-		await joinBtn.click();
-		await page.waitForTimeout(2_000);
-		const url = page.url();
-		const hasNavigated = url.includes('/servers/') || url.includes('/channels/');
-		const hasToast = await page
-			.locator('.toast-error, .toast-success, .toast-info')
-			.isVisible()
-			.catch(() => false);
-
-		expect(hasNavigated || hasToast || (await joinBtn.isVisible().catch(() => false))).toBeTruthy();
+		await joinButton.click();
+		await expect
+			.poll(
+				async () => {
+					const url = userPage.url();
+					if (url.includes('/servers/') || url.includes('/channels/')) {
+						return 'navigated';
+					}
+					if (
+						await userPage
+							.getByText(/joined|success|error|failed/i)
+							.first()
+							.isVisible()
+							.catch(() => false)
+					) {
+						return 'toast';
+					}
+					return (await joinButton.isVisible().catch(() => false))
+						? 'button-still-visible'
+						: 'pending';
+				},
+				{ timeout: 10_000 },
+			)
+			.not.toBe('pending');
 	});
 });

@@ -7,15 +7,15 @@ pub struct Database {
 
 impl Database {
     pub async fn connect(url: &str) -> anyhow::Result<Self> {
-        let pool = PgPoolOptions::new()
-            .max_connections(20)
-            .min_connections(1)
-            .acquire_timeout(std::time::Duration::from_secs(15))
-            .test_before_acquire(true)
-            .connect(url)
-            .await?;
+        Self::connect_inner(url, None).await
+    }
 
-        Ok(Self { pool })
+    pub async fn connect_with_schema(url: &str, schema: &str) -> anyhow::Result<Self> {
+        Self::connect_inner(url, Some(schema.to_string())).await
+    }
+
+    pub fn from_pool(pool: PgPool) -> Self {
+        Self { pool }
     }
 
     /// Spawn a background task that pings the database every 4 minutes to prevent
@@ -48,6 +48,31 @@ impl Database {
 
     pub fn pool(&self) -> &PgPool {
         &self.pool
+    }
+
+    async fn connect_inner(url: &str, schema: Option<String>) -> anyhow::Result<Self> {
+        let pool = PgPoolOptions::new()
+            .max_connections(20)
+            .min_connections(1)
+            .acquire_timeout(std::time::Duration::from_secs(15))
+            .test_before_acquire(true)
+            .after_connect(move |conn, _meta| {
+                let schema = schema.clone();
+                Box::pin(async move {
+                    if let Some(schema) = schema {
+                        let search_path = format!("{schema},public");
+                        sqlx::query("SELECT set_config('search_path', $1, false)")
+                            .bind(search_path)
+                            .execute(conn)
+                            .await?;
+                    }
+                    Ok(())
+                })
+            })
+            .connect(url)
+            .await?;
+
+        Ok(Self { pool })
     }
 }
 

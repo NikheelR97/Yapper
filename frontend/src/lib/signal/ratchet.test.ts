@@ -257,4 +257,56 @@ describe("double ratchet", () => {
     });
     expect(decoder.decode(decrypted.plaintext)).toBe("legacy");
   });
+
+  it("advances the send chain on each encrypt", async () => {
+    const encoder = new TextEncoder();
+    const established = await establishSessions();
+
+    const first = await encryptRatchet(
+      established.alice,
+      encoder.encode("m0"),
+    );
+    const second = await encryptRatchet(
+      first.updatedSession,
+      encoder.encode("m1"),
+    );
+
+    expect(first.updatedSession.sendChainKey).not.toEqual(
+      second.updatedSession.sendChainKey,
+    );
+    expect(first.updatedSession.sendMsgNum).toBe(1);
+    expect(second.updatedSession.sendMsgNum).toBe(2);
+  });
+
+  it("bounds skipped-message storage at the configured maximum", async () => {
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
+    const established = await establishSessions();
+    const fillerPub = crypto.getRandomValues(new Uint8Array(32));
+
+    established.bob.skippedMessageKeys = Array.from(
+      { length: 512 },
+      (_, index) => ({
+        ratchetPub: fillerPub.slice(),
+        msgNum: index,
+        messageKey: crypto.getRandomValues(new Uint8Array(32)),
+      }),
+    );
+
+    const first = await encryptRatchet(established.alice, encoder.encode("m0"));
+    const second = await encryptRatchet(
+      first.updatedSession,
+      encoder.encode("m1"),
+    );
+
+    const decrypted = await decryptRatchet(established.bob, second.ciphertext, {
+      msgNum: second.msgNum,
+      ratchetPub: second.ratchetPub,
+      previousChainLen: second.previousChainLen,
+      cryptoVersion: second.cryptoVersion,
+    });
+
+    expect(decoder.decode(decrypted.plaintext)).toBe("m1");
+    expect(decrypted.updatedSession.skippedMessageKeys).toHaveLength(512);
+  });
 });

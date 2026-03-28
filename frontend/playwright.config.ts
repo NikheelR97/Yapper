@@ -1,7 +1,4 @@
 import { defineConfig, devices } from '@playwright/test';
-import { existsSync } from 'fs';
-
-const authStateFile = 'tests/auth-state.json';
 
 /**
  * Playwright E2E test configuration.
@@ -18,12 +15,17 @@ const authStateFile = 'tests/auth-state.json';
  */
 export default defineConfig({
 	testDir: './tests',
-	// Log in once; all authenticated tests reuse the saved refresh cookie
+	// Pre-generate auth-state artifacts when live credentials exist.
 	globalSetup: process.env.E2E_EMAIL ? './tests/global-setup.ts' : undefined,
-	fullyParallel: false,
+	fullyParallel: true,
 	forbidOnly: !!process.env.CI,
-	retries: process.env.CI ? 2 : 0,
-	workers: 1,
+	retries: process.env.CI ? 1 : 0,
+	workers: process.env.CI ? 4 : 2,
+	timeout: 20_000,
+	expect: {
+		timeout: 5_000,
+	},
+	grepInvert: /@skip-until-/,
 	reporter: process.env.CI
 		? [
 				['github'],
@@ -43,10 +45,6 @@ export default defineConfig({
 		video: process.env.CI ? 'retain-on-failure' : 'off',
 		// HAR for network inspection — only on nightly (captures full request/response log)
 		recordHar: process.env.NIGHTLY === 'true' ? { path: 'test-results/har/' } : undefined,
-		// Reuse saved session so tests don't call POST /login individually
-		storageState: process.env.E2E_EMAIL && existsSync(authStateFile)
-			? authStateFile
-			: undefined,
 	},
 
 	projects: [

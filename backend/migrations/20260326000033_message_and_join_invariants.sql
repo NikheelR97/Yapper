@@ -18,7 +18,10 @@ BEGIN
     IF EXISTS (
         SELECT 1
         FROM (
-            SELECT MIN(user_id) AS user_low, MAX(user_id) AS user_high, COUNT(*) AS row_count
+            SELECT
+                (ARRAY_AGG(user_id ORDER BY user_id))[1] AS user_low,
+                (ARRAY_AGG(user_id ORDER BY user_id))[2] AS user_high,
+                COUNT(*) AS row_count
             FROM dm_participants
             GROUP BY conversation_id
         ) conversation_pairs
@@ -41,7 +44,10 @@ CREATE TABLE IF NOT EXISTS dm_conversation_pairs (
 );
 
 INSERT INTO dm_conversation_pairs (conversation_id, user_low, user_high)
-SELECT conversation_id, MIN(user_id) AS user_low, MAX(user_id) AS user_high
+SELECT
+    conversation_id,
+    (ARRAY_AGG(user_id ORDER BY user_id))[1] AS user_low,
+    (ARRAY_AGG(user_id ORDER BY user_id))[2] AS user_high
 FROM dm_participants
 GROUP BY conversation_id
 ON CONFLICT (conversation_id) DO NOTHING;

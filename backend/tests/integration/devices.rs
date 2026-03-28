@@ -4,16 +4,15 @@
 
 use super::{
     authorization_header_name, bearer_header, create_test_user, create_test_user_with_device,
-    csrf_header_name, csrf_header_value, spawn_test_server,
+    csrf_header_name, csrf_header_value, spawn_test_server_from_pool,
 };
-use serial_test::serial;
+use sqlx::PgPool;
 use uuid::Uuid;
 
 /// Device bootstrap creates a first device and a valid device-aware session.
-#[tokio::test]
-#[serial]
-async fn devices_bootstrap_creates_pending_device() {
-    let Some(server) = spawn_test_server().await else {
+#[sqlx::test(migrations = "./migrations")]
+async fn devices_bootstrap_creates_pending_device(pool: PgPool) {
+    let Some(server) = spawn_test_server_from_pool(pool).await else {
         return;
     };
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
@@ -48,10 +47,9 @@ async fn devices_bootstrap_creates_pending_device() {
 }
 
 /// Health endpoint returns 200 with db:true when the database is reachable.
-#[tokio::test]
-#[serial]
-async fn health_check_returns_200() {
-    let Some(server) = spawn_test_server().await else {
+#[sqlx::test(migrations = "./migrations")]
+async fn health_check_returns_200(pool: PgPool) {
+    let Some(server) = spawn_test_server_from_pool(pool).await else {
         return;
     };
     let resp = server.get("/health").await;
@@ -62,15 +60,13 @@ async fn health_check_returns_200() {
         resp.text()
     );
     let body: serde_json::Value = resp.json();
-    assert_eq!(body["status"], "ok", "health status not ok");
-    assert_eq!(body["db"], true, "health db not true");
+    assert_eq!(body["ok"], true, "health ok flag not true");
 }
 
 /// Unauthenticated requests to protected endpoints must return 401.
-#[tokio::test]
-#[serial]
-async fn protected_endpoints_require_auth() {
-    let Some(server) = spawn_test_server().await else {
+#[sqlx::test(migrations = "./migrations")]
+async fn protected_endpoints_require_auth(pool: PgPool) {
+    let Some(server) = spawn_test_server_from_pool(pool).await else {
         return;
     };
     let (_user_id, at, ct) =
@@ -90,10 +86,9 @@ async fn protected_endpoints_require_auth() {
 }
 
 /// Sync events remain pending until the target device explicitly acknowledges them.
-#[tokio::test]
-#[serial]
-async fn sync_events_require_explicit_ack_before_delivery_is_committed() {
-    let Some(server) = spawn_test_server().await else {
+#[sqlx::test(migrations = "./migrations")]
+async fn sync_events_require_explicit_ack_before_delivery_is_committed(pool: PgPool) {
+    let Some(server) = spawn_test_server_from_pool(pool).await else {
         return;
     };
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();

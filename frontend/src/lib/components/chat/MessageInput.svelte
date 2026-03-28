@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { createEventDispatcher } from "svelte";
+	import { MAX_MESSAGE_CHARS } from "$lib/constants.js";
 	import {
 		sendTypingStart,
 	} from "$stores/ws.js";
@@ -206,7 +207,7 @@
 		{placeholder}
 		{disabled}
 		rows={1}
-		maxlength={4000}
+		maxlength={MAX_MESSAGE_CHARS}
 		aria-label="Message"
 		class="input"
 	></textarea>

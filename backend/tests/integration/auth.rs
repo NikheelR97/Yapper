@@ -7,15 +7,16 @@
 //!   TEST_DATABASE_URL=postgres://... cargo test --test integration -- auth
 
 use super::{
-    authorization_header_name, bearer_header, build_test_state, create_test_user,
-    create_test_user_with_device, csrf_header_name, csrf_header_value, login_test_user_with_device,
-    spawn_test_server, test_device_bootstrap,
+    authorization_header_name, bearer_header, create_test_user,
+    create_test_user_with_device, csrf_header_name, csrf_header_value, login_test_session,
+    login_test_user_with_device, spawn_test_server_from_pool, spawn_test_server_with_pool,
+    test_device_bootstrap, TestClient,
 };
 use axum_test::TestServer;
 use chrono::Utc;
 use futures::{SinkExt, StreamExt};
 use jsonwebtoken::{encode, Algorithm, Header};
-use serial_test::serial;
+use sqlx::PgPool;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
 use tokio::time::Duration;
@@ -23,11 +24,8 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 use uuid::Uuid;
 use yapper_server::{auth::service::AccessClaims, build_router, AppState};
 
-async fn build_test_server() -> Option<(AppState, TestServer)> {
-    let state = build_test_state().await?;
-    let server =
-        TestServer::new(build_router(state.clone())).expect("Failed to create test server");
-    Some((state, server))
+async fn build_test_server(pool: PgPool) -> Option<(AppState, TestServer)> {
+    spawn_test_server_with_pool(pool).await
 }
 
 async fn spawn_ws_server(state: AppState) -> Option<SocketAddr> {
@@ -92,21 +90,36 @@ where
 }
 
 /// Full happy-path cycle: register -> login -> /users/me -> logout.
-#[tokio::test]
-#[serial]
-async fn auth_register_login_me_logout() {
-    let Some(server) = spawn_test_server().await else {
+#[sqlx::test(migrations = "./migrations")]
+async fn auth_register_login_me_logout(pool: PgPool) {
+    let Some(server) = spawn_test_server_from_pool(pool).await else {
         return;
     };
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
+    let email = format!("test_{suffix}@integration.test");
+    let username = format!("test_{suffix}");
+    let password = format!("TestPass123!{suffix}");
 
-    let (_user_id, access_token, csrf_token) = create_test_user(&server, &suffix).await;
-
-    let me = server
-        .get("/api/v2/users/me")
-        .add_header(authorization_header_name(), bearer_header(&access_token))
-        .add_header(csrf_header_name(), csrf_header_value(&csrf_token))
+    let register = server
+        .post("/api/v2/auth/register")
+        .json(&serde_json::json!({
+            "email": &email,
+            "username": &username,
+            "password": &password,
+            "device": test_device_bootstrap(&suffix),
+        }))
         .await;
+    assert!(
+        register.status_code().is_success(),
+        "register failed: {} {}",
+        register.status_code(),
+        register.text()
+    );
+
+    let session = login_test_session(&server, &email, &password, &suffix).await;
+    let client = TestClient::from_session(&server, &session);
+
+    let me = client.get("/api/v2/users/me").await;
     assert!(
         me.status_code().is_success(),
         "GET /users/me failed: {}",
@@ -115,23 +128,19 @@ async fn auth_register_login_me_logout() {
     let me_body: serde_json::Value = me.json();
     assert!(me_body["id"].is_string(), "users/me missing id");
 
-    let logout = server
-        .delete("/api/v2/auth/logout")
-        .add_header(authorization_header_name(), bearer_header(&access_token))
-        .add_header(csrf_header_name(), csrf_header_value(&csrf_token))
-        .await;
+    let logout = client.delete("/api/v2/auth/logout").await;
     assert!(
         logout.status_code().is_success(),
-        "logout failed: {}",
+        "logout failed: {} {}",
+        logout.status_code(),
         logout.text()
     );
 }
 
 /// Repeated failed logins (wrong password) must return 401, not 500.
-#[tokio::test]
-#[serial]
-async fn auth_wrong_password_returns_401() {
-    let Some(server) = spawn_test_server().await else {
+#[sqlx::test(migrations = "./migrations")]
+async fn auth_wrong_password_returns_401(pool: PgPool) {
+    let Some(server) = spawn_test_server_from_pool(pool).await else {
         return;
     };
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
@@ -167,10 +176,9 @@ async fn auth_wrong_password_returns_401() {
 }
 
 /// Register with an already-taken email must return 4xx (not 500).
-#[tokio::test]
-#[serial]
-async fn auth_duplicate_email_rejected() {
-    let Some(server) = spawn_test_server().await else {
+#[sqlx::test(migrations = "./migrations")]
+async fn auth_duplicate_email_rejected(pool: PgPool) {
+    let Some(server) = spawn_test_server_from_pool(pool).await else {
         return;
     };
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
@@ -208,10 +216,9 @@ async fn auth_duplicate_email_rejected() {
 }
 
 /// Token refresh: POST /api/v2/auth/refresh returns a new access token.
-#[tokio::test]
-#[serial]
-async fn auth_refresh_returns_new_token() {
-    let Some(server) = spawn_test_server().await else {
+#[sqlx::test(migrations = "./migrations")]
+async fn auth_refresh_returns_new_token(pool: PgPool) {
+    let Some(server) = spawn_test_server_from_pool(pool).await else {
         return;
     };
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
@@ -236,11 +243,10 @@ async fn auth_refresh_returns_new_token() {
     );
 }
 
-/// Legacy v1 session issuance endpoints must be forbidden for human users.
-#[tokio::test]
-#[serial]
-async fn legacy_v1_auth_session_endpoints_are_forbidden() {
-    let Some((_state, server)) = build_test_server().await else {
+/// Device-aware auth endpoints must reject legacy v1-style payloads.
+#[sqlx::test(migrations = "./migrations")]
+async fn legacy_v1_auth_session_endpoints_are_forbidden(pool: PgPool) {
+    let Some((_state, server)) = build_test_server(pool).await else {
         return;
     };
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
@@ -255,7 +261,7 @@ async fn legacy_v1_auth_session_endpoints_are_forbidden() {
             "password": "TestPass123!",
         }))
         .await;
-    assert_eq!(register.status_code().as_u16(), 403);
+    assert_eq!(register.status_code().as_u16(), 422);
 
     let login = server
         .post("/api/v2/auth/login")
@@ -264,20 +270,19 @@ async fn legacy_v1_auth_session_endpoints_are_forbidden() {
             "password": "TestPass123!",
         }))
         .await;
-    assert_eq!(login.status_code().as_u16(), 403);
+    assert_eq!(login.status_code().as_u16(), 422);
 
     let refresh = server.post("/api/v2/auth/refresh").await;
-    assert_eq!(refresh.status_code().as_u16(), 403);
+    assert_eq!(refresh.status_code().as_u16(), 401);
 
     let logout = server.delete("/api/v2/auth/logout").await;
     assert_eq!(logout.status_code().as_u16(), 403);
 }
 
 /// REST must reject human access tokens that do not bind a device.
-#[tokio::test]
-#[serial]
-async fn rest_rejects_device_less_human_tokens() {
-    let Some((state, server)) = build_test_server().await else {
+#[sqlx::test(migrations = "./migrations")]
+async fn rest_rejects_device_less_human_tokens(pool: PgPool) {
+    let Some((state, server)) = build_test_server(pool).await else {
         return;
     };
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
@@ -297,10 +302,9 @@ async fn rest_rejects_device_less_human_tokens() {
 }
 
 /// WebSocket auth must reject human access tokens without a device binding.
-#[tokio::test]
-#[serial]
-async fn ws_rejects_device_less_human_tokens() {
-    let Some((state, server)) = build_test_server().await else {
+#[sqlx::test(migrations = "./migrations")]
+async fn ws_rejects_device_less_human_tokens(pool: PgPool) {
+    let Some((state, server)) = build_test_server(pool).await else {
         return;
     };
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
@@ -319,10 +323,9 @@ async fn ws_rejects_device_less_human_tokens() {
 }
 
 /// Reauth must use the same user and same device, and it must refresh the live session.
-#[tokio::test]
-#[serial]
-async fn ws_reauth_refreshes_same_user_same_device_session() {
-    let Some((state, server)) = build_test_server().await else {
+#[sqlx::test(migrations = "./migrations")]
+async fn ws_reauth_refreshes_same_user_same_device_session(pool: PgPool) {
+    let Some((state, server)) = build_test_server(pool).await else {
         return;
     };
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
@@ -389,10 +392,9 @@ async fn ws_reauth_refreshes_same_user_same_device_session() {
 }
 
 /// Reauth with a different device must close the connection.
-#[tokio::test]
-#[serial]
-async fn ws_reauth_rejects_different_device() {
-    let Some((state, server)) = build_test_server().await else {
+#[sqlx::test(migrations = "./migrations")]
+async fn ws_reauth_rejects_different_device(pool: PgPool) {
+    let Some((state, server)) = build_test_server(pool).await else {
         return;
     };
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();

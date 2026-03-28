@@ -114,7 +114,7 @@ jobs:
         working-directory: backend
 
       - name: Run integration tests
-        run: cargo test --test integration -- --test-threads=1
+        run: cargo test --test integration
         working-directory: backend
         env:
           TEST_DATABASE_URL: postgres://yapper:yapper_dev@localhost:5432/yapper

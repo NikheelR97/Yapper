@@ -1,20 +1,16 @@
 //! Integration tests for account deletion and deleted-account retention cleanup.
 
 use super::{
-    authorization_header_name, build_test_state, create_test_user, csrf_header_name,
-    csrf_header_value,
+    authorization_header_name, create_test_user, csrf_header_name, csrf_header_value,
+    spawn_test_server_with_pool,
 };
 use axum_test::TestServer;
-use serial_test::serial;
-use sqlx::Row;
+use sqlx::{PgPool, Row};
 use uuid::Uuid;
-use yapper_server::{build_router, retention};
+use yapper_server::retention;
 
-async fn build_account_test_server() -> Option<(yapper_server::AppState, TestServer)> {
-    let state = build_test_state().await?;
-    let server =
-        TestServer::new(build_router(state.clone())).expect("Failed to create test server");
-    Some((state, server))
+async fn build_account_test_server(pool: PgPool) -> Option<(yapper_server::AppState, TestServer)> {
+    spawn_test_server_with_pool(pool).await
 }
 
 async fn delete_account(server: &TestServer, access_token: &str, csrf_token: &str) {
@@ -35,10 +31,9 @@ async fn delete_account(server: &TestServer, access_token: &str, csrf_token: &st
     );
 }
 
-#[tokio::test]
-#[serial]
-async fn account_delete_sets_retention_hold_and_cleanup_hard_deletes_eligible_user() {
-    let Some((state, server)) = build_account_test_server().await else {
+#[sqlx::test(migrations = "./migrations")]
+async fn account_delete_sets_retention_hold_and_cleanup_hard_deletes_eligible_user(pool: PgPool) {
+    let Some((state, server)) = build_account_test_server(pool).await else {
         return;
     };
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
@@ -162,10 +157,9 @@ async fn account_delete_sets_retention_hold_and_cleanup_hard_deletes_eligible_us
     );
 }
 
-#[tokio::test]
-#[serial]
-async fn retention_cleanup_preserves_anonymized_shell_when_history_requires_it() {
-    let Some((state, server)) = build_account_test_server().await else {
+#[sqlx::test(migrations = "./migrations")]
+async fn retention_cleanup_preserves_anonymized_shell_when_history_requires_it(pool: PgPool) {
+    let Some((state, server)) = build_account_test_server(pool).await else {
         return;
     };
     let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();

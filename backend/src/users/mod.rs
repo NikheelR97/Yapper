@@ -1379,7 +1379,14 @@ async fn update_privacy(
     sqlx::query(
         "INSERT INTO user_privacy_settings
             (user_id, dm_permission, friend_request_permission, search_visible, show_last_seen, updated_at)
-         VALUES ($1, $2, $3, $4, $5, NOW())
+         VALUES (
+            $1,
+            COALESCE($2, 'everyone'),
+            COALESCE($3, 'everyone'),
+            COALESCE($4, TRUE),
+            COALESCE($5, TRUE),
+            NOW()
+         )
          ON CONFLICT (user_id) DO UPDATE SET
             dm_permission             = COALESCE($2, user_privacy_settings.dm_permission),
             friend_request_permission = COALESCE($3, user_privacy_settings.friend_request_permission),

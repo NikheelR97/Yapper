@@ -1571,6 +1571,7 @@ async fn handle_send_dm(
 ) {
     debug_assert!(sender_id != Uuid::nil());
 
+    // WebSocket DM sends are capped on ciphertext wire bytes; plaintext length is a client concern.
     if ciphertext.len() > constants::MAX_MESSAGE_LENGTH {
         send_ws_error(tx, 4010, "Message too large");
         return;
@@ -1777,6 +1778,7 @@ async fn handle_send_channel(
 ) {
     debug_assert!(sender_id != Uuid::nil());
 
+    // WebSocket channel sends are validated on ciphertext size after client-side encryption.
     if ciphertext.len() > constants::MAX_MESSAGE_LENGTH {
         send_ws_error(tx, 4010, "Message too large");
         return;
@@ -2219,20 +2221,11 @@ mod tests {
         DiscordImportStateStore, IpRateLimiter,
     };
     use governor::{Quota, RateLimiter};
-    use serial_test::serial;
+    use sqlx::PgPool;
     use std::{collections::HashSet, num::NonZeroU32, sync::Arc};
     use tokio::sync::{mpsc, watch};
 
-    async fn build_test_state() -> Option<AppState> {
-        let db_url =
-            match std::env::var("TEST_DATABASE_URL").or_else(|_| std::env::var("DATABASE_URL")) {
-                Ok(value) => value,
-                Err(_) => return None,
-            };
-
-        let db = Database::connect(&db_url).await.ok()?;
-        db.run_migrations().await.ok()?;
-
+    fn build_test_state_from_pool(pool: PgPool) -> Option<AppState> {
         let jwt_keys = match JwtKeys::from_env() {
             Ok(keys) => Arc::new(keys),
             Err(_) => return None,
@@ -2243,7 +2236,7 @@ mod tests {
         let rate_limiter: IpRateLimiter = Arc::new(RateLimiter::keyed(quota));
 
         Some(AppState {
-            db,
+            db: Database::from_pool(pool),
             hub: Arc::new(Hub::new()),
             rate_limiter,
             trusted_proxy_ips: Arc::new(HashSet::new()),
@@ -2255,10 +2248,9 @@ mod tests {
         })
     }
 
-    #[tokio::test]
-    #[serial]
-    async fn ws_auth_rejects_pending_trust_device() {
-        let Some(state) = build_test_state().await else {
+    #[sqlx::test(migrations = "./migrations")]
+    async fn ws_auth_rejects_pending_trust_device(pool: PgPool) {
+        let Some(state) = build_test_state_from_pool(pool) else {
             return;
         };
 
@@ -2443,10 +2435,9 @@ mod tests {
 
     // ─── Rate limiter tests ──────────────────────────────────────────────────
 
-    #[tokio::test]
-    #[serial]
-    async fn test_mark_dm_delivered_advances_state_after_success() {
-        let Some(state) = build_test_state().await else {
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_mark_dm_delivered_advances_state_after_success(pool: PgPool) {
+        let Some(state) = build_test_state_from_pool(pool) else {
             return;
         };
 
@@ -2533,6 +2524,14 @@ mod tests {
         .await
         .unwrap();
 
+        let undelivered_before: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM messages WHERE conversation_id = $1 AND delivered = FALSE")
+                .bind(conversation_id)
+                .fetch_one(state.db.pool())
+                .await
+                .unwrap();
+        assert_eq!(undelivered_before, 1, "message should start as undelivered");
+
         mark_dm_delivered(&[(message_id, recipient_device)], &state)
             .await
             .unwrap();
@@ -2558,12 +2557,19 @@ mod tests {
             envelope_delivered_at.is_some(),
             "envelope should be marked delivered"
         );
+
+        let undelivered_after: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM messages WHERE conversation_id = $1 AND delivered = FALSE")
+                .bind(conversation_id)
+                .fetch_one(state.db.pool())
+                .await
+                .unwrap();
+        assert_eq!(undelivered_after, 0, "mark_dm_delivered should transition the state");
     }
 
-    #[tokio::test]
-    #[serial]
-    async fn test_pending_sync_events_keep_state_on_queue_full() {
-        let Some(state) = build_test_state().await else {
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_pending_sync_events_keep_state_on_queue_full(pool: PgPool) {
+        let Some(state) = build_test_state_from_pool(pool) else {
             return;
         };
 
@@ -2634,10 +2640,9 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    #[serial]
-    async fn test_pending_sync_events_require_ack_after_successful_ws_handoff() {
-        let Some(state) = build_test_state().await else {
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_pending_sync_events_require_ack_after_successful_ws_handoff(pool: PgPool) {
+        let Some(state) = build_test_state_from_pool(pool) else {
             return;
         };
 
@@ -2714,10 +2719,9 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    #[serial]
-    async fn test_pending_key_dists_keep_state_on_queue_full() {
-        let Some(state) = build_test_state().await else {
+    #[sqlx::test(migrations = "./migrations")]
+    async fn test_pending_key_dists_keep_state_on_queue_full(pool: PgPool) {
+        let Some(state) = build_test_state_from_pool(pool) else {
             return;
         };
 
@@ -2756,6 +2760,16 @@ mod tests {
         .bind(format!("skd_recipient_{channel_id}"))
         .bind("SKD Recipient")
         .bind("hash")
+        .execute(state.db.pool())
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO devices (id, user_id, signal_device_id, platform, label, trust_state, last_seen_at, approved_at) \
+             VALUES ($1, $2, 3001, 'web', 'recipient-device', 'trusted', NOW(), NOW())",
+        )
+        .bind(recipient_device)
+        .bind(recipient_user)
         .execute(state.db.pool())
         .await
         .unwrap();

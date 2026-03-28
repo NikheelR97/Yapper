@@ -1,12 +1,11 @@
 //! Integration tests for removal of the legacy `/api/v1` surface.
 
-use super::spawn_test_server;
-use serial_test::serial;
+use super::spawn_test_server_from_pool;
+use sqlx::PgPool;
 
-#[tokio::test]
-#[serial]
-async fn legacy_v1_endpoints_are_not_mounted() {
-    let Some(server) = spawn_test_server().await else {
+#[sqlx::test(migrations = "./migrations")]
+async fn legacy_v1_endpoints_are_not_mounted(pool: PgPool) {
+    let Some(server) = spawn_test_server_from_pool(pool).await else {
         return;
     };
 
