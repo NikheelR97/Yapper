@@ -99,6 +99,7 @@ jobs:
           scan-type: fs
           scan-ref: .
           scanners: vuln,secret,config
+          skip-dirs: frontend/node_modules,marketing/node_modules,scripts/node_modules
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: 1

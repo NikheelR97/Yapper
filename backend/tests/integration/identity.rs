@@ -93,7 +93,7 @@ async fn mixed_case_child_email_is_normalized_and_duplicate_rejected(pool: PgPoo
         &server,
         &child_email.to_uppercase(),
         &format!("child_dup_{suffix}"),
-        "DuplicatePass123!",
+        &format!("dup-pass-{suffix}-{}", Uuid::new_v4().simple()),
     )
     .await;
     assert!(
