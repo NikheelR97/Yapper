@@ -5,6 +5,12 @@ const PRIMARY_INSTALLATION_ID =
 	process.env.E2E_PRIMARY_INSTALLATION_ID ?? '11111111-1111-4111-8111-111111111111';
 const SECONDARY_INSTALLATION_ID =
 	process.env.E2E_SECONDARY_INSTALLATION_ID ?? '22222222-2222-4222-8222-222222222222';
+const LOGIN_TIMEOUT_MS = Number(process.env.E2E_AUTH_TIMEOUT_MS ?? 45_000);
+const LOGIN_RETRIES = Number(process.env.E2E_AUTH_RETRIES ?? 3);
+
+function sleep(ms) {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function parseSameSite(value) {
 	switch ((value ?? '').toLowerCase()) {
@@ -61,42 +67,62 @@ function responseCookies(apiUrl, response) {
 }
 
 async function login(email, password, installationId, label) {
-	const response = await fetch(`${API_URL}/api/v2/auth/login`, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({
-			email,
-			password,
-			device: {
-				installation_id: installationId,
-				platform: 'web',
-				label,
-			},
-		}),
-	});
+	let lastError;
+	for (let attempt = 1; attempt <= LOGIN_RETRIES; attempt += 1) {
+		try {
+			console.log(
+				`[setup-auth] login attempt ${attempt}/${LOGIN_RETRIES} for ${email} via ${API_URL}`,
+			);
+			const response = await fetch(`${API_URL}/api/v2/auth/login`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				signal: AbortSignal.timeout(LOGIN_TIMEOUT_MS),
+				body: JSON.stringify({
+					email,
+					password,
+					device: {
+						installation_id: installationId,
+						platform: 'web',
+						label,
+					},
+				}),
+			});
 
-	if (!response.ok) {
-		throw new Error(`auth setup failed for ${email}: ${response.status} ${await response.text()}`);
+			if (!response.ok) {
+				throw new Error(`auth setup failed for ${email}: ${response.status} ${await response.text()}`);
+			}
+
+			const body = await response.json();
+			if (!body.access_token || !body.csrf_token || !body.user) {
+				throw new Error(`auth setup response missing fields for ${email}`);
+			}
+
+			return {
+				storageState: {
+					cookies: responseCookies(API_URL, response),
+					origins: [],
+				},
+				auth: {
+					accessToken: body.access_token,
+					csrfToken: body.csrf_token,
+					refreshToken: body.refresh_token,
+					user: body.user,
+					device: body.device,
+				},
+			};
+		} catch (error) {
+			lastError = error;
+			if (attempt === LOGIN_RETRIES) {
+				break;
+			}
+			console.warn(`[setup-auth] login attempt ${attempt} failed for ${email}: ${error}`);
+			await sleep(attempt * 1_000);
+		}
 	}
 
-	const body = await response.json();
-	if (!body.access_token || !body.csrf_token || !body.user) {
-		throw new Error(`auth setup response missing fields for ${email}`);
-	}
-
-	return {
-		storageState: {
-			cookies: responseCookies(API_URL, response),
-			origins: [],
-		},
-		auth: {
-			accessToken: body.access_token,
-			csrfToken: body.csrf_token,
-			refreshToken: body.refresh_token,
-			user: body.user,
-			device: body.device,
-		},
-	};
+	throw new Error(
+		`auth setup failed for ${email} after ${LOGIN_RETRIES} attempts: ${String(lastError)}`,
+	);
 }
 
 async function writeArtifacts(prefix, email, password, installationId, label, writeLegacy = false) {
