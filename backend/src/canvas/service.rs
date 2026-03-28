@@ -881,10 +881,15 @@ pub async fn create_poll(
 
     // Parse ends_at
     let ends_at: Option<DateTime<Utc>> = body.ends_at.as_ref().and_then(|s| {
-        s.parse().map_err(|e| {
-            tracing::warn!(input = %s, error = %e, "Failed to parse ends_at datetime, ignoring");
-            e
-        }).ok()
+        s.parse()
+            .inspect_err(|e| {
+                tracing::warn!(
+                    input = %s,
+                    error = %e,
+                    "Failed to parse ends_at datetime, ignoring"
+                );
+            })
+            .ok()
     });
     if let Some(ea) = ends_at {
         if ea <= Utc::now() {

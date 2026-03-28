@@ -1334,6 +1334,7 @@ async fn deliver_pending_sync_events(device_id: Option<&Uuid>, state: &AppState,
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn dm_v2_payload(
     message_id: Uuid,
     conv_id: Uuid,
