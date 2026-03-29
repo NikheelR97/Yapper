@@ -1,6 +1,10 @@
 name: E2E Smoke (PR)
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/e2e-pr-smoke.yml'
   pull_request:
     paths:
       - 'frontend/**'
@@ -11,10 +15,70 @@ permissions:
   contents: read
 
 jobs:
+  noop-on-main:
+    name: No-op on main push
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'push' }}
+
+    steps:
+      - name: Explain intentional no-op
+        run: |
+          echo "PR smoke runs only for pull_request events."
+          echo "This successful no-op prevents a zero-job workflow failure when the workflow file changes on main."
+
+  probe-auth:
+    name: Probe E2E Auth Target
+    runs-on: [self-hosted, linux, e2e, unraid]
+    if: ${{ github.event_name == 'pull_request' }}
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      - name: Probe login endpoint reachability
+        shell: bash
+        env:
+          VITE_API_URL: ${{ vars.E2E_API_URL || 'https://api.yapperhq.com' }}
+          E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
+          E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+          E2E_EMAIL_2: ${{ secrets.E2E_EMAIL_2 }}
+          E2E_PASSWORD_2: ${{ secrets.E2E_PASSWORD_2 }}
+        run: |
+          probe_user() {
+            local probe_email="$1"
+            local probe_password="$2"
+            local probe_installation_id="$3"
+            local probe_label="$4"
+
+            E2E_PROBE_EMAIL="$probe_email" \
+            E2E_PROBE_PASSWORD="$probe_password" \
+            E2E_PROBE_INSTALLATION_ID="$probe_installation_id" \
+            E2E_PROBE_LABEL="$probe_label" \
+              node tests/probe-auth.mjs
+          }
+
+          if [[ -z "${E2E_EMAIL}" || -z "${E2E_PASSWORD}" || -z "${E2E_EMAIL_2}" || -z "${E2E_PASSWORD_2}" ]]; then
+            echo "::error::PR smoke requires both E2E test accounts to be configured."
+            exit 1
+          fi
+
+          probe_user "${E2E_EMAIL}" "${E2E_PASSWORD}" "11111111-1111-4111-8111-111111111111" "GitHub Actions Probe A"
+          probe_user "${E2E_EMAIL_2}" "${E2E_PASSWORD_2}" "22222222-2222-4222-8222-222222222222" "GitHub Actions Probe B"
+
   setup-auth:
     name: Setup E2E Auth State
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, e2e, unraid]
+    if: ${{ github.event_name == 'pull_request' }}
     timeout-minutes: 10
+    needs: [probe-auth]
 
     defaults:
       run:
@@ -34,7 +98,6 @@ jobs:
         run: npm ci
 
       - name: Generate auth-state artifacts
-        if: ${{ secrets.E2E_EMAIL != '' && secrets.E2E_PASSWORD != '' }}
         run: npm run test:setup-auth
         env:
           VITE_API_URL: ${{ vars.E2E_API_URL || 'https://api.yapperhq.com' }}
@@ -44,7 +107,7 @@ jobs:
           E2E_PASSWORD_2: ${{ secrets.E2E_PASSWORD_2 }}
 
       - name: Upload auth-state artifact
-        if: ${{ secrets.E2E_EMAIL != '' && secrets.E2E_PASSWORD != '' }}
+        if: ${{ needs.probe-auth.outputs.reachable == 'true' }}
         uses: actions/upload-artifact@v7
         with:
           name: playwright-auth-state
@@ -53,9 +116,10 @@ jobs:
 
   smoke:
     name: Playwright Smoke
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, e2e, unraid]
     timeout-minutes: 10
     needs: [setup-auth]
+    if: ${{ github.event_name == 'pull_request' }}
 
     defaults:
       run:
@@ -75,7 +139,6 @@ jobs:
         run: npm ci
 
       - name: Download auth-state artifact
-        if: ${{ secrets.E2E_EMAIL != '' && secrets.E2E_PASSWORD != '' }}
         uses: actions/download-artifact@v8
         with:
           name: playwright-auth-state
