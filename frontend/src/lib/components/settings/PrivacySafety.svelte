@@ -1,7 +1,10 @@
 <script lang="ts">
 	import { api } from "$api/client.js";
 	import { toast } from "$stores/toast.js";
+	import { authStore } from "$stores/auth.js";
+	import { API_URL } from "$lib/env.js";
 	import { onMount } from "svelte";
+	import { get } from "svelte/store";
 	import { isTauri as _isTauri } from "$lib/plugins/tauri-compat.js";
 	const isTauri = _isTauri();
 
@@ -12,6 +15,9 @@
 		| "nobody" = "everyone";
 	let show_last_seen = true;
 	let saving = false;
+	let exporting = false;
+	let deleting = false;
+	let showDeleteConfirm = false;
 
 	// Pre-populate from the API
 	onMount(async () => {
@@ -43,6 +49,46 @@
 			toast.error(e instanceof Error ? e.message : "Failed to save");
 		} finally {
 			saving = false;
+		}
+	}
+
+	async function exportData() {
+		exporting = true;
+		try {
+			const { accessToken } = get(authStore);
+			const headers: Record<string, string> = {};
+			if (accessToken) headers["Authorization"] = `Bearer ${accessToken}`;
+			const res = await fetch(`${API_URL}/api/v2/account/data-export`, {
+				credentials: "include",
+				headers,
+			});
+			if (!res.ok) throw new Error("Export failed");
+			const blob = await res.blob();
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement("a");
+			a.href = url;
+			a.download = "yapper-data-export.zip";
+			a.click();
+			URL.revokeObjectURL(url);
+			toast.success("Data export downloaded!");
+		} catch (e: unknown) {
+			toast.error(e instanceof Error ? e.message : "Failed to export data");
+		} finally {
+			exporting = false;
+		}
+	}
+
+	async function deleteAccount() {
+		deleting = true;
+		try {
+			await api.delete("/api/v2/account");
+			toast.success("Account scheduled for deletion.");
+			window.location.href = "/login";
+		} catch (e: unknown) {
+			toast.error(e instanceof Error ? e.message : "Failed to delete account");
+		} finally {
+			deleting = false;
+			showDeleteConfirm = false;
 		}
 	}
 </script>
@@ -135,6 +181,56 @@
 	<button class="save-btn" on:click={save} disabled={saving}>
 		{saving ? "Saving…" : "Save Privacy Settings"}
 	</button>
+
+	<!-- GDPR Data Export -->
+	<div class="setting-block">
+		<div class="block-header">
+			<h3 class="block-title">Your Data</h3>
+		</div>
+		<p class="block-desc" style="margin-bottom: 12px;">
+			Download a copy of all your Yapper data including your profile,
+			servers, messages metadata, and settings.
+		</p>
+		<button class="export-btn" on:click={exportData} disabled={exporting}>
+			{exporting ? "Preparing export…" : "Download My Data"}
+		</button>
+	</div>
+
+	<!-- Account Deletion -->
+	<div class="setting-block danger-block">
+		<div class="block-header">
+			<h3 class="block-title danger-title">Danger Zone</h3>
+		</div>
+		<p class="block-desc" style="margin-bottom: 12px;">
+			Permanently delete your account and all associated data. This action
+			cannot be undone.
+		</p>
+		{#if showDeleteConfirm}
+			<div class="confirm-row">
+				<span class="confirm-text">Are you sure? This is irreversible.</span>
+				<button
+					class="delete-btn"
+					on:click={deleteAccount}
+					disabled={deleting}
+				>
+					{deleting ? "Deleting…" : "Yes, delete my account"}
+				</button>
+				<button
+					class="cancel-btn"
+					on:click={() => (showDeleteConfirm = false)}
+				>
+					Cancel
+				</button>
+			</div>
+		{:else}
+			<button
+				class="delete-btn"
+				on:click={() => (showDeleteConfirm = true)}
+			>
+				Delete Account
+			</button>
+		{/if}
+	</div>
 </div>
 
 <style>
@@ -302,5 +398,85 @@
 	.save-btn:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
+	}
+
+	.export-btn {
+		padding: 10px 20px;
+		background: rgba(255, 255, 255, 0.08);
+		color: #f9fafb;
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		border-radius: 8px;
+		font-size: 14px;
+		font-weight: 600;
+		cursor: pointer;
+		transition: background 150ms;
+	}
+
+	.export-btn:hover:not(:disabled) {
+		background: rgba(255, 255, 255, 0.12);
+	}
+
+	.export-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.danger-block {
+		background: rgba(239, 68, 68, 0.05);
+		border-color: rgba(239, 68, 68, 0.2);
+	}
+
+	.danger-title {
+		color: #ef4444 !important;
+	}
+
+	.confirm-row {
+		display: flex;
+		align-items: center;
+		gap: 12px;
+		flex-wrap: wrap;
+	}
+
+	.confirm-text {
+		font-size: 13px;
+		color: #fca5a5;
+		font-weight: 600;
+	}
+
+	.delete-btn {
+		padding: 10px 20px;
+		background: #dc2626;
+		color: white;
+		border: none;
+		border-radius: 8px;
+		font-size: 14px;
+		font-weight: 600;
+		cursor: pointer;
+		transition: opacity 150ms;
+	}
+
+	.delete-btn:hover:not(:disabled) {
+		opacity: 0.85;
+	}
+
+	.delete-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.cancel-btn {
+		padding: 10px 20px;
+		background: rgba(255, 255, 255, 0.08);
+		color: #d1d5db;
+		border: 1px solid rgba(255, 255, 255, 0.1);
+		border-radius: 8px;
+		font-size: 14px;
+		font-weight: 600;
+		cursor: pointer;
+		transition: background 150ms;
+	}
+
+	.cancel-btn:hover {
+		background: rgba(255, 255, 255, 0.12);
 	}
 </style>

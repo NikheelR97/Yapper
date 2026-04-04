@@ -55,7 +55,9 @@ export function getPresence(userId: string) {
     // Fetch once per session — deduplicate across multiple components
     if (!fetchedUsers.has(userId)) {
         fetchedUsers.add(userId);
-        fetchPresence(userId).catch(() => {/* swallow — best-effort */ });
+        fetchPresence(userId).catch((e) => {
+            console.warn("[presence] Best-effort fetch failed:", e);
+        });
     }
 
     return { subscribe: store.subscribe };

@@ -29,12 +29,8 @@ use uuid::Uuid;
 
 use crate::{constants, devices::DeviceTrustState, error::AppResult, AppState};
 
-/// Max frame size: 64KB (Rule 3).
-const MAX_WS_FRAME_SIZE: usize = 64 * 1024;
 /// Max server members to fan out a channel message to (Rule 2 / Rule 3).
 const MAX_FANOUT_MEMBERS: i64 = 500;
-/// Max concurrent WebSocket connections per user (prevents memory exhaustion).
-const MAX_CONNECTIONS_PER_USER: usize = 5;
 /// Max queued outbound messages per socket before the connection is dropped.
 const MAX_OUTBOUND_QUEUE: usize = 256;
 /// Re-authenticate shortly before the access token expires.
@@ -224,7 +220,7 @@ impl Hub {
     }
 
     /// Register a new connection. Returns `false` if the user already has
-    /// `MAX_CONNECTIONS_PER_USER` active connections (caller should close).
+    /// `constants::MAX_CONNECTIONS_PER_USER` active connections (caller should close).
     pub fn register(
         &self,
         user_id: Uuid,
@@ -235,7 +231,7 @@ impl Hub {
     ) -> bool {
         if route_user_level {
             let user_conns = self.connections.entry(user_id).or_default();
-            if user_conns.len() >= MAX_CONNECTIONS_PER_USER {
+            if user_conns.len() >= constants::MAX_CONNECTIONS_PER_USER {
                 return false;
             }
             user_conns.insert(conn_id.clone(), handle.clone());
@@ -570,8 +566,8 @@ pub fn gc_ws_rate_limiter() {
 /// # Security invariants
 ///
 /// * Per-IP upgrade rate limit (10/min, burst 20) to prevent connection exhaustion.
-/// * Max frame size (`MAX_WS_FRAME_SIZE = 64 KB`) enforced at the protocol layer.
-/// * Per-user connection cap (`MAX_CONNECTIONS_PER_USER = 5`).
+/// * Max frame size (`constants::MAX_WS_FRAME_SIZE = 64 KB`) enforced at the protocol layer.
+/// * Per-user connection cap (`constants::MAX_CONNECTIONS_PER_USER = 5`).
 /// * Per-user message rate limit (5 msg/sec, burst 20).
 /// * Only trusted devices may send `SendDm` / `SendChannel` messages.
 pub async fn ws_handler(
@@ -588,8 +584,8 @@ pub async fn ws_handler(
 
     // MED-010: enforce frame size at the WebSocket protocol layer,
     // rejecting oversized frames before they are fully buffered in memory.
-    ws.max_message_size(MAX_WS_FRAME_SIZE)
-        .max_frame_size(MAX_WS_FRAME_SIZE)
+    ws.max_message_size(constants::MAX_WS_FRAME_SIZE)
+        .max_frame_size(constants::MAX_WS_FRAME_SIZE)
         .on_upgrade(move |socket| handle_socket(socket, state))
         .into_response()
 }
@@ -1416,7 +1412,7 @@ pub(crate) async fn mark_dm_delivered(
 // ─── Inbound dispatch ────────────────────────────────────────────────────────
 
 async fn handle_inbound(text: String, auth: &mut WsAuth, state: &AppState, tx: &ConnTx) -> bool {
-    if text.len() > MAX_WS_FRAME_SIZE {
+    if text.len() > constants::MAX_WS_FRAME_SIZE {
         send_ws_error(tx, 4003, "Frame too large");
         return auth.reauth_required;
     }
@@ -2318,7 +2314,7 @@ mod tests {
     fn test_hub_max_connections_per_user() {
         let hub = Hub::new();
         let user_id = Uuid::new_v4();
-        for _ in 0..MAX_CONNECTIONS_PER_USER {
+        for _ in 0..constants::MAX_CONNECTIONS_PER_USER {
             let conn_id = ConnectionId::new();
             let (tx, _rx) = mpsc::channel(MAX_OUTBOUND_QUEUE);
             let (close_tx, _close_rx) = watch::channel(false);
