@@ -440,7 +440,7 @@ export function registerCanvasHandler(): () => void {
 			return; // server_id present but no store subscribed — skip
 		}
 
-		for (const [storeServerId, store] of targetedStores) {
+		for (const [, store] of targetedStores) {
 			const state = get(store);
 
 			switch (payload.type) {

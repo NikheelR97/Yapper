@@ -11,7 +11,7 @@
  *   $status.lastSeen  → ISO string | null
  */
 
-import { writable, get } from 'svelte/store';
+import { writable } from 'svelte/store';
 import { api } from '$api/client.js';
 import { onWsMessage } from '$stores/ws.js';
 import { registerSessionResetter } from '$stores/auth.js';

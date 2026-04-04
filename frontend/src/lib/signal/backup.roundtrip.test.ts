@@ -63,7 +63,7 @@ function bytes(fill: number, length: number): Uint8Array {
   return new Uint8Array(length).fill(fill);
 }
 
-function u8ToB64(u8: Uint8Array): string {
+function _u8ToB64(u8: Uint8Array): string {
   let binary = "";
   for (let index = 0; index < u8.length; index += 1) {
     binary += String.fromCharCode(u8[index]);

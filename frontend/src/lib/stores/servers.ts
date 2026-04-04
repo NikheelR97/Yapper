@@ -12,7 +12,6 @@ import {
 	encryptChannel,
 	fetchPendingKeyDists,
 	onSenderKeyReady,
-	prepareChannel,
 } from '$signal/index.js';
 import { onWsMessage, sendChannelMessage as wsSendChannel } from '$stores/ws.js';
 import { authStore, registerSessionResetter } from '$stores/auth.js';

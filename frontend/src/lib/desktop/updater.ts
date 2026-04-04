@@ -82,7 +82,7 @@ export async function installUpdate(): Promise<void> {
         if (!update) return;
 
         await update.downloadAndInstall((progress) => {
-            console.info('[updater] Download progress:', progress);
+            console.debug('[updater] Download progress:', progress);
         });
         const { relaunch } = await import('@tauri-apps/plugin-process');
         await relaunch();

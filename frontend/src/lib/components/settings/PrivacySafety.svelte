@@ -199,7 +199,7 @@
 	<!-- Account Deletion -->
 	<div class="setting-block danger-block">
 		<div class="block-header">
-			<h3 class="block-title danger-title">Danger Zone</h3>
+			<h3 class="block-title">Danger Zone</h3>
 		</div>
 		<p class="block-desc" style="margin-bottom: 12px;">
 			Permanently delete your account and all associated data. This action
@@ -426,8 +426,8 @@
 		border-color: rgba(239, 68, 68, 0.2);
 	}
 
-	.danger-title {
-		color: #ef4444 !important;
+	.danger-block .block-title {
+		color: #ef4444;
 	}
 
 	.confirm-row {
