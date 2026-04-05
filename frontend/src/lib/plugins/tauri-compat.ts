@@ -9,13 +9,26 @@
 
 export type Platform = 'tauri' | 'capacitor' | 'web';
 
-/** Returns the runtime this code is executing inside. */
-export function platform(): Platform {
-    if (typeof window === 'undefined') return 'web';
-    if ('__TAURI_INTERNALS__' in window || '__TAURI__' in window) return 'tauri';
-    if ('Capacitor' in window) return 'capacitor';
-    return 'web';
-}
+/** Returns the runtime this code is executing inside. Cached after first call. */
+export const platform: () => Platform = (() => {
+    let cached: Platform | undefined;
+    return (): Platform => {
+        if (cached !== undefined) return cached;
+        if (typeof window === 'undefined') { cached = 'web'; return cached; }
+        if ('__TAURI_INTERNALS__' in window || '__TAURI__' in window) { cached = 'tauri'; return cached; }
+        // @capacitor/core assigns `window.Capacitor` on import even on the web, so
+        // a bare `'Capacitor' in window` check cannot distinguish web from native.
+        // Use the platform reported by the Capacitor runtime (backed by detection
+        // of the iOS/Android WebView bridge) instead.
+        const cap = (window as Window & { Capacitor?: { getPlatform?: () => string } }).Capacitor;
+        if (cap && typeof cap.getPlatform === 'function') {
+            const capPlatform = cap.getPlatform();
+            if (capPlatform === 'ios' || capPlatform === 'android') { cached = 'capacitor'; return cached; }
+        }
+        cached = 'web';
+        return cached;
+    };
+})();
 
 export const isTauri = (): boolean => platform() === 'tauri';
 export const isCapacitor = (): boolean => platform() === 'capacitor';

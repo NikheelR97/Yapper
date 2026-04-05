@@ -305,7 +305,7 @@ These are non-negotiable security requirements, not suggestions.
 ### Authentication
 - **Passwords:** Argon2id (`m=65536, t=3, p=4`). Hard reject > 1KB (400 error, not truncation).
 - **JWT:** RS256 with `kid` header for key rotation. 15-minute access token TTL. Private key never leaves API service environment.
-- **Refresh tokens:** HttpOnly, Secure, SameSite=Strict cookie. Family-based reuse detection — replaying a revoked token invalidates the entire family.
+- **Refresh tokens:** HttpOnly, Secure cookie. `SameSite=None` in production (required because the frontend on Cloudflare Pages and backend on Fly.io are cross-origin); `SameSite=Strict` in local development. The CSRF double-submit token below mitigates the reduced `SameSite` protection. Cookie path scoped to `/api/v2/auth/refresh`. Family-based reuse detection — replaying a revoked token invalidates the entire family.
 - **CSRF:** Double-submit token (`X-CSRF-Token` header) validated on all state-changing endpoints.
 - **Rate limiting:** 5 failed logins → 15-minute IP lockout. In-memory `governor` crate, per-IP + per-user.
 

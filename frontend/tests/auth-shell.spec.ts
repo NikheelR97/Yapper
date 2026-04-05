@@ -1,13 +1,11 @@
 import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures/auth.fixture';
-import { buildMockDevice } from './auth-helper.js';
+import { buildMockDevice, PRIMARY_INSTALLATION_ID } from './auth-helper.js';
 
 test.setTimeout(120_000);
 
 async function setupShellRoutes(page: Page): Promise<void> {
-	const installationId =
-		(await page.evaluate(() => localStorage.getItem('yapper_installation_id'))) ??
-		'auth-shell-installation';
+	const installationId = PRIMARY_INSTALLATION_ID;
 	const currentDevice = buildMockDevice({
 		id: 'auth-shell-primary-device',
 		installation_id: installationId,

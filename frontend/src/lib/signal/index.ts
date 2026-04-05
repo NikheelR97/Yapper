@@ -953,7 +953,9 @@ export function clearPreparedChannelCache(): void {
 export async function prepareChannel(channelId: string): Promise<void> {
   // Fast path: already prepared this session, fetch pending dists in background
   if (_preparedChannels.has(channelId)) {
-    void fetchPendingKeyDists(channelId).catch(() => {});
+    void fetchPendingKeyDists(channelId).catch((e) => {
+      console.warn("[Signal] Background key dist fetch failed:", e);
+    });
     return;
   }
 

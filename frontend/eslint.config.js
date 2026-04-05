@@ -1,4 +1,5 @@
 import tsParser from '@typescript-eslint/parser';
+import tsPlugin from '@typescript-eslint/eslint-plugin';
 import globals from 'globals';
 
 export default [
@@ -29,6 +30,15 @@ export default [
         ...globals.node
       }
     },
-    rules: {}
+    plugins: {
+      '@typescript-eslint': tsPlugin
+    },
+    rules: {
+      'no-console': ['warn', { allow: ['warn', 'error', 'debug'] }],
+      '@typescript-eslint/no-explicit-any': 'error',
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      'no-eval': 'error',
+      'no-implied-eval': 'error'
+    }
   }
 ];

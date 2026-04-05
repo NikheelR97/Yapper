@@ -89,6 +89,7 @@
   let unregisterWsErrorHandler: (() => void) | null = null;
   let unregisterReconnectHandler: (() => void) | null = null;
   let stopScreenTimeTracker: (() => void) | null = null;
+  let opkReplenishTimer: ReturnType<typeof setInterval> | null = null;
   let servicesStarted = false;
   let pendingStatusRefresh = false;
   let pendingRestoreBusy = false;
@@ -696,12 +697,23 @@
       fetchServers().catch((err) => {
         console.warn("[reconnect] Failed to refresh servers:", err);
       });
+      replenishPreKeysIfNeeded().catch((err) => {
+        console.warn("[reconnect] OPK replenishment failed:", err);
+      });
     });
 
     stopScreenTimeTracker = startYapperUsageTracker();
     reportScreenTimeUsage().catch((err) => {
       console.warn("[screentime] Usage report failed:", err);
     });
+
+    // Replenish OPKs every 24 hours so new contacts can always initiate DMs.
+    const OPK_REPLENISH_INTERVAL_MS = 24 * 60 * 60 * 1000;
+    opkReplenishTimer = setInterval(() => {
+      replenishPreKeysIfNeeded().catch((err) => {
+        console.warn("[Signal] Periodic OPK replenishment failed:", err);
+      });
+    }, OPK_REPLENISH_INTERVAL_MS);
 
     initUpdater();
     initDeepLinks();
@@ -724,6 +736,10 @@
     unregisterReconnectHandler = null;
     stopScreenTimeTracker?.();
     stopScreenTimeTracker = null;
+    if (opkReplenishTimer) {
+      clearInterval(opkReplenishTimer);
+      opkReplenishTimer = null;
+    }
     reportScreenTimeUsage().catch((err) => {
       console.warn("[screentime] Final usage report failed:", err);
     });
@@ -1129,7 +1145,7 @@
   <TopNav />
 
   {#if ready && $authStore.device?.trustState === "trusted" && !$wsStore.connected}
-    <div class="reconnecting-banner">Reconnecting...</div>
+    <div class="reconnecting-banner">Reconnecting&hellip; Messages will be sent when connection restores.</div>
   {/if}
 
   {#if desktopVaultMode}

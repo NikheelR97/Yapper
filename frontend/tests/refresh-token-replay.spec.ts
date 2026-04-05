@@ -10,7 +10,7 @@ test.describe('Refresh token replay @security @auth', () => {
 
 	test('reusing the same refresh token concurrently succeeds once and rejects the replay', async () => {
 		const session = await loginViaApi(USER_EMAIL, USER_PASS, {
-			installationId: `refresh-replay-${Date.now()}`,
+			installationId: crypto.randomUUID(),
 			label: 'Refresh Replay',
 			platform: 'tauri',
 		});

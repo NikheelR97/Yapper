@@ -4,6 +4,12 @@
 //! defined here. Module-local constants are acceptable only when they are
 //! purely implementation details (e.g. internal buffer sizes).
 
+/// Maximum WebSocket frame size in bytes (64 KB).
+///
+/// Enforced at the protocol layer on both inbound and outbound frames.
+/// Frames exceeding this limit are rejected before deserialization.
+pub const MAX_WS_FRAME_SIZE: usize = 64 * 1024;
+
 /// Maximum wire size of a single message's ciphertext payload in bytes.
 ///
 /// This limit applies to the raw BYTEA stored in the `messages.ciphertext`

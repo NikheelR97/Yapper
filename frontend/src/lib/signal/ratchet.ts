@@ -14,7 +14,6 @@ import type { Session } from './types.js';
 const MSG_KEY_INPUT = new Uint8Array([0x01]);
 const CHAIN_KEY_INPUT = new Uint8Array([0x02]);
 const ROOT_INFO = new TextEncoder().encode('YapperDoubleRatchetRoot_v2');
-const ZERO_SALT = new Uint8Array(32);
 const MAX_FORWARD_SKIP = 128;
 const MAX_SKIPPED_KEYS = 512;
 const MAX_SEEN_MESSAGES = 1024;

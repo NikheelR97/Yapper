@@ -1,4 +1,4 @@
-import { writable, get } from 'svelte/store';
+import { writable } from 'svelte/store';
 import { api } from '$api/client.js';
 import { isCapacitor, isNative, isTauri } from '$lib/plugins/tauri-compat.js';
 import {

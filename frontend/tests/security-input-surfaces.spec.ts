@@ -148,7 +148,11 @@ test.describe('XSS neutralization - DM peer display names @security @xss @smoke'
 		await expect(userPage.locator('[aria-label="Loading Yapper"]')).toHaveCount(0, {
 			timeout: 30_000,
 		});
-		await expect(userPage.locator('body')).toContainText('xss_peer_0', { timeout: 5_000 });
+		// Assert that at least one XSS payload is visible in the DM list as
+		// escaped text (the DM list renders display_name, not peer_username).
+		await expect(userPage.locator('body')).toContainText('window.__xss_fired=true', {
+			timeout: 5_000,
+		});
 
 		await assertXssNeutralized(userPage, 'dm-peer-display-name', getXssFetchMade, getConsoleErrors);
 	});

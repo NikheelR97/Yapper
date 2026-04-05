@@ -71,11 +71,11 @@ export async function loadProfile(username: string) {
 	try {
 		const profile = await api.get<UserProfile>(`/api/v2/users/by/${username}`);
 		profileStore.update((s) => ({ ...s, profile, loading: false }));
-	} catch (e: any) {
+	} catch (e: unknown) {
 		profileStore.update((s) => ({
 			...s,
 			loading: false,
-			error: e.message ?? 'Failed to load profile',
+			error: e instanceof Error ? e.message : 'Failed to load profile',
 		}));
 	}
 }

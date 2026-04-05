@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures/auth.fixture';
-import { buildMockDevice } from './auth-helper.js';
+import { buildMockDevice, PRIMARY_INSTALLATION_ID } from './auth-helper.js';
 import { mockSupportEndpoints, mockPremiumEndpoints } from './helpers/mock-routes.js';
 
 /**
@@ -15,9 +15,7 @@ async function setupSettingsPage(
 	page: Page,
 	options: { devices?: ReturnType<typeof buildMockDevice>[] } = {},
 ): Promise<void> {
-	const installationId =
-		(await page.evaluate(() => localStorage.getItem('yapper_installation_id'))) ??
-		'settings-primary-install';
+	const installationId = PRIMARY_INSTALLATION_ID;
 	const currentDevice = buildMockDevice({
 		id: 'settings-primary-device',
 		installation_id: installationId,
@@ -330,9 +328,7 @@ test.describe('Settings - Device management', () => {
 			.getByRole('button', { name: /Revoke|Remove|Forget/i });
 
 		if (await revokeButton.isVisible()) {
-			const installationId =
-				(await userPage.evaluate(() => localStorage.getItem('yapper_installation_id'))) ??
-				'settings-primary-install';
+			const installationId = PRIMARY_INSTALLATION_ID;
 			const currentDevice = buildMockDevice({
 				id: 'settings-primary-device',
 				installation_id: installationId,

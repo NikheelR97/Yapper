@@ -83,8 +83,8 @@ export async function loadChildren() {
 			selectedChildId: children.length > 0 ? (s.selectedChildId ?? children[0].id) : null,
 			loading: false,
 		}));
-	} catch (e: any) {
-		parentalStore.update((s) => ({ ...s, loading: false, error: e.message }));
+	} catch (e: unknown) {
+		parentalStore.update((s) => ({ ...s, loading: false, error: e instanceof Error ? e.message : 'Failed to load' }));
 	}
 }
 
@@ -94,31 +94,31 @@ export async function loadAlerts() {
 	const alerts: PendingAlert[] = [];
 	for (const child of children) {
 		try {
-			const res = await api.get<{ friend_requests: any[]; server_joins: any[] }>(
+			const res = await api.get<{ friend_requests: Record<string, unknown>[]; server_joins: Record<string, unknown>[] }>(
 				`/api/v2/parental/children/${child.id}/notifications`
 			);
 			for (const fr of res.friend_requests ?? []) {
 				if (fr.status !== 'pending') continue;
 				alerts.push({
-					id: fr.id,
+					id: fr.id as string,
 					childId: child.id,
 					childName: child.display_name,
 					type: 'friend_request',
 					description: `${fr.requester_name} wants to be friends with ${child.display_name}`,
-					metadata: { requester_id: fr.requester_id },
-					createdAt: fr.created_at,
+					metadata: { requester_id: fr.requester_id as string },
+					createdAt: fr.created_at as string,
 				});
 			}
 			for (const sj of res.server_joins ?? []) {
 				if (sj.status !== 'pending') continue;
 				alerts.push({
-					id: sj.id,
+					id: sj.id as string,
 					childId: child.id,
 					childName: child.display_name,
 					type: 'server_join',
 					description: `${child.display_name} wants to join ${sj.server_name}`,
-					metadata: { server_id: sj.server_id },
-					createdAt: sj.created_at,
+					metadata: { server_id: sj.server_id as string },
+					createdAt: sj.created_at as string,
 				});
 			}
 		} catch { /* failed to load pending approvals for this child — skip */ }
@@ -137,7 +137,7 @@ export async function loadActivity(childId: string) {
 		const res = await api.get<{
 			pending_friend_requests: number;
 			pending_server_joins: number;
-			top_servers: any[];
+			top_servers: Record<string, unknown>[];
 		}>(`/api/v2/parental/children/${childId}/overview`);
 		const activity: ChildActivity = {
 			totalMinutesToday: 0,

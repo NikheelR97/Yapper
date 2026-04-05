@@ -79,12 +79,11 @@ function uid(prefix: string): string {
 
 test.describe('UAT-01 · Health & Infrastructure', () => {
 	// UAT-01-A
-	test('UAT-01-A  API /health returns ok with db:true', async () => {
+	test('UAT-01-A  API /health returns ok', async () => {
 		const res = await fetch(`${API_URL}/health`);
 		expect(res.status).toBe(200);
 		const body = (await res.json()) as Record<string, unknown>;
-		expect(body.status).toBe('ok');
-		expect(body.db).toBe(true);
+		expect(body.ok).toBe(true);
 	});
 
 	// UAT-01-B

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
 // Mock WebSocket before importing ws module
 const mockSend = vi.fn();
@@ -35,7 +35,7 @@ vi.mock('$lib/signal/index.js', () => ({
 
 // Mock the auth store
 vi.mock('$stores/auth.js', () => {
-	const { writable, get } = require('svelte/store');
+	const { writable } = require('svelte/store');
 	const store = writable({
 		user: { id: 'user-1' },
 		accessToken: 'test-token',
