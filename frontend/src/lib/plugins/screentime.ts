@@ -1,5 +1,6 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { api } from '$api/client.js';
+import { platform as runtimePlatform } from '$plugins/tauri-compat.js';
 import {
 	incrementUsage,
 	ScreenTimeWebPlugin,
@@ -25,20 +26,11 @@ function todayIsoDate(): string {
 }
 
 function resolvePlatform(): 'ios' | 'android' | 'web' | 'desktop' {
-	const platform = Capacitor.getPlatform();
-	if (platform === 'ios') return 'ios';
-	if (platform === 'android') return 'android';
-
-	if (typeof window !== 'undefined') {
-		const w = window as Window & {
-			__TAURI_INTERNALS__?: unknown;
-			__TAURI__?: unknown;
-		};
-		if (typeof w.__TAURI_INTERNALS__ !== 'undefined' || typeof w.__TAURI__ !== 'undefined') {
-			return 'desktop';
-		}
+	const rt = runtimePlatform();
+	if (rt === 'tauri') return 'desktop';
+	if (rt === 'capacitor') {
+		return Capacitor.getPlatform() === 'ios' ? 'ios' : 'android';
 	}
-
 	return 'web';
 }
 

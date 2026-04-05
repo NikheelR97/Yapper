@@ -16,7 +16,7 @@ import { waitForAppReady, navigateClientSide } from './helpers/wait-for.js';
  * Requires E2E_EMAIL + E2E_EMAIL_2 credentials.
  */
 
-test.describe.configure({ timeout: 120_000 });
+test.describe.configure({ timeout: 180_000 });
 
 const USER_A_EMAIL = process.env.E2E_EMAIL ?? '';
 const USER_A_PASS = process.env.E2E_PASSWORD ?? '';

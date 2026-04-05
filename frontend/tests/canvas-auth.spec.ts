@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { loginViaApi } from './auth-helper.js';
+import { loginViaApi, PRIMARY_INSTALLATION_ID, B_PRIMARY_INSTALLATION_ID } from './auth-helper.js';
 
 const API_URL = process.env.VITE_API_URL ?? 'https://api.yapperhq.com';
 const USER_A_EMAIL = process.env.E2E_EMAIL ?? '';
@@ -24,11 +24,11 @@ test.describe('Canvas auth @security @regression', () => {
 
 	test('non-admin members cannot enqueue tracks through the canvas API directly', async () => {
 		const owner = await loginViaApi(USER_A_EMAIL, USER_A_PASS, {
-			installationId: `canvas-owner-${Date.now()}`,
+			installationId: PRIMARY_INSTALLATION_ID,
 			label: 'Canvas Owner',
 		});
 		const member = await loginViaApi(USER_B_EMAIL, USER_B_PASS, {
-			installationId: `canvas-member-${Date.now()}`,
+			installationId: B_PRIMARY_INSTALLATION_ID,
 			label: 'Canvas Member',
 		});
 

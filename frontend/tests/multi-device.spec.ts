@@ -1,13 +1,11 @@
 import { execFileSync } from 'child_process';
 import { expect, test, type Page } from '@playwright/test';
 
-import { mockSignalBootstrapEndpoints, setInstallationId } from './auth-helper.js';
+import { mockSignalBootstrapEndpoints, setInstallationId, PRIMARY_INSTALLATION_ID } from './auth-helper.js';
 
 const API_URL = process.env.VITE_API_URL ?? 'https://api.yapperhq.com';
 const TEST_EMAIL = process.env.E2E_EMAIL ?? '';
 const TEST_PASSWORD = process.env.E2E_PASSWORD ?? '';
-const PRIMARY_INSTALLATION_ID =
-	process.env.E2E_PRIMARY_INSTALLATION_ID ?? '11111111-1111-4111-8111-111111111111';
 const SECONDARY_INSTALLATION_ID =
 	process.env.E2E_SECONDARY_INSTALLATION_ID ?? '22222222-2222-4222-8222-222222222222';
 let multiDeviceAuthAvailable = false;
@@ -49,9 +47,15 @@ test.describe('Multi-device auth', () => {
 
 	test.beforeAll(async () => {
 		await probeV2MultiDeviceAuth();
-		if (!multiDeviceAuthAvailable) {
-			return;
-		}
+	});
+
+	// Re-seed before every test: other test files run in parallel and call
+	// `seedTrustedPrimaryDevice()` with E2E_SKIP_SECONDARY_DEVICE=1, which
+	// revokes the pending secondary device this suite depends on. beforeAll is
+	// not enough — another worker can revoke the secondary between this file's
+	// two tests.
+	test.beforeEach(async () => {
+		test.skip(!multiDeviceAuthAvailable, multiDeviceSkipReason);
 
 		execFileSync(process.execPath, ['tests/seed-devices.mjs'], {
 			cwd: process.cwd(),

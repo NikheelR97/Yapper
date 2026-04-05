@@ -6,21 +6,14 @@
 
 import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures/auth.fixture';
-import { buildMockDevice, type ServerDevice } from './auth-helper.js';
+import { buildMockDevice, PRIMARY_INSTALLATION_ID, type ServerDevice } from './auth-helper.js';
 import { mockExploreEndpoints } from './helpers/mock-routes.js';
 import { log } from './helpers/log.js';
-
-async function getInstallationId(page: Page): Promise<string> {
-	return (
-		(await page.evaluate(() => localStorage.getItem('yapper_installation_id'))) ??
-		'multidevice-install'
-	);
-}
 
 async function setupTrustedDevice(
 	page: Page,
 ): Promise<{ device: ServerDevice }> {
-	const installationId = await getInstallationId(page);
+	const installationId = PRIMARY_INSTALLATION_ID;
 	const device = buildMockDevice({
 		installation_id: installationId,
 		trust_state: 'trusted',
@@ -51,7 +44,7 @@ async function setupTrustedDevice(
 async function setupPendingDevice(
 	page: Page,
 ): Promise<{ pendingDevice: ServerDevice }> {
-	const installationId = await getInstallationId(page);
+	const installationId = PRIMARY_INSTALLATION_ID;
 	const pendingDevice = buildMockDevice({
 		id: 'pending-dev-123',
 		installation_id: installationId,
@@ -63,6 +56,22 @@ async function setupPendingDevice(
 		installation_id: 'trusted-primary-install',
 		trust_state: 'trusted',
 		approved_at: new Date().toISOString(),
+	});
+
+	// Override the fixture's auth-refresh mock so the boot sequence places the
+	// session on the pending device instead of the trusted one baked into
+	// auth-data.json. `page.route` handlers are LIFO, so the most recent one wins.
+	await page.route('**/api/v2/auth/refresh', async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({
+				access_token: 'pending-device-access-token',
+				csrf_token: 'pending-device-csrf-token',
+				user: { id: 'e2e-user', username: 'e2e_user' },
+				device: pendingDevice,
+			}),
+		});
 	});
 
 	await page.route('**/api/v2/devices', async (route) => {
@@ -186,7 +195,7 @@ test.describe('Multi-device - offline approval persistence @multidevice @smoke',
 test.describe('Multi-device - sync-events retry on 500 @multidevice', () => {
 	test('App retries sync-events on HTTP 500 and eventually becomes ready', async ({ userPage }) => {
 		let callCount = 0;
-		const installationId = await getInstallationId(userPage);
+		const installationId = PRIMARY_INSTALLATION_ID;
 		const device = buildMockDevice({
 			installation_id: installationId,
 			trust_state: 'trusted',

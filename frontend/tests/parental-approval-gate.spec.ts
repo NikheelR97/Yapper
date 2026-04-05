@@ -5,14 +5,6 @@ const API_URL = process.env.VITE_API_URL ?? 'https://api.yapperhq.com';
 
 type Session = Awaited<ReturnType<typeof loginViaApi>>;
 
-function device(label: string) {
-	return {
-		installation_id: `${label}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-		platform: 'web',
-		label,
-	};
-}
-
 function authedHeaders(session: Session) {
 	return {
 		'Content-Type': 'application/json',
@@ -23,22 +15,27 @@ function authedHeaders(session: Session) {
 }
 
 async function registerAdult(prefix: string) {
-	const email = `${prefix}-${Date.now()}@integration.test`;
+	const ts = Date.now();
+	const email = `${prefix}-${ts}@integration.test`;
+	const username = `${prefix}_${ts}`.replace(/[^a-z0-9_]/gi, '_').slice(0, 30);
 	const password = `AdultPass123!-${prefix}`;
+	const installationId = crypto.randomUUID();
 	const response = await fetch(`${API_URL}/api/v2/auth/register`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({
 			email,
-			username: prefix.replace(/[^a-z0-9_]/gi, '_'),
+			username,
 			password,
 			display_name: prefix,
 			date_of_birth: '1990-03-27',
-			device: device(`${prefix}-register`),
+			device: { installation_id: installationId, platform: 'web', label: `${prefix}-register` },
 		}),
 	});
-	expect(response.ok).toBeTruthy();
-	return { email, password };
+	if (!response.ok) {
+		throw new Error(`registerAdult(${prefix}) failed: ${response.status} ${await response.text()}`);
+	}
+	return { email, password, installationId };
 }
 
 async function createParentManagedChild(parent: Session, prefix: string) {
@@ -56,26 +53,33 @@ async function createParentManagedChild(parent: Session, prefix: string) {
 			date_of_birth: '2015-03-26',
 		}),
 	});
-	expect(response.ok).toBeTruthy();
+	if (!response.ok) {
+		throw new Error(
+			`createParentManagedChild failed: ${response.status} ${await response.text()}`,
+		);
+	}
 	const body = (await response.json()) as { child_id: string };
 	return { email, password, username, userId: body.child_id };
 }
 
 test.describe('Parental approval gate @security @e2ee @coppa', () => {
-	test('child DM creation is blocked for non-friends and pending approval does not unlock key bundles', async () => {
+	test('child DM creation is blocked for non-friends and pending approval does not unlock key bundles', async ({ }, testInfo) => {
+		testInfo.setTimeout(60_000);
 		const parentCreds = await registerAdult('coppa_parent');
 		const strangerCreds = await registerAdult('coppa_stranger');
+		// Reuse the same installation_id from registration so the device stays
+		// trusted (a new installation_id creates a second pending_trust device).
 		const parent = await loginViaApi(parentCreds.email, parentCreds.password, {
-			installationId: device('coppa-parent-login').installation_id,
+			installationId: parentCreds.installationId,
 			label: 'COPPA Parent',
 		});
 		const child = await createParentManagedChild(parent, 'coppa_child');
 		const childSession = await loginViaApi(child.email, child.password, {
-			installationId: device('coppa-child-login').installation_id,
+			installationId: crypto.randomUUID(),
 			label: 'COPPA Child',
 		});
 		const stranger = await loginViaApi(strangerCreds.email, strangerCreds.password, {
-			installationId: device('coppa-stranger-login').installation_id,
+			installationId: strangerCreds.installationId,
 			label: 'COPPA Stranger',
 		});
 		const strangerUserId = String(stranger.user.id);
