@@ -1,0 +1,34 @@
+name: Neon storage check
+
+on:
+  schedule:
+    - cron: "0 6 * * *" # daily at 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check Neon database size
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Query pg_database_size
+        env:
+          DATABASE_URL: ${{ secrets.NEON_READONLY_URL }}
+        run: |
+          SIZE_MB=$(psql "$DATABASE_URL" -tAc "SELECT pg_database_size(current_database()) / 1024 / 1024;")
+          echo "Neon DB size: ${SIZE_MB} MB"
+          echo "size_mb=${SIZE_MB}" >> "$GITHUB_ENV"
+
+          if [ "$SIZE_MB" -gt 400 ]; then
+            echo "::warning::Neon storage at ${SIZE_MB} MB / 500 MB free-tier limit"
+          fi
+
+          if [ "$SIZE_MB" -gt 475 ]; then
+            echo "::error::Neon storage critically high at ${SIZE_MB} MB — upgrade to Neon Pro immediately"
+            exit 1
+          fi

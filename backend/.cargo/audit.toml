@@ -1,0 +1,29 @@
+# cargo-audit configuration.
+#
+# Audit ref: LOW-009 — these advisories were previously hardcoded in
+# .github/workflows/security-scans.yml only, which made local `cargo audit`
+# runs disagree with CI. This file is the single source of truth so that
+# local and CI runs always exclude the same set, and the rationale + review
+# date is auditable from the repo.
+#
+# IMPORTANT: every entry must include a justification and a review date.
+# Re-review quarterly.
+
+[advisories]
+ignore = [
+    # rsa via sqlx-mysql — Yapper uses Postgres only, the vulnerable code path
+    # is unreachable. Tracked: drop sqlx-mysql when migrating to sqlx 0.8.
+    # Reviewed: 2026-04-06
+    "RUSTSEC-2023-0071",
+
+    # sqlx 0.7.x — fix requires a sqlx 0.8 major version migration which
+    # touches every query in the codebase. Scheduled for the post-launch
+    # refactor sprint, after MED-004 module split lands.
+    # Reviewed: 2026-04-06
+    "RUSTSEC-2024-0363",
+
+    # idna via validator crate — upgrade is gated on a validator major bump
+    # that the upstream crate has not yet released. Tracked upstream.
+    # Reviewed: 2026-04-06
+    "RUSTSEC-2024-0421",
+]

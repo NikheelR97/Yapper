@@ -1644,13 +1644,32 @@ pub async fn get_canvas_state(
     debug_assert!(channel_id != Uuid::nil());
     debug_assert!(user_id != Uuid::nil());
 
-    // 1. Now playing
-    let now_playing = fetch_now_playing(server_id, state).await?;
+    // Run four independent blocks concurrently (audit LOW-002).
+    // Reduces wall-clock latency from sum(queries) to max(block).
+    let (music, polls, (pinned_clips, clips), event) = tokio::try_join!(
+        fetch_music_block(server_id, state),
+        fetch_active_polls(channel_id, user_id, state),
+        fetch_clips_block(server_id, user_id, state),
+        fetch_events_block(server_id, state),
+    )?;
 
-    // 2. Queue
+    Ok(serde_json::json!({
+        "music": music,
+        "polls": polls,
+        "pinned_clips": pinned_clips,
+        "clips": clips,
+        "event": event,
+    }))
+}
+
+/// Music block: now_playing + queue + skip votes + threshold + online count.
+async fn fetch_music_block(
+    server_id: Uuid,
+    state: &AppState,
+) -> AppResult<serde_json::Value> {
+    let now_playing = fetch_now_playing(server_id, state).await?;
     let queue = fetch_active_queue(server_id, state).await;
 
-    // 3. Skip votes + settings
     let skip_votes: i64 =
         sqlx::query("SELECT COUNT(*) AS cnt FROM music_skip_votes WHERE server_id = $1")
             .bind(server_id)
@@ -1669,10 +1688,21 @@ pub async fn get_canvas_state(
     let member_ids = get_server_member_ids(server_id, state).await;
     let online_count = state.hub.count_online(&member_ids).max(1);
 
-    // 4. Active polls for channel
-    let polls = fetch_active_polls(channel_id, user_id, state).await?;
+    Ok(serde_json::json!({
+        "now_playing": now_playing,
+        "queue": queue,
+        "skip_votes": skip_votes,
+        "skip_threshold_pct": threshold,
+        "online_members": online_count,
+    }))
+}
 
-    // 5. Pinned clips
+/// Clips block: pinned clips + recent clips + batch reactions.
+async fn fetch_clips_block(
+    server_id: Uuid,
+    user_id: Uuid,
+    state: &AppState,
+) -> AppResult<(Vec<serde_json::Value>, Vec<serde_json::Value>)> {
     let pinned_clip_rows = sqlx::query(
         "SELECT m.id, m.channel_id, m.sender_id, m.ciphertext, m.created_at, pc.pinned_at
          FROM pinned_clips pc
@@ -1687,7 +1717,6 @@ pub async fn get_canvas_state(
     .fetch_all(state.db.pool())
     .await?;
 
-    // 6. Recent clips (non-pinned)
     let clip_rows = sqlx::query(
         "SELECT m.id, m.channel_id, m.sender_id, m.ciphertext, m.created_at
          FROM messages m
@@ -1705,24 +1734,28 @@ pub async fn get_canvas_state(
     .fetch_all(state.db.pool())
     .await?;
 
-    // Collect all clip IDs for batch reaction fetch
     let all_clip_ids: Vec<Uuid> = pinned_clip_rows
         .iter()
         .chain(clip_rows.iter())
         .filter_map(|r| r.try_get::<Uuid, _>("id").ok())
         .collect();
 
-    // 7. Batch fetch reactions
     let reaction_map = fetch_batch_reaction_counts(&all_clip_ids, state).await?;
     let my_reactions = fetch_batch_my_reactions(&all_clip_ids, user_id, state).await?;
 
-    // Build clip responses
-    let pinned_clips = build_clip_list(&pinned_clip_rows, &reaction_map, &my_reactions, true);
+    let pinned = build_clip_list(&pinned_clip_rows, &reaction_map, &my_reactions, true);
     let clips = build_clip_list(&clip_rows, &reaction_map, &my_reactions, false);
 
-    // 8. Active event
+    Ok((pinned, clips))
+}
+
+/// Events block: active event within the live window.
+async fn fetch_events_block(
+    server_id: Uuid,
+    state: &AppState,
+) -> AppResult<Option<serde_json::Value>> {
     let live_window = Utc::now() - Duration::seconds(EVENT_LIVE_WINDOW_SECS);
-    let event = sqlx::query(
+    sqlx::query(
         "SELECT id, title, description, event_at, created_by, created_at
          FROM canvas_events
          WHERE server_id = $1 AND event_at > $2
@@ -1744,21 +1777,8 @@ pub async fn get_canvas_state(
                            .to_rfc3339(),
         }))
     })
-    .transpose()?;
-
-    Ok(serde_json::json!({
-        "music": {
-            "now_playing": now_playing,
-            "queue": queue,
-            "skip_votes": skip_votes,
-            "skip_threshold_pct": threshold,
-            "online_members": online_count,
-        },
-        "polls": polls,
-        "pinned_clips": pinned_clips,
-        "clips": clips,
-        "event": event,
-    }))
+    .transpose()
+    .map_err(AppError::Database)
 }
 
 /// Fetch now-playing for a server.

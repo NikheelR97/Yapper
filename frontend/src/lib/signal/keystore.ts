@@ -119,11 +119,121 @@ let _batchMode = false;
 const _batchDirtySessions = new Set<string>();
 const _batchDirtyReceiverKeys = new Set<string>();
 
+// ─── Debounced writes (MED-003) ───────────────────────────────────────────────
+// Outside batch mode, per-message storeSession/storeReceiverKey calls are
+// debounced to reduce IDB write pressure on the WS hot path. The in-memory
+// cache is always up to date; dirty entries flush on one of three triggers:
+//   (a) 100 ms idle after the last write
+//   (b) 20 pending entries
+//   (c) visibilitychange → hidden / beforeunload
+const DEBOUNCE_FLUSH_MS = 100;
+const DEBOUNCE_FLUSH_COUNT = 20;
+const _debounceDirtySessions = new Set<string>();
+const _debounceDirtyReceiverKeys = new Set<string>();
+let _debounceTimer: ReturnType<typeof setTimeout> | null = null;
+let _debounceFlushInProgress = false;
+
+function scheduleDebounceFlush(): void {
+  const dirtyCount =
+    _debounceDirtySessions.size + _debounceDirtyReceiverKeys.size;
+  if (dirtyCount >= DEBOUNCE_FLUSH_COUNT) {
+    // Count threshold — flush immediately
+    void flushDebouncedWrites();
+    return;
+  }
+  if (_debounceTimer !== null) clearTimeout(_debounceTimer);
+  _debounceTimer = setTimeout(() => {
+    _debounceTimer = null;
+    void flushDebouncedWrites();
+  }, DEBOUNCE_FLUSH_MS);
+}
+
+async function flushDebouncedWrites(): Promise<void> {
+  if (_debounceFlushInProgress) return;
+  if (!_debounceDirtySessions.size && !_debounceDirtyReceiverKeys.size) return;
+  _debounceFlushInProgress = true;
+
+  if (_debounceTimer !== null) {
+    clearTimeout(_debounceTimer);
+    _debounceTimer = null;
+  }
+
+  try {
+    // Snapshot and clear dirty sets before async work
+    const dirtySessionIds = [..._debounceDirtySessions];
+    const dirtyRkIds = [..._debounceDirtyReceiverKeys];
+    _debounceDirtySessions.clear();
+    _debounceDirtyReceiverKeys.clear();
+
+    // Pre-encrypt outside the IDB transaction
+    const sessionEntries: unknown[] = [];
+    for (const sessionId of dirtySessionIds) {
+      const session = _sessionCache.get(sessionId);
+      if (session) {
+        sessionEntries.push(await encryptForTx("dm_sessions", session));
+      }
+    }
+
+    const rkEntries: Array<{ encrypted: unknown; idbKey: string }> = [];
+    for (const rkId of dirtyRkIds) {
+      const record = _receiverKeyCache.get(rkId);
+      if (record) {
+        rkEntries.push({
+          encrypted: await encryptForTx("receiver_keys", record),
+          idbKey: rkId,
+        });
+      }
+    }
+
+    if (!sessionEntries.length && !rkEntries.length) return;
+
+    const storeNames: string[] = [];
+    if (sessionEntries.length) storeNames.push("dm_sessions");
+    if (rkEntries.length) storeNames.push("receiver_keys");
+
+    const db = await getDB();
+    const tx = db.transaction(storeNames, "readwrite");
+    for (const enc of sessionEntries) {
+      await tx.objectStore("dm_sessions").put(enc);
+    }
+    for (const { encrypted, idbKey } of rkEntries) {
+      await tx.objectStore("receiver_keys").put(encrypted, idbKey);
+    }
+    await tx.done;
+  } finally {
+    _debounceFlushInProgress = false;
+    // If new entries accumulated during flush, schedule another
+    if (_debounceDirtySessions.size || _debounceDirtyReceiverKeys.size) {
+      scheduleDebounceFlush();
+    }
+  }
+}
+
+// Flush on page hide / beforeunload to preserve ratchet durability
+if (typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      void flushDebouncedWrites();
+    }
+  });
+}
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeunload", () => {
+    void flushDebouncedWrites();
+  });
+}
+
 function clearInMemoryCaches(): void {
   _sessionCache.clear();
   _receiverKeyCache.clear();
   _batchDirtySessions.clear();
   _batchDirtyReceiverKeys.clear();
+  _debounceDirtySessions.clear();
+  _debounceDirtyReceiverKeys.clear();
+  if (_debounceTimer !== null) {
+    clearTimeout(_debounceTimer);
+    _debounceTimer = null;
+  }
   _batchMode = false;
 }
 
@@ -881,8 +991,10 @@ export async function storeSession(session: Session): Promise<void> {
     return;
   }
 
-  const db = await getDB();
-  await secPut(db, "dm_sessions", session);
+  // Debounced IDB write — cache is already up to date above.
+  // Flush happens on timer (100 ms), count (20), or page hide.
+  _debounceDirtySessions.add(session.sessionId);
+  scheduleDebounceFlush();
 }
 
 export async function loadSession(sessionId: string): Promise<Session | null> {
@@ -1028,8 +1140,9 @@ export async function storeReceiverKey(record: SenderKeyRecord): Promise<void> {
     return;
   }
 
-  const db = await getDB();
-  await secPut(db, "receiver_keys", record, cacheKey);
+  // Debounced IDB write — cache is already up to date above.
+  _debounceDirtyReceiverKeys.add(cacheKey);
+  scheduleDebounceFlush();
 }
 
 export async function loadReceiverKey(

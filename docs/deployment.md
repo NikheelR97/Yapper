@@ -89,6 +89,75 @@ flyctl logs -a yapper-api --tail   # live tail
 flyctl ssh console -a yapper-api
 ```
 
+### Health probe
+
+The `/health` endpoint executes `SELECT 1` against the Neon pool with a 2 s timeout. A 200 means both the VM and the database are reachable; a 503 means the pool is dead even though the VM is up. Fly.io's HTTP health check should be pointed at `/health` so a Neon outage triggers a probe failure rather than silent 500s on application requests.
+
+```bash
+curl -fsS https://api.yapperhq.com/health
+# {"db":"ok","ok":true}
+```
+
+---
+
+## Emergency operations
+
+### Scale up (memory pressure or CPU saturation)
+
+The MVP runs a single `shared-cpu-1x` machine with 256 MB RAM. To scale vertically:
+
+```bash
+# Larger VM (preserves the single-instance topology — safe for the hub):
+flyctl scale vm shared-cpu-2x --vm-memory 512 -a yapper-api
+
+# Or, only during a rolling redeploy, run two machines briefly:
+flyctl scale count 2 --region jnb -a yapper-api
+flyctl machine list -a yapper-api          # confirm both are healthy
+flyctl scale count 1 --region jnb -a yapper-api   # back to single-instance
+```
+
+> **WARNING — multi-machine is not yet safe.** The WebSocket hub state lives in process memory (`Arc<DashMap>` in `backend/src/hub.rs`). Two concurrent machines will not see each other's connected users, so presence, typing indicators, and channel fan-out will be split-brained until the hub-sharding work lands. Only use `count 2` during a deliberately short rolling deploy window. For sustained higher load, scale **up** (`shared-cpu-2x` or larger), not **out**.
+
+### VM unresponsive or stuck
+
+```bash
+flyctl machine list -a yapper-api
+flyctl machine restart <machine-id> -a yapper-api
+```
+
+Clients reconnect automatically and undelivered messages replay from PostgreSQL on the next WebSocket handshake. Acceptable downtime window: ~10 seconds.
+
+### Neon storage approaching the 500 MB free-tier hard cap
+
+The release gate requires automated `pg_database_size()` monitoring (audit ref MED-002). Until that is in place, check manually before any large data import:
+
+```bash
+psql "$NEON_DIRECT_URL" -c "SELECT pg_size_pretty(pg_database_size(current_database()));"
+```
+
+If above 400 MB, schedule an upgrade to Neon Pro from the Neon dashboard ($19/mo, no downtime). If writes are already failing because the cap was hit:
+
+```bash
+# Tail backend logs for the error pattern
+flyctl logs -a yapper-api | grep -iE 'disk full|storage|insert.*failed'
+# Then upgrade Neon, then restart the VM to drop any cached pool errors:
+flyctl machine restart <machine-id> -a yapper-api
+```
+
+### Rollback to a previous release
+
+```bash
+flyctl releases -a yapper-api                   # find the last known-good SHA
+flyctl image show -a yapper-api                 # confirm current image
+flyctl deploy --image registry.fly.io/yapper-api:<git-sha> -a yapper-api
+```
+
+The release gate requires that the rollback target is from the **same** migration generation as the current schema. If a rollback would require reverting a migration, do **not** rollback the VM alone — open a manual incident and revert the migration first. See "Database migrations in production" above.
+
+### Public incident communication
+
+If user-facing degradation lasts more than 5 minutes, post to status.yapperhq.com (Cloudflare Page) and the @yapperhq social accounts. Do not include user-identifying detail or root-cause speculation in the public post.
+
 ---
 
 ## Frontend — Cloudflare Pages

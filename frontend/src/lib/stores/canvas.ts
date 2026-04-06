@@ -187,7 +187,7 @@ export async function loadCanvas(serverId: string): Promise<void> {
 export async function loadClips(serverId: string): Promise<void> {
 	try {
 		const res = await api.get<{ clips: ClipV2[] }>(
-			`/api/v2/canvas/servers/${serverId}/clips`
+			`/api/v2/canvas/servers/${serverId}`
 		);
 		getCanvasStore(serverId).update((s) => ({
 			...s,

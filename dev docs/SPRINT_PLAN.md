@@ -824,7 +824,6 @@ These prerequisite UI components were built across S7–S11 FE work and wired in
 ## S14 — Audit Remediation (Weeks 28–29)
 
 **Goal:** Address all remaining findings from the 2026-03-21 codebase audit. Fix compliance gaps, add test coverage for security-sensitive modules, and complete the bot messaging system.
-**Audit report:** `C:\Users\rajma\.claude\plans\sprightly-singing-pebble.md`
 
 > **Status update (2026-03-21):** ✅ **COMPLETE.** All W28 + W29 tasks done. Bot plaintext storage, HubSpot webhook, FCM push notifications, emoji cache invalidation, 4 function refactors (all <60 lines), COPPA v2 guard. Test coverage: 217 backend tests (hub, messages, parental, csrf, canvas, explore, servers, users), 52 frontend tests (ws.ts, conversations.ts, signal, stores). `cargo test --lib` and `vitest run` both green.
 

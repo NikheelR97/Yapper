@@ -138,31 +138,40 @@ Implementation: `frontend/src/lib/signal/keystore.ts`
 
 ## Key Backup
 
-Users can back up their Signal keystore with a PIN:
+Users can back up their Signal keystore with a recovery passphrase:
 
 ```
-1. Derive encryption key from PIN via PBKDF2 (100K iterations, SHA-256)
-2. Encrypt keystore JSON with AES-256-GCM
-3. POST encrypted blob to /api/v2/keys/backup
+1. Derive a 256-bit AES-GCM key from the passphrase via PBKDF2-HMAC-SHA256
+   (1,200,000 iterations, random 16-byte salt)
+2. Encrypt the keystore snapshot with AES-256-GCM
+3. POST the encrypted blob to /api/v2/keys/backup
 4. Server stores opaque ciphertext — cannot read it
 ```
 
-On a new device, the user enters their PIN to restore the keystore.
+The passphrase must be 12–1024 characters and contain both letters and numbers, plus either an uppercase letter or a special character. On a new device, the user enters their passphrase to restore the keystore.
 
-Implementation: `frontend/src/lib/signal/backup.ts`
+The 1,200,000 iteration count exceeds the OWASP 2023 floor of ≥600,000 for PBKDF2-HMAC-SHA256 by 2×.
+
+Implementation: `frontend/src/lib/signal/backup.ts` (`PBKDF2_ITERS = 1_200_000`)
 
 ---
 
 ## Safety Numbers
 
-Safety numbers are derived from both parties' identity keys:
+Safety numbers are derived deterministically from a peer's identity keys:
 
 ```
-safety_number = first 60 digits of SHA-512(IKa || IKb)
-displayed as 12 groups of 5 digits
+fingerprint = SHA-256(identity_dhPub || identity_sigPub)
+            → first 30 bytes
+            → 6 × uint40 (mod 100000)
+displayed as 6 groups of 5 decimal digits (30 digits total)
 ```
 
-Users can compare safety numbers out-of-band to verify there is no man-in-the-middle. Implementation: `frontend/src/lib/components/settings/PrivacySafety.svelte`.
+The concatenation order is fixed at `dhPub || sigPub` for **every** peer, so both sides of a conversation always derive the same fingerprint without any sort/lex coordination. Users can compare fingerprints out-of-band to verify there is no man-in-the-middle.
+
+The display form provides ≈99.6 bits of collision resistance (30 decimal digits × log₂(10) ≈ 99.6 bits), which is sufficient for human-comparable MITM verification.
+
+Implementation: `frontend/src/lib/signal/index.ts` (`fingerprintKeys`), rendered by `frontend/src/lib/components/chat/SafetyNumbers.svelte`.
 
 ---
 

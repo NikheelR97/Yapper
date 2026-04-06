@@ -59,7 +59,7 @@ backend/src/
 
 ## Database patterns
 
-All queries use `sqlx::query()` (not the macro) with `.try_get()` for flexibility:
+The default is `sqlx::query()` with `.bind()` and `.try_get()`. This is used throughout the codebase and provides parameterised query safety without requiring `cargo sqlx prepare` after every schema change:
 
 ```rust
 let row = sqlx::query("SELECT id, username FROM users WHERE id = $1")
@@ -69,7 +69,7 @@ let row = sqlx::query("SELECT id, username FROM users WHERE id = $1")
 let username: String = row.try_get("username")?;
 ```
 
-Use `sqlx::query!` macros only for complex queries where compile-time checking is essential — they require `cargo sqlx prepare` after any change.
+The compile-time `sqlx::query!()` macro is optional for high-stability hot paths where an extra layer of schema-drift detection is valuable. Both approaches are acceptable — they produce identical parameterised SQL at runtime.
 
 ## Error handling
 

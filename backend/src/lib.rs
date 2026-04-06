@@ -20,6 +20,7 @@ use std::{
     net::{IpAddr, SocketAddr},
     num::NonZeroU32,
     sync::Arc,
+    time::Duration,
 };
 use tower_http::{
     compression::CompressionLayer, cors::CorsLayer, set_header::SetResponseHeaderLayer,
@@ -207,8 +208,33 @@ pub(crate) fn cors_layer() -> CorsLayer {
         .allow_credentials(true)
 }
 
-async fn health_handler() -> impl IntoResponse {
-    Json(json!({ "ok": true }))
+/// Liveness probe with database verification.
+///
+/// Returns `200 { "ok": true, "db": "ok" }` only if a `SELECT 1` against the
+/// Neon pool completes within 2 seconds. Otherwise returns `503` so Fly.io's
+/// HTTP probe can distinguish a healthy VM from one whose database connection
+/// has collapsed (Neon auto-suspend, pool exhaustion, DNS flap).
+///
+/// Audit ref: MED-001 — prior to this change `/health` returned 200
+/// unconditionally, which gave Fly.io and external monitors a false-clean
+/// signal during DB outages.
+async fn health_handler(State(state): State<AppState>) -> impl IntoResponse {
+    let db_ok = tokio::time::timeout(
+        Duration::from_secs(2),
+        sqlx::query("SELECT 1").execute(state.db.pool()),
+    )
+    .await
+    .map(|r| r.is_ok())
+    .unwrap_or(false);
+
+    if db_ok {
+        (StatusCode::OK, Json(json!({ "ok": true, "db": "ok" })))
+    } else {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({ "ok": false, "db": "down" })),
+        )
+    }
 }
 
 async fn api_rate_limit_check(

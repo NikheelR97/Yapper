@@ -1,8 +1,7 @@
 # YAPPER — Developer Handover Document
 
-**Last updated:** 2026-03-22 (rev 5)
+**Last updated:** 2026-04-06 (rev 6)
 **Project status:** Active development — S0-S16 complete; stabilization in progress; Canvas Expansion + E2EE Media deployed; CI/CD production deploy/release automation is paused until the documented release gates are proven
-**Full implementation plan:** `C:\Users\rajma\.claude\plans\quizzical-yawning-starfish.md`
 
 ---
 
@@ -58,7 +57,7 @@ Yapper is a greenfield SaaS real-time chat platform targeting community/social a
 
 | Layer | Technology | Why |
 |-------|-----------|-----|
-| Backend language | **Rust** | Already required for Tauri; `libsignal-protocol` is native Rust; ~10MB idle RAM fits Fly.io 256MB VM; `sqlx::query!` compile-time SQL verification |
+| Backend language | **Rust** | Already required for Tauri; `libsignal-protocol` is native Rust; ~10MB idle RAM fits Fly.io 256MB VM; `sqlx` parameterized queries |
 | Backend framework | **Axum + Tokio** | Tower-based middleware, native WebSocket upgrade, async/await |
 | Frontend framework | **SvelteKit** | Static adapter for Tauri/Capacitor; reactive stores; small bundle size |
 | Desktop shell | **Tauri v2** | Rust-native; ~5MB binary vs Electron's ~150MB |
@@ -246,12 +245,12 @@ pub async fn create_server(user_id: Uuid, input: CreateServer, pool: &PgPool) ->
 
 ```rust
 // BAD
-let _ = sqlx::query!("DELETE FROM sessions WHERE expired < now()")
+let _ = sqlx::query("DELETE FROM sessions WHERE expired < now()")
     .execute(&pool)
     .await;
 
 // GOOD
-sqlx::query!("DELETE FROM sessions WHERE expired < now()")
+sqlx::query("DELETE FROM sessions WHERE expired < now()")
     .execute(&pool)
     .await
     .map_err(|e| {
@@ -265,7 +264,7 @@ sqlx::query!("DELETE FROM sessions WHERE expired < now()")
 **NASA original:** The use of the preprocessor must be limited to the inclusion of header files and simple conditional macros.
 
 **Yapper application:**
-- Limit Rust macro usage to: `derive` macros, `sqlx::query!`/`query_as!`, `tracing::instrument`, `serde` attributes, and `cfg(test)`.
+- Limit Rust macro usage to: `derive` macros, `sqlx::query()`/`query_as()` (macro variants `query!`/`query_as!` optional for high-stability hot paths), `tracing::instrument`, `serde` attributes, and `cfg(test)`.
 - Do not write custom procedural macros unless they eliminate a proven, repetitive pattern across 5+ call sites.
 - `cfg` attributes are acceptable for platform-specific code (Tauri vs Capacitor plugin bridges).
 - In TypeScript, avoid template literal types for business logic — they're hard to debug.
@@ -323,7 +322,7 @@ These are non-negotiable security requirements, not suggestions.
 ### Input Validation
 - All Axum handlers use `validator` crate derive macros.
 - All input DTOs use `#[serde(deny_unknown_fields)]`.
-- SQL injection is prevented by `sqlx::query!` parameterized queries (compile-time verified).
+- SQL injection is prevented by `sqlx::query()` parameterized queries with `.bind()`. All queries use parameter binding; none use string concatenation.
 - XSS is mitigated by never rendering user HTML — all user content is plaintext or markdown rendered client-side.
 
 ### Headers
@@ -633,7 +632,6 @@ wrangler secret put RESEND_API_KEY  # Set secret
 For any developer picking up this project:
 
 - [ ] Read this document fully
-- [ ] Read the full implementation plan at `C:\Users\rajma\.claude\plans\quizzical-yawning-starfish.md`
 - [ ] Review the sprint plan at `dev docs/SPRINT_PLAN.md` for current task status
 - [x] Complete the Pre-Phase setup (accounts, tools, entitlements)
 - [x] Run `docker compose up -d` and verify PostgreSQL is healthy
@@ -643,7 +641,15 @@ For any developer picking up this project:
 - [x] Review the security standards in Section 4 — these are non-negotiable
 - [ ] Check the current phase status and pick up where it left off
 
-### Where to Pick Up Next (as of 2026-03-22, rev 5)
+### Where to Pick Up Next (as of 2026-04-06, rev 6)
+
+**Pre-launch audit remediation complete (audit/pre-launch-remediation branch).** Five pre-launch items closed: MED-001 (`/health` now verifies the database with a 2 s timeout, returns 503 on pool failure), LOW-006 (wiki E2EE doc reconciled with the actual code — PBKDF2 at 1.2M iterations, SHA-256 safety numbers, correct component filename), LOW-007 (emergency Fly.io ops runbook added to `docs/deployment.md`), LOW-008 (developer Windows path leak removed from HANDOVER and SPRINT_PLAN), LOW-009 (cargo-audit ignore list moved to `backend/.cargo/audit.toml` as the single source of truth — local and CI runs now agree).
+
+**Currently ignored cargo-audit advisories** (rationale + review dates in [`backend/.cargo/audit.toml`](../backend/.cargo/audit.toml) and [`dev docs/SECURITY_AUDIT.md § 2.2`](SECURITY_AUDIT.md)):
+
+- `RUSTSEC-2023-0071` — `rsa` via `sqlx-mysql` (Postgres only, unreachable)
+- `RUSTSEC-2024-0363` — `sqlx 0.7.x` (gated on `sqlx 0.8` migration, post-launch)
+- `RUSTSEC-2024-0421` — `idna` via `validator` (gated on upstream `validator` major release)
 
 **S0–S16 complete. Canvas Expansion + E2EE Media deployed. Code review remediation done.** Priority order:
 

@@ -71,5 +71,4 @@ pub fn router() -> Router<AppState> {
         .route("/canvas/servers/:server_id/state", get(get_canvas_state))
         // ─── Legacy ─────────────────────────────────────────────────────
         .route("/canvas/servers/:server_id", get(get_canvas_legacy))
-        .route("/canvas/servers/:server_id/clips", get(get_canvas_legacy))
 }

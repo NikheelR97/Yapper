@@ -409,6 +409,16 @@ impl Hub {
     }
 
     /// Fan out a message to multiple users (e.g. all members of a channel).
+    ///
+    /// Sequential loop using non-blocking `try_send` — each iteration is
+    /// microseconds with no `.await` and no DashMap guard held across calls.
+    /// At the MVP ceiling of 500 members × 5 devices the loop completes in
+    /// tens of milliseconds.
+    ///
+    /// **Scale-up trigger (audit LOW-004):** if p95 server-side channel send
+    /// latency exceeds 50 ms, or `MAX_SERVER_MEMBERS_MVP` is raised above 500,
+    /// switch to a chunked `tokio::spawn` fan-out (64-member chunks) to
+    /// parallelise the `try_send` calls across tasks.
     pub fn broadcast(&self, user_ids: &[Uuid], msg: WsOutbound) {
         for user_id in user_ids.iter().take(MAX_FANOUT_MEMBERS as usize) {
             self.send_to_user(user_id, msg.clone());

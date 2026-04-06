@@ -496,6 +496,7 @@ pub mod account;
 pub mod auth;
 pub mod canvas;
 pub mod devices;
+pub mod health;
 pub mod identity;
 pub mod keys;
 pub mod messages;

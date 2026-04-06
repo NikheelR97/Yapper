@@ -37,13 +37,15 @@ The following scans run on every push/PR to `main` and on a nightly schedule:
 
 ### 2.2 Known CVE Ignores (cargo-audit)
 
-| Advisory | Crate | Reason for Ignore | Risk Assessment |
-|----------|-------|-------------------|-----------------|
-| RUSTSEC-2023-0071 | Transitive dep via `reqwest 0.11` | No direct exposure; `reqwest` used for outbound HTTP to trusted APIs (Resend, Discord, FCM) only | **Low** — no attacker-controlled TLS endpoints |
-| RUSTSEC-2024-0363 | Transitive dep via `reqwest 0.11` | Same as above | **Low** |
-| RUSTSEC-2024-0421 | Transitive dep via `reqwest 0.11` | Same as above | **Low** |
+The single source of truth for the ignore list is [`backend/.cargo/audit.toml`](../backend/.cargo/audit.toml). Local `cargo audit` runs and the CI workflow both consume that file.
 
-**Remediation path:** Upgrade `reqwest` from 0.11 to 0.12+ which migrates to `rustls 0.23`. This is a medium-effort change due to API differences.
+| Advisory | Crate path | Reason for Ignore | Risk Assessment | Reviewed |
+|----------|-----------|-------------------|-----------------|----------|
+| RUSTSEC-2023-0071 | `rsa` via `sqlx-mysql` | Yapper uses Postgres only; the rsa code path is never reached. Remediation: drop `sqlx-mysql` when migrating to `sqlx 0.8`. | **Low** — unreachable code path | 2026-04-06 |
+| RUSTSEC-2024-0363 | `sqlx 0.7.x` | Fix requires a `sqlx 0.8` major version migration that touches every query. Scheduled post-launch after the messages/keys module split (audit ref MED-004). | **Low** — internal query layer only | 2026-04-06 |
+| RUSTSEC-2024-0421 | `idna` via `validator` | Fix requires a `validator` major version bump that the upstream crate has not yet released. Tracked upstream. | **Low** — input validation only, not network parsing | 2026-04-06 |
+
+**Remediation path:** the three ignores are gated on a `sqlx 0.7 → 0.8` migration plus an upstream `validator` release. Re-review quarterly. Update the `Reviewed` column AND the matching comment in `backend/.cargo/audit.toml` whenever the list changes.
 
 ### 2.3 npm Dependency Overrides
 
