@@ -1,12 +1,14 @@
 # ─── Planner stage — computes the dependency recipe ──────────────────────────
-FROM lukemathwalker/cargo-chef:latest-rust-alpine AS planner
+# Pin to a specific cargo-chef release to guarantee reproducible builds.
+# Update this tag when upgrading the Rust toolchain (MSRV = 1.80).
+FROM lukemathwalker/cargo-chef:0.1.68-rust-1.80-alpine3.21 AS planner
 RUN apk add --no-cache musl-dev openssl-dev openssl-libs-static pkgconfig
 WORKDIR /app
 COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
 
 # ─── Builder stage — caches deps then builds source ──────────────────────────
-FROM lukemathwalker/cargo-chef:latest-rust-alpine AS builder
+FROM lukemathwalker/cargo-chef:0.1.68-rust-1.80-alpine3.21 AS builder
 RUN apk add --no-cache musl-dev openssl-dev openssl-libs-static pkgconfig
 WORKDIR /app
 COPY --from=planner /app/recipe.json recipe.json

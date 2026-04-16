@@ -25,6 +25,8 @@ primary_region = "jnb"  # Johannesburg
   APP_ENV = "production"
 
 # Secrets (set via: fly secrets set KEY=value — never commit actual values)
+#
+# Required:
 # DATABASE_URL
 # JWT_PRIVATE_KEY
 # JWT_PUBLIC_KEY
@@ -40,3 +42,14 @@ primary_region = "jnb"  # Johannesburg
 # GOOGLE_CLIENT_ID
 # GOOGLE_CLIENT_SECRET
 # CORS_ORIGINS
+#
+# Optional (gracefully disabled if absent):
+# APPLE_CLIENT_ID           — Apple Sign-In OAuth
+# APPLE_CLIENT_SECRET       — Apple Sign-In OAuth
+# SENTRY_DSN                — Error monitoring (disabled if empty)
+# HUBSPOT_ACCESS_TOKEN      — Support ticket creation
+# HUBSPOT_CLIENT_SECRET     — HubSpot webhook HMAC verification
+# HUBSPOT_WEBHOOK_URL       — HubSpot inbound webhook target
+# FIREBASE_SERVICE_ACCOUNT_PATH — Push notification credentials (FCM)
+# EMAIL_FROM                — Sender address (default: Yapper <hello@yapperhq.com>)
+# OAUTH_REDIRECT_BASE       — OAuth callback base URL (default: derived from HOST/PORT)
