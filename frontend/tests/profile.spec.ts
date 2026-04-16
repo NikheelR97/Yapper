@@ -1,7 +1,6 @@
 import { test, expect } from '@playwright/test';
 import {
 	buildMockAuthData,
-	buildMockDevice,
 	mockAuthEndpoints,
 	setInstallationId,
 	loginViaApi,

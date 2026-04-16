@@ -7,7 +7,7 @@ import { test, expect } from '@playwright/test';
  * Uses mocked auth so we don't consume API rate limits.
  */
 
-const API_URL = process.env.VITE_API_URL ?? 'https://api.yapperhq.com';
+const _API_URL = process.env.VITE_API_URL ?? 'https://api.yapperhq.com';
 
 test.describe('Onboarding carousel', () => {
 	// Clear stored auth state so the (auth) layout doesn't redirect away.

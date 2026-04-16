@@ -129,12 +129,12 @@ test.describe('Screen Time — report ingestion stub', () => {
 
 	test('POST /screentime/reports accepts a report payload', async ({ page }) => {
 		const device = buildMockDevice({ installation_id: 'st-report-install' });
-		const authData = buildMockAuthData({ device });
+		const _authData = buildMockAuthData({ device });
 
-		let capturedBody: unknown = null;
+		let _capturedBody: unknown = null;
 		await page.route(`**/api/v2/screentime/reports`, async (route) => {
 			if (route.request().method() === 'POST') {
-				capturedBody = route.request().postDataJSON();
+				_capturedBody = route.request().postDataJSON();
 				await route.fulfill({ status: 201, contentType: 'application/json', body: '{}' });
 			} else {
 				await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });

@@ -26,4 +26,17 @@ ignore = [
     # that the upstream crate has not yet released. Tracked upstream.
     # Reviewed: 2026-04-06
     "RUSTSEC-2024-0421",
+
+    # rustls-webpki 0.101.7 — TLS certificate name constraint validation bugs
+    # (URI name constraints and wildcard name constraints incorrectly accepted).
+    # Fix requires rustls-webpki >=0.103.12, which forces rustls 0.21 → 0.22+
+    # and reqwest 0.11 → 0.12 (breaking API changes). This migration is out of
+    # scope during the stabilization freeze. Yapper is a TLS client only — the
+    # impact is that a maliciously crafted server cert could pass validation.
+    # Mitigation: all Yapper backend connections go to well-known Neon/R2/AWS
+    # endpoints pinned in configuration; no user-supplied TLS destinations.
+    # Tracked: reqwest 0.12 migration in post-launch refactor sprint.
+    # Reviewed: 2026-04-16
+    "RUSTSEC-2026-0098",
+    "RUSTSEC-2026-0099",
 ]

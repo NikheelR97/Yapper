@@ -7,7 +7,7 @@ import { test, expect } from '@playwright/test';
  * These are UI-only tests — no live API calls required.
  */
 
-const API_URL = process.env.VITE_API_URL ?? 'https://api.yapperhq.com';
+const _API_URL = process.env.VITE_API_URL ?? 'https://api.yapperhq.com';
 
 test.describe('Forgot password page', () => {
 	// (auth) layout redirects authenticated users to /explore.

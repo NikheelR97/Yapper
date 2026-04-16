@@ -1663,10 +1663,7 @@ pub async fn get_canvas_state(
 }
 
 /// Music block: now_playing + queue + skip votes + threshold + online count.
-async fn fetch_music_block(
-    server_id: Uuid,
-    state: &AppState,
-) -> AppResult<serde_json::Value> {
+async fn fetch_music_block(server_id: Uuid, state: &AppState) -> AppResult<serde_json::Value> {
     let now_playing = fetch_now_playing(server_id, state).await?;
     let queue = fetch_active_queue(server_id, state).await;
 

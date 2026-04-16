@@ -17,7 +17,7 @@ test.describe.configure({ timeout: 120_000 });
 
 const TEST_EMAIL = process.env.E2E_EMAIL ?? '';
 const TEST_PASSWORD = process.env.E2E_PASSWORD ?? '';
-const API_URL = process.env.VITE_API_URL ?? 'https://api.yapperhq.com';
+const _API_URL = process.env.VITE_API_URL ?? 'https://api.yapperhq.com';
 
 const client = new E2EApiClient();
 

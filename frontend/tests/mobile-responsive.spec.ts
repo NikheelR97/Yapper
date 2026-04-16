@@ -9,7 +9,7 @@ import { mockExploreEndpoints } from './helpers/mock-routes.js';
  * Uses mocked auth — no live API required.
  */
 
-const API_URL = process.env.VITE_API_URL ?? 'https://api.yapperhq.com';
+const _API_URL = process.env.VITE_API_URL ?? 'https://api.yapperhq.com';
 
 async function setupMobileAuth(page: Parameters<typeof mockAuthEndpoints>[0]): Promise<void> {
 	const device = buildMockDevice({ installation_id: 'mobile-test-install', label: 'Mobile Browser' });

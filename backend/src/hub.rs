@@ -167,8 +167,10 @@ impl Hub {
 
     /// Cache a DM recipient lookup result.
     fn cache_dm_recipient(&self, conversation_id: Uuid, sender_id: Uuid, recipient_id: Uuid) {
-        self.dm_recipient_cache
-            .insert((conversation_id, sender_id), (recipient_id, jittered_now(MEMBERSHIP_CACHE_TTL)));
+        self.dm_recipient_cache.insert(
+            (conversation_id, sender_id),
+            (recipient_id, jittered_now(MEMBERSHIP_CACHE_TTL)),
+        );
     }
 
     /// Look up a cached channel → server_id mapping.
@@ -195,8 +197,10 @@ impl Hub {
 
     /// Cache a server membership check result.
     fn cache_membership(&self, user_id: Uuid, server_id: Uuid, is_member: bool) {
-        self.membership_cache
-            .insert((user_id, server_id), (is_member, jittered_now(MEMBERSHIP_CACHE_TTL)));
+        self.membership_cache.insert(
+            (user_id, server_id),
+            (is_member, jittered_now(MEMBERSHIP_CACHE_TTL)),
+        );
     }
 
     /// Invalidate membership cache for a user in a server (on join/leave).
