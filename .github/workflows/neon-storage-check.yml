@@ -20,6 +20,10 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.NEON_READONLY_URL }}
         run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::warning::NEON_READONLY_URL secret is not configured — skipping size check. Add the secret in repo settings to enable storage monitoring."
+            exit 0
+          fi
           SIZE_MB=$(psql "$DATABASE_URL" -tAc "SELECT pg_database_size(current_database()) / 1024 / 1024;")
           echo "Neon DB size: ${SIZE_MB} MB"
           echo "size_mb=${SIZE_MB}" >> "$GITHUB_ENV"
