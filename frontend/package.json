@@ -21,10 +21,10 @@
     "tauri": "tauri"
   },
   "dependencies": {
-    "@capacitor/android": "^8.2.0",
+    "@capacitor/android": "^8.3.1",
     "@capacitor/core": "^8.1.0",
-    "@capacitor/ios": "^8.2.0",
-    "@capacitor/push-notifications": "^8.0.2",
+    "@capacitor/ios": "^8.3.1",
+    "@capacitor/push-notifications": "^8.0.3",
     "@noble/curves": "^2.0.1",
     "@noble/hashes": "^2.0.1",
     "@sentry/sveltekit": "^10.45.0",
@@ -39,7 +39,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.1",
-    "@capacitor/cli": "^8.2.0",
+    "@capacitor/cli": "^8.3.1",
     "@playwright/test": "^1.40.0",
     "@sveltejs/adapter-static": "^3.0.0",
     "@sveltejs/kit": "^2.55.0",
