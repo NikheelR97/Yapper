@@ -21,3 +21,11 @@ reason = "rustls-webpki name-constraint bypass (URI names). Fix requires rustls 
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0099"
 reason = "rustls-webpki name-constraint bypass (wildcards). Fix requires rustls 0.21→0.22+ and reqwest 0.11→0.12 (breaking). Deferred to post-launch refactor sprint."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0104"
+reason = "rustls-webpki reachable panic in CRL parsing. The 0.103.x path (aws-sdk → rustls 0.23) was bumped to 0.103.13. The remaining hit on rustls-webpki 0.101.7 is via reqwest 0.11 → rustls 0.21, gated on the same reqwest 0.12 migration as RUSTSEC-2026-0098/0099. Yapper is a TLS client to pinned Neon/R2/AWS endpoints — no user-supplied TLS destinations — so the malformed-CRL DoS surface is not exposed."
+
+[[IgnoredVulns]]
+id = "GHSA-82j2-j2ch-gfr8"
+reason = "Alias for RUSTSEC-2026-0104 (rustls-webpki CRL panic). Same rationale — 0.103.x path bumped, 0.101.7 path gated on reqwest 0.12 migration."
