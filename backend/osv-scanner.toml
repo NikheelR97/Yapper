@@ -21,11 +21,3 @@ reason = "rustls-webpki name-constraint bypass (wildcards). Fix requires rustls 
 [[IgnoredVulns]]
 id = "GHSA-82j2-j2ch-gfr8"
 reason = "Alias for RUSTSEC-2026-0104 (rustls-webpki CRL panic). Same rationale — 0.103.x path bumped, 0.101.7 path gated on reqwest 0.12 migration."
-
-[[IgnoredVulns]]
-id = "GHSA-j687-52p2-xcff"
-reason = "Astro moderate XSS advisory in the static marketing site dependency tree. Fix requires Astro 6.x breaking upgrade; tracked in the dedicated Dependabot Astro PR. Marketing build is static and does not use runtime define:vars from user input."
-
-[[IgnoredVulns]]
-id = "GHSA-xr5h-phrj-8vxv"
-reason = "Astro moderate server-island advisory. Yapper marketing is a static Astro build and does not use server islands; fix requires Astro 6.x breaking upgrade tracked separately."
