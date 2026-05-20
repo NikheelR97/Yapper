@@ -7,10 +7,6 @@ id = "RUSTSEC-2025-0134"
 reason = "OSV flags rustls-pemfile as unmaintained, which cargo-audit already treats as a warning rather than a build-blocking vulnerability."
 
 [[IgnoredVulns]]
-id = "RUSTSEC-2026-0097"
-reason = "rand 0.8.5 advisory; fix requires a breaking 0.8→0.9 major-version migration across the codebase. Deferred to post-launch refactor sprint."
-
-[[IgnoredVulns]]
 id = "GHSA-cq8v-f236-94qc"
 reason = "Alias for RUSTSEC-2026-0097 (rand 0.8.5). Same rationale — fix requires rand 0.9 major-version migration."
 
@@ -23,9 +19,13 @@ id = "RUSTSEC-2026-0099"
 reason = "rustls-webpki name-constraint bypass (wildcards). Fix requires rustls 0.21→0.22+ and reqwest 0.11→0.12 (breaking). Deferred to post-launch refactor sprint."
 
 [[IgnoredVulns]]
-id = "RUSTSEC-2026-0104"
-reason = "rustls-webpki reachable panic in CRL parsing. The 0.103.x path (aws-sdk → rustls 0.23) was bumped to 0.103.13. The remaining hit on rustls-webpki 0.101.7 is via reqwest 0.11 → rustls 0.21, gated on the same reqwest 0.12 migration as RUSTSEC-2026-0098/0099. Yapper is a TLS client to pinned Neon/R2/AWS endpoints — no user-supplied TLS destinations — so the malformed-CRL DoS surface is not exposed."
-
-[[IgnoredVulns]]
 id = "GHSA-82j2-j2ch-gfr8"
 reason = "Alias for RUSTSEC-2026-0104 (rustls-webpki CRL panic). Same rationale — 0.103.x path bumped, 0.101.7 path gated on reqwest 0.12 migration."
+
+[[IgnoredVulns]]
+id = "GHSA-j687-52p2-xcff"
+reason = "Astro moderate XSS advisory in the static marketing site dependency tree. Fix requires Astro 6.x breaking upgrade; tracked in the dedicated Dependabot Astro PR. Marketing build is static and does not use runtime define:vars from user input."
+
+[[IgnoredVulns]]
+id = "GHSA-xr5h-phrj-8vxv"
+reason = "Astro moderate server-island advisory. Yapper marketing is a static Astro build and does not use server islands; fix requires Astro 6.x breaking upgrade tracked separately."

@@ -107,7 +107,6 @@ jobs:
           E2E_PASSWORD_2: ${{ secrets.E2E_PASSWORD_2 }}
 
       - name: Upload auth-state artifact
-        if: ${{ needs.probe-auth.outputs.reachable == 'true' }}
         uses: actions/upload-artifact@v7
         with:
           name: playwright-auth-state
