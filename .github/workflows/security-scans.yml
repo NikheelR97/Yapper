@@ -134,7 +134,7 @@ jobs:
           if-no-files-found: error
 
       - name: Run Trivy filesystem scan
-        uses: aquasecurity/trivy-action@v0.35.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -162,7 +162,7 @@ jobs:
 
       - name: Run Trivy image scan
         if: steps.image-scope.outputs.should-run-image == 'true'
-        uses: aquasecurity/trivy-action@v0.35.0
+        uses: aquasecurity/trivy-action@v0.36.0
         timeout-minutes: 8
         with:
           scan-type: image
