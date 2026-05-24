@@ -30,6 +30,8 @@ jobs:
     name: Probe E2E Auth Target
     runs-on: [self-hosted, linux, e2e, unraid]
     if: ${{ github.event_name == 'pull_request' }}
+    outputs:
+      should-run: ${{ steps.probe.outputs.should-run }}
 
     defaults:
       run:
@@ -41,9 +43,10 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Probe login endpoint reachability
+        id: probe
         shell: bash
         env:
           VITE_API_URL: ${{ vars.E2E_API_URL || 'https://api.yapperhq.com' }}
@@ -66,17 +69,24 @@ jobs:
           }
 
           if [[ -z "${E2E_EMAIL}" || -z "${E2E_PASSWORD}" || -z "${E2E_EMAIL_2}" || -z "${E2E_PASSWORD_2}" ]]; then
+            if [[ "${{ github.actor }}" == "dependabot[bot]" ]]; then
+              echo "should-run=false" >> "${GITHUB_OUTPUT}"
+              echo "::notice::Skipping PR smoke for Dependabot because repository secrets are unavailable to Dependabot-triggered runs."
+              exit 0
+            fi
+
             echo "::error::PR smoke requires both E2E test accounts to be configured."
             exit 1
           fi
 
+          echo "should-run=true" >> "${GITHUB_OUTPUT}"
           probe_user "${E2E_EMAIL}" "${E2E_PASSWORD}" "11111111-1111-4111-8111-111111111111" "GitHub Actions Probe A"
           probe_user "${E2E_EMAIL_2}" "${E2E_PASSWORD_2}" "22222222-2222-4222-8222-222222222222" "GitHub Actions Probe B"
 
   setup-auth:
     name: Setup E2E Auth State
     runs-on: [self-hosted, linux, e2e, unraid]
-    if: ${{ github.event_name == 'pull_request' }}
+    if: ${{ github.event_name == 'pull_request' && needs.probe-auth.outputs.should-run == 'true' }}
     timeout-minutes: 10
     needs: [probe-auth]
 
@@ -90,7 +100,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
@@ -118,7 +128,7 @@ jobs:
     runs-on: [self-hosted, linux, e2e, unraid]
     timeout-minutes: 10
     needs: [setup-auth]
-    if: ${{ github.event_name == 'pull_request' }}
+    if: ${{ github.event_name == 'pull_request' && needs.setup-auth.result == 'success' }}
 
     defaults:
       run:
@@ -130,7 +140,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
 
