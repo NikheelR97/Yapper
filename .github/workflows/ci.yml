@@ -187,6 +187,9 @@ jobs:
   security-scans:
     name: Security Scans
     uses: ./.github/workflows/security-scans.yml
+    permissions:
+      contents: read
+      actions: write
     secrets: inherit
 
   # Smoke tests are handled by e2e-pr-smoke.yml on PRs with frontend/backend changes.
