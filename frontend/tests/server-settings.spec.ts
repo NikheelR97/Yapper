@@ -1,6 +1,5 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/auth.fixture.js';
 import {
-	setInstallationId,
 	seedTrustedPrimaryDevice,
 	PRIMARY_INSTALLATION_ID,
 } from './auth-helper.js';
@@ -22,8 +21,6 @@ const _API_URL = process.env.VITE_API_URL ?? 'https://api.yapperhq.com';
 const client = new E2EApiClient();
 
 test.describe('Server settings', () => {
-	test.use({ storageState: { cookies: [], origins: [] } });
-
 	test.skip(!TEST_EMAIL, 'Set E2E_EMAIL / E2E_PASSWORD to run server settings tests');
 
 	let serverId: string;
@@ -35,13 +32,8 @@ test.describe('Server settings', () => {
 		serverId = result.serverId;
 	});
 
-	test('server settings page renders name and description fields', async ({ page }) => {
-		await setInstallationId(page, PRIMARY_INSTALLATION_ID);
-		await page.goto('/login');
-		await page.fill('#email', TEST_EMAIL);
-		await page.fill('#password', TEST_PASSWORD);
-		await page.getByRole('button', { name: /Sign In/i }).click();
-		await page.waitForURL(/\/explore/, { timeout: 20_000 });
+	test('server settings page renders name and description fields', async ({ userPage: page }) => {
+		await page.goto('/explore');
 		await waitForAppReady(page);
 
 		await page.goto(`/servers/${serverId}/settings`);
@@ -52,13 +44,8 @@ test.describe('Server settings', () => {
 		).toBeVisible({ timeout: 10_000 });
 	});
 
-	test('custom emoji management section renders upload form @smoke', async ({ page }) => {
-		await setInstallationId(page, PRIMARY_INSTALLATION_ID);
-		await page.goto('/login');
-		await page.fill('#email', TEST_EMAIL);
-		await page.fill('#password', TEST_PASSWORD);
-		await page.getByRole('button', { name: /Sign In/i }).click();
-		await page.waitForURL(/\/explore/, { timeout: 20_000 });
+	test('custom emoji management section renders upload form @smoke', async ({ userPage: page }) => {
+		await page.goto('/explore');
 		await waitForAppReady(page);
 
 		// Navigate to the server and find custom emoji settings

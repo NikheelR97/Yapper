@@ -107,7 +107,6 @@ jobs:
           E2E_PASSWORD_2: ${{ secrets.E2E_PASSWORD_2 }}
 
       - name: Upload auth-state artifact
-        if: ${{ needs.probe-auth.outputs.reachable == 'true' }}
         uses: actions/upload-artifact@v7
         with:
           name: playwright-auth-state
@@ -156,7 +155,13 @@ jobs:
         run: npx playwright install chromium webkit
 
       - name: Install Playwright system deps
-        run: npx playwright install-deps chromium webkit
+        shell: bash
+        run: |
+          if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+            npx playwright install-deps chromium webkit
+          else
+            echo "Skipping Playwright system deps install; runner does not allow passwordless sudo."
+          fi
 
       - name: Run smoke tests
         run: npx playwright test --grep "@smoke" --workers=4

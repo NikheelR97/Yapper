@@ -51,12 +51,16 @@ jobs:
         run: npm ci
         working-directory: marketing
 
+      # --audit-level=high aligns the npm audit gate with the Trivy gate
+      # below (which already filters to severity: HIGH,CRITICAL). Moderate
+      # advisories surface in Dependabot alerts and are tracked there
+      # without blocking every push to main.
       - name: Run npm audit (frontend)
-        run: npm audit --omit=dev
+        run: npm audit --omit=dev --audit-level=high
         working-directory: frontend
 
       - name: Run npm audit (marketing)
-        run: npm audit --omit=dev
+        run: npm audit --omit=dev --audit-level=high
         working-directory: marketing
 
       - name: Run gitleaks

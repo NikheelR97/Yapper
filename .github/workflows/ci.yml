@@ -87,7 +87,11 @@ jobs:
 
       - name: Install sqlx-cli
         if: steps.cargo-tools-cache.outputs.cache-hit != 'true'
-        run: cargo install sqlx-cli --no-default-features --features postgres --locked
+        # --force is needed because the cache `restore-keys` fallback can
+        # restore stale binaries even when the primary key (which includes
+        # Cargo.lock hash) misses — without --force, this step then errors
+        # out with "binary already exists in destination".
+        run: cargo install sqlx-cli --no-default-features --features postgres --locked --force
         working-directory: backend
 
       - name: Run migrations
