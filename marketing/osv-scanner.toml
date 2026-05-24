@@ -1,7 +1,0 @@
-[[IgnoredVulns]]
-id = "GHSA-j687-52p2-xcff"
-reason = "Astro moderate XSS advisory in the static marketing site dependency tree. Fix requires Astro 6.x/Node 22+ migration; marketing is static and does not use runtime define:vars from user input."
-
-[[IgnoredVulns]]
-id = "GHSA-xr5h-phrj-8vxv"
-reason = "Astro moderate server-island advisory. Yapper marketing is a static Astro build and does not use server islands; fix requires Astro 6.x/Node 22+ migration tracked separately."

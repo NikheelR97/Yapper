@@ -11,6 +11,7 @@ export default [
       'build/**',
       'coverage/**',
       'dist/**',
+      'ios/**',
       'node_modules/**',
       'playwright-report/**',
       'src-tauri/target/**',

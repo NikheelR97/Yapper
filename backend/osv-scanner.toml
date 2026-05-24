@@ -7,17 +7,13 @@ id = "RUSTSEC-2025-0134"
 reason = "OSV flags rustls-pemfile as unmaintained, which cargo-audit already treats as a warning rather than a build-blocking vulnerability."
 
 [[IgnoredVulns]]
-id = "GHSA-cq8v-f236-94qc"
-reason = "Alias for RUSTSEC-2026-0097 (rand 0.8.5). Same rationale — fix requires rand 0.9 major-version migration."
-
-[[IgnoredVulns]]
 id = "RUSTSEC-2026-0098"
-reason = "rustls-webpki name-constraint bypass (URI names). Fix requires rustls 0.21→0.22+ and reqwest 0.11→0.12 (breaking). Deferred to post-launch refactor sprint."
+reason = "rustls-webpki name-constraint bypass (URI names). Fix requires rustls 0.21 -> 0.22+ and reqwest 0.11 -> 0.12 (breaking). Deferred to post-launch refactor sprint."
 
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0099"
-reason = "rustls-webpki name-constraint bypass (wildcards). Fix requires rustls 0.21→0.22+ and reqwest 0.11→0.12 (breaking). Deferred to post-launch refactor sprint."
+reason = "rustls-webpki name-constraint bypass (wildcards). Fix requires rustls 0.21 -> 0.22+ and reqwest 0.11 -> 0.12 (breaking). Deferred to post-launch refactor sprint."
 
 [[IgnoredVulns]]
 id = "GHSA-82j2-j2ch-gfr8"
-reason = "Alias for RUSTSEC-2026-0104 (rustls-webpki CRL panic). Same rationale — 0.103.x path bumped, 0.101.7 path gated on reqwest 0.12 migration."
+reason = "Alias for RUSTSEC-2026-0104 (rustls-webpki CRL panic). Same rationale: 0.103.x path is already bumped, 0.101.7 path is gated on reqwest 0.12 migration."
