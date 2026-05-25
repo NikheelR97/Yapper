@@ -3,7 +3,7 @@
 //! Verifies v2 identity/signed-prekey/OPK upload, bundle fetch, OPK
 //! consumption, and that removed legacy write routes are no longer mounted.
 
-use super::{spawn_test_server_from_pool, TestClient};
+use super::{login_test_session, spawn_test_server_from_pool, TestClient};
 use base64::Engine;
 use ed25519_dalek::{Signer, SigningKey};
 use sqlx::PgPool;
@@ -287,6 +287,128 @@ async fn keys_bundle_response_exposes_only_public_key_material(pool: PgPool) {
     assert!(bundle_obj["identity_sig_key"].is_string());
     assert!(bundle_obj["signed_prekey"].is_string());
     assert!(bundle_obj["signed_prekey_sig"].is_string());
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn child_key_bundle_requires_parent_approved_friendship(pool: PgPool) {
+    let Some(server) = spawn_test_server_from_pool(pool.clone()).await else {
+        return;
+    };
+
+    let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
+    let parent_session =
+        super::register_test_session(&server, &format!("key_parent_{suffix}")).await;
+    let requester_session =
+        super::register_test_session(&server, &format!("key_requester_{suffix}")).await;
+    let parent_client = TestClient::from_session(&server, &parent_session);
+    let requester_client = TestClient::from_session(&server, &requester_session);
+
+    let child_username = format!("key_child_{suffix}");
+    let child_email = format!("{child_username}@integration.test");
+    let child_password = format!("ChildPass123!{suffix}");
+    let child_response = parent_client
+        .post("/api/v2/parental/children")
+        .json(&serde_json::json!({
+            "username": &child_username,
+            "display_name": "Key Bundle Child",
+            "email": &child_email,
+            "password": &child_password,
+            "date_of_birth": "2015-03-26",
+        }))
+        .await;
+    assert!(
+        child_response.status_code().is_success(),
+        "child creation failed: {} - {}",
+        child_response.status_code(),
+        child_response.text()
+    );
+    let child_body: serde_json::Value = child_response.json();
+    let child_id = child_body["child_id"]
+        .as_str()
+        .and_then(|id| id.parse::<Uuid>().ok())
+        .expect("child_id should be returned");
+
+    let child_session = login_test_session(
+        &server,
+        &child_email,
+        &child_password,
+        &format!("child_{suffix}"),
+    )
+    .await;
+    let child_client = TestClient::from_session(&server, &child_session);
+    prepare_bundle_material(&server, &child_client, 31, 32, 17, 33, 300, 1).await;
+
+    let server_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO servers (name, slug, owner_id)
+         VALUES ($1, $2, $3)
+         RETURNING id",
+    )
+    .bind(format!("Key Safety {suffix}"))
+    .bind(format!("key-safety-{suffix}"))
+    .bind(requester_session.user_id)
+    .fetch_one(&pool)
+    .await
+    .expect("server should insert");
+
+    for (user_id, role) in [(requester_session.user_id, "owner"), (child_id, "member")] {
+        sqlx::query(
+            "INSERT INTO server_memberships (user_id, server_id, role)
+             VALUES ($1, $2, $3)",
+        )
+        .bind(user_id)
+        .bind(server_id)
+        .bind(role)
+        .execute(&pool)
+        .await
+        .expect("membership should insert");
+    }
+
+    let bundle_path = format!("/api/v2/keys/{child_id}/bundles");
+    let denied = requester_client.get(&bundle_path).await;
+    assert_eq!(
+        denied.status_code().as_u16(),
+        403,
+        "shared server membership must not expose a child's key bundle before parental approval"
+    );
+
+    let request_path = format!("/api/v2/users/by/{child_username}/friend-request");
+    let friend_request = requester_client.post(&request_path).await;
+    assert!(
+        friend_request.status_code().is_success() || friend_request.status_code().as_u16() == 202,
+        "friend request failed: {} - {}",
+        friend_request.status_code(),
+        friend_request.text()
+    );
+
+    let pending_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM pending_friend_requests
+         WHERE child_user_id = $1 AND requester_id = $2 AND status = 'pending'",
+    )
+    .bind(child_id)
+    .bind(requester_session.user_id)
+    .fetch_one(&pool)
+    .await
+    .expect("pending friend request should exist");
+
+    let approval = parent_client
+        .patch(&format!(
+            "/api/v2/parental/friend-requests/{pending_id}/approve"
+        ))
+        .await;
+    assert!(
+        approval.status_code().is_success(),
+        "approval failed: {} - {}",
+        approval.status_code(),
+        approval.text()
+    );
+
+    let allowed = requester_client.get(&bundle_path).await;
+    assert!(
+        allowed.status_code().is_success(),
+        "approved friend should fetch child key bundle: {} - {}",
+        allowed.status_code(),
+        allowed.text()
+    );
 }
 
 #[sqlx::test(migrations = "./migrations")]

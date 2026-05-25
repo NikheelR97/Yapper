@@ -2219,13 +2219,16 @@ pub async fn require_dm_access(
 ///
 /// Access is granted if any of:
 /// 1. Requester is fetching their own keys.
-/// 2. Both users share at least one server membership.
-/// 3. Both users share a DM conversation.
+/// 2. Either account is child/parental-controlled and both users are accepted friends.
+/// 3. Both users share at least one server membership.
+/// 4. Both users may start a DM conversation.
 ///
 /// # Security invariants
 ///
 /// * Prevents arbitrary key-bundle enumeration â€” a user can only fetch keys
 ///   for peers they already have a social relationship with.
+/// * Child and parental-controlled accounts require accepted friendship before
+///   key material is exposed; shared-server membership is not enough.
 pub async fn require_key_bundle_access(
     requester_id: Uuid,
     target_id: Uuid,
@@ -2233,6 +2236,22 @@ pub async fn require_key_bundle_access(
 ) -> AppResult<()> {
     if requester_id == target_id {
         return Ok(());
+    }
+
+    let requester = load_dm_access_context(requester_id, state).await?;
+    let target = load_dm_access_context(target_id, state).await?;
+    let is_friend = users_are_friends(requester_id, target_id, state).await?;
+
+    let requester_requires_approved_contact =
+        requester.parental_controls_enabled || requester.account_type == "child";
+    let target_requires_approved_contact =
+        target.parental_controls_enabled || target.account_type == "child";
+
+    if requester_requires_approved_contact || target_requires_approved_contact {
+        if !is_friend {
+            return Err(AppError::Forbidden);
+        }
+        return require_dm_access(requester_id, target_id, state).await;
     }
 
     if users_share_server(requester_id, target_id, state).await? {
