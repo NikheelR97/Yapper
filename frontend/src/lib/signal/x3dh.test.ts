@@ -1,7 +1,25 @@
-import { ed25519, x25519 } from '@noble/curves/ed25519.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ed25519, x25519 } from '@noble/curves/ed25519.js';
 import { x3dhInitiate, x3dhRespond } from './x3dh.js';
 import type { IdentityKeyPair, KeyBundle, PreKeyPair, SignedPreKey } from './types.js';
+
+const randomSecretKeyMock = vi.hoisted(() => vi.fn<() => Uint8Array>());
+
+vi.mock('@noble/curves/ed25519.js', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('@noble/curves/ed25519.js')>();
+	randomSecretKeyMock.mockImplementation(() => actual.x25519.utils.randomSecretKey());
+
+	return {
+		...actual,
+		x25519: {
+			...actual.x25519,
+			utils: {
+				...actual.x25519.utils,
+				randomSecretKey: randomSecretKeyMock,
+			},
+		},
+	};
+});
 
 function bytesToB64(bytes: Uint8Array): string {
 	let binary = '';
@@ -65,11 +83,11 @@ function preKey(seed: number): PreKeyPair {
 }
 
 function mockEphemeralPrivateKey(seed: number) {
-	return vi.spyOn(x25519.utils, 'randomSecretKey').mockReturnValue(new Uint8Array(32).fill(seed));
+	randomSecretKeyMock.mockReturnValueOnce(new Uint8Array(32).fill(seed));
 }
 
 afterEach(() => {
-	vi.restoreAllMocks();
+	randomSecretKeyMock.mockReset();
 });
 
 describe('x3dh', () => {
