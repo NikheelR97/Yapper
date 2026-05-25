@@ -404,10 +404,10 @@ Create a presigned download URL.
 
 ## Notifications
 
-### `POST /api/v2/notifications/register-device`
-Register a push token for the current device.
+### `PUT /api/v2/notifications/push-token`
+Register or update a push token for the current device.
 
-### `DELETE /api/v2/notifications/register-device`
+### `DELETE /api/v2/notifications/push-token`
 Remove the current device's push token.
 
 ---

@@ -28,8 +28,8 @@ if ! grep -Fq 'wss://api.yapperhq.com/ws' "$api_doc"; then
   echo "::warning::API reference is missing WebSocket URL documentation"
 fi
 
-if ! grep -Fq '/api/v2/notifications/register-device' "$api_doc"; then
-  echo "::warning::API reference is missing register-device endpoint documentation"
+if ! grep -Fq '/api/v2/notifications/push-token' "$api_doc"; then
+  echo "::warning::API reference is missing push-token endpoint documentation"
 fi
 
 if ! grep -Fq 'Nine routes are explicitly CSRF-exempt' "$security_doc"; then

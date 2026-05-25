@@ -24,7 +24,11 @@ Yapper is designed around the principle that **the server should never be truste
 - JWT access tokens: **RS256**, 15-minute expiry
 - Refresh tokens: **HttpOnly, Secure, SameSite=None** cookies (cross-origin Tauri support)
 - CSRF protection: every mutating request requires `X-CSRF-Token` matching the session cookie
-- Seven routes are explicitly CSRF-exempt (health, WS upgrade, OAuth callbacks, Stripe webhook) — all others require the token
+- Nine routes are explicitly CSRF-exempt; all other mutating routes require the token:
+  `/auth/login`, `/auth/register`, `/auth/verify-email`,
+  `/auth/password-reset/request`, `/auth/password-reset/confirm`,
+  `/auth/refresh`, `/auth/oauth/exchange`, `/premium/webhook`,
+  `/support/webhooks/hubspot`
 
 ## E2EE
 
