@@ -36,14 +36,72 @@ function Write-Fail  { param([string]$msg) Write-Host "    [XX]  $msg" -Foregrou
 function Test-Command { param([string]$name) return [bool](Get-Command $name -ErrorAction SilentlyContinue) }
 
 function Install-Winget {
-    param([string]$Id, [string]$Name)
+    param(
+        [string]$Id,
+        [string]$Name,
+        [string]$CommandName
+    )
+
     Write-Step "Installing $Name"
-    if (winget list --id $Id --exact -e 2>$null | Select-String $Id) {
+
+    # Prefer a direct command check first so we don't block on `winget list`
+    # refreshing sources before we've even attempted the install.
+    if ($CommandName -and (Test-Command $CommandName)) {
         Write-Skip $Name
         return
     }
-    winget install --id $Id --exact --silent --accept-package-agreements --accept-source-agreements
+
+    if (winget list --id $Id --exact -e --source winget 2>$null | Select-String $Id) {
+        Write-Skip $Name
+        return
+    }
+
+    winget install --id $Id --exact --source winget --silent --disable-interactivity `
+        --accept-package-agreements --accept-source-agreements
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "winget failed while installing $Name (exit code $LASTEXITCODE)."
+    }
+
     Write-Ok $Name
+}
+
+function Install-Flyctl {
+    Write-Step "Installing flyctl"
+
+    if (Test-Command 'fly') {
+        Write-Skip "flyctl"
+        return
+    }
+
+    $wingetInstalled = $false
+    try {
+        winget install --id Superfly.flyctl --exact --source winget --silent --disable-interactivity `
+            --accept-package-agreements --accept-source-agreements
+        if ($LASTEXITCODE -eq 0) {
+            $wingetInstalled = $true
+        }
+    } catch {
+        $wingetInstalled = $false
+    }
+
+    if (-not $wingetInstalled) {
+        Write-Warn "winget package for flyctl was not available; falling back to Fly.io's installer."
+        $installScript = Join-Path $env:TEMP 'install-flyctl.ps1'
+        Invoke-WebRequest -Uri 'https://fly.io/install.ps1' -OutFile $installScript -UseBasicParsing
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installScript
+        Remove-Item $installScript -Force
+    }
+
+    $env:PATH = [System.Environment]::GetEnvironmentVariable('PATH','Machine') + ';' +
+                [System.Environment]::GetEnvironmentVariable('PATH','User')
+
+    if (Test-Command 'fly') {
+        Write-Ok "flyctl"
+        return
+    }
+
+    throw "flyctl installation completed, but 'fly' was not found on PATH. Open a new terminal and run 'fly version'."
 }
 
 # --- Admin check --------------------------------------------------------------
@@ -65,7 +123,7 @@ Write-Ok "winget $(winget --version)"
 
 # --- 1. Git -------------------------------------------------------------------
 
-Install-Winget -Id 'Git.Git' -Name 'Git'
+Install-Winget -Id 'Git.Git' -Name 'Git' -CommandName 'git'
 
 # Reload PATH so git is available immediately
 $env:PATH = [System.Environment]::GetEnvironmentVariable('PATH','Machine') + ';' +
@@ -73,7 +131,7 @@ $env:PATH = [System.Environment]::GetEnvironmentVariable('PATH','Machine') + ';'
 
 # --- 2. GitHub CLI ------------------------------------------------------------
 
-Install-Winget -Id 'GitHub.cli' -Name 'GitHub CLI (gh)'
+Install-Winget -Id 'GitHub.cli' -Name 'GitHub CLI (gh)' -CommandName 'gh'
 
 # --- 3. Node.js LTS -----------------------------------------------------------
 
@@ -159,7 +217,7 @@ if (Test-Command 'cargo-tauri') {
 
 # --- 7. Android Studio --------------------------------------------------------
 
-Install-Winget -Id 'Google.AndroidStudio' -Name 'Android Studio'
+Install-Winget -Id 'Google.AndroidStudio' -Name 'Android Studio' -CommandName 'studio64'
 
 Write-Warn "Android Studio installed. You still need to:"
 Write-Warn "  1. Launch Android Studio -> SDK Manager -> SDK Platforms -> install API 26+ (Android 8.0)"
@@ -168,9 +226,8 @@ Write-Warn "  3. Set ANDROID_HOME: [System.Environment]::SetEnvironmentVariable(
 Write-Warn "  4. Add to PATH: `$ANDROID_HOME\platform-tools  and  `$ANDROID_HOME\cmdline-tools\latest\bin"
 
 # --- 8. flyctl (Fly.io) -------------------------------------------------------
-# Use winget to avoid the official install.ps1 relying on $v (breaks under Set-StrictMode).
 
-Install-Winget -Id 'Superfly.flyctl' -Name 'flyctl'
+Install-Flyctl
 
 # --- 9. npm global packages ---------------------------------------------------
 
