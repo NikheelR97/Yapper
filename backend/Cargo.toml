@@ -31,7 +31,6 @@ ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
 # Auth
 argon2 = "0.5"
 jsonwebtoken = { version = "10", features = ["rust_crypto"] }
-oauth2 = "4"
 url = "2"
 validator = { version = "0.20", features = ["derive"] }
 sha2 = "0.10"
@@ -49,10 +48,10 @@ governor = { version = "0.6", features = ["dashmap"] }
 dashmap = "5"
 
 # HTTP client (Discord API, Resend, FCM)
-reqwest = { version = "0.11", features = ["json", "multipart"] }
+reqwest = { version = "0.12", features = ["json", "multipart"] }
 
 # Cloudflare R2 (S3-compatible)
-aws-sdk-s3 = "1"
+aws-sdk-s3 = { version = "1", default-features = false, features = ["behavior-version-latest", "default-https-client", "http-1x", "rt-tokio", "sigv4a"] }
 aws-config = "1"
 
 # Image processing (emoji WebP conversion — pure Rust, no ffmpeg)

@@ -372,7 +372,9 @@ async fn ws_reauth_refreshes_same_user_same_device_session(pool: PgPool) {
     let ws_addr = spawn_ws_server(state.clone()).await.expect("ws server");
     let url = format!("ws://{ws_addr}/ws");
     let (mut ws, _) = connect_async(url).await.expect("ws connect");
-    let short_token = mint_access_token(&state, user_id, "standard", Some(device_id), 4);
+    // The reauth warning lead is 60s, so 61s triggers the prompt immediately
+    // without racing the original token expiry under parallel integration load.
+    let short_token = mint_access_token(&state, user_id, "standard", Some(device_id), 61);
 
     ws.send(Message::Text(
         serde_json::json!({ "type": "auth", "token": short_token }).to_string(),
@@ -433,7 +435,9 @@ async fn ws_reauth_rejects_different_device(pool: PgPool) {
     let ws_addr = spawn_ws_server(state.clone()).await.expect("ws server");
     let url = format!("ws://{ws_addr}/ws");
     let (mut ws, _) = connect_async(url).await.expect("ws connect");
-    let short_token = mint_access_token(&state, user_id, "standard", Some(device_id), 4);
+    // The reauth warning lead is 60s, so 61s triggers the prompt immediately
+    // without racing the original token expiry under parallel integration load.
+    let short_token = mint_access_token(&state, user_id, "standard", Some(device_id), 61);
 
     ws.send(Message::Text(
         serde_json::json!({ "type": "auth", "token": short_token }).to_string(),
