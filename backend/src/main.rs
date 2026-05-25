@@ -18,13 +18,13 @@ use yapper_server::{
 use sentry::integrations::tracing as sentry_tracing;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+const SENTRY_REDACTED: &str = "[redacted]";
+
 /// Scrub PII from Sentry events before they leave the process.
 ///
-/// Strips sensitive headers (Authorization, Cookie, Set-Cookie, X-Refresh-Token),
-/// redacts user email, and removes extra/tag/breadcrumb entries whose keys
-/// match `password`, `token`, `secret`, `key`, `refresh_token`, or `email`.
-/// Exception values and breadcrumb messages containing email-like patterns
-/// (`@` + `.`) are replaced with `[redacted]`.
+/// Strips sensitive request metadata and redacts JWTs, cookies, CSRF/refresh
+/// tokens, Signal key material, Argon2 password hashes, emails, and message
+/// payload fields before the event leaves the process.
 ///
 /// # Security invariants
 ///
@@ -36,58 +36,221 @@ fn scrub_sentry_event(
 ) -> Option<sentry::protocol::Event<'static>> {
     // Scrub sensitive headers from request data
     if let Some(ref mut request) = event.request {
-        let sensitive_headers = ["authorization", "cookie", "set-cookie", "x-refresh-token"];
-        request
-            .headers
-            .retain(|k, _| !sensitive_headers.contains(&k.to_lowercase().as_str()));
+        request.headers.retain(|k, _| !is_sensitive_sentry_key(k));
+        request.env.retain(|k, _| !is_sensitive_sentry_key(k));
+        request.cookies = None;
+        scrub_sentry_string_option(&mut request.data);
+        scrub_sentry_string_option(&mut request.query_string);
     }
 
     // Scrub user email if captured
     if let Some(ref mut user) = event.user {
         user.email = None;
+        user.other.retain(|k, v| {
+            if is_sensitive_sentry_key(k) {
+                return false;
+            }
+            scrub_sentry_value(v);
+            true
+        });
     }
 
     // Scrub sensitive keys from extra data
-    let sensitive_keys = [
-        "password",
-        "token",
-        "secret",
-        "key",
-        "refresh_token",
-        "email",
-    ];
-    event
-        .extra
-        .retain(|k, _| !sensitive_keys.iter().any(|s| k.to_lowercase().contains(s)));
+    event.extra.retain(|k, v| {
+        if is_sensitive_sentry_key(k) {
+            return false;
+        }
+        scrub_sentry_value(v);
+        true
+    });
+    scrub_sentry_string_option(&mut event.message);
+    if let Some(ref mut logentry) = event.logentry {
+        scrub_sentry_string(&mut logentry.message);
+        logentry.params.iter_mut().for_each(scrub_sentry_value);
+    }
 
     // Scrub breadcrumb data that may contain PII
     for breadcrumb in &mut event.breadcrumbs {
-        breadcrumb
-            .data
-            .retain(|k, _| !sensitive_keys.iter().any(|s| k.to_lowercase().contains(s)));
-        // Redact message content that looks like an email
-        if let Some(ref msg) = breadcrumb.message {
-            if msg.contains('@') && msg.contains('.') {
-                breadcrumb.message = Some("[redacted]".to_string());
+        breadcrumb.data.retain(|k, v| {
+            if is_sensitive_sentry_key(k) {
+                return false;
             }
-        }
+            scrub_sentry_value(v);
+            true
+        });
+        scrub_sentry_string_option(&mut breadcrumb.message);
     }
 
     // Scrub exception values that may embed PII
     for exc in &mut event.exception.values {
-        if let Some(ref val) = exc.value {
-            if val.contains('@') && val.contains('.') {
-                exc.value = Some("[redacted — may contain PII]".to_string());
-            }
-        }
+        scrub_sentry_string_option(&mut exc.value);
     }
 
     // Scrub tags
-    event
-        .tags
-        .retain(|k, _| !sensitive_keys.iter().any(|s| k.to_lowercase().contains(s)));
+    event.tags.retain(|k, v| {
+        if is_sensitive_sentry_key(k) {
+            return false;
+        }
+        scrub_sentry_string(v);
+        true
+    });
 
     Some(event)
+}
+
+fn is_sensitive_sentry_key(key: &str) -> bool {
+    let key = key.to_ascii_lowercase();
+    [
+        "authorization",
+        "cookie",
+        "set-cookie",
+        "csrf",
+        "token",
+        "password",
+        "password_hash",
+        "argon2",
+        "secret",
+        "private_key",
+        "jwt",
+        "email",
+        "message",
+        "description",
+        "body",
+        "plaintext",
+        "ciphertext",
+        "identity_dh_key",
+        "identity_sig_key",
+        "signed_prekey",
+        "one_time_prekey",
+        "key",
+    ]
+    .iter()
+    .any(|needle| key.contains(needle))
+}
+
+fn scrub_sentry_value(value: &mut sentry::protocol::Value) {
+    match value {
+        sentry::protocol::Value::String(value) => scrub_sentry_string(value),
+        sentry::protocol::Value::Array(values) => values.iter_mut().for_each(scrub_sentry_value),
+        sentry::protocol::Value::Object(values) => {
+            values.retain(|k, v| {
+                if is_sensitive_sentry_key(k) {
+                    return false;
+                }
+                scrub_sentry_value(v);
+                true
+            });
+        }
+        _ => {}
+    }
+}
+
+fn scrub_sentry_string_option(value: &mut Option<String>) {
+    if let Some(value) = value {
+        scrub_sentry_string(value);
+    }
+}
+
+fn scrub_sentry_string(value: &mut String) {
+    if contains_sensitive_sentry_text(value) {
+        *value = SENTRY_REDACTED.to_string();
+    }
+}
+
+fn contains_sensitive_sentry_text(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    (value.contains('@') && value.contains('.'))
+        || lower.contains("bearer ")
+        || lower.contains("$argon2")
+        || lower.contains("refresh_token")
+        || lower.contains("csrf_token")
+        || lower.contains("set-cookie")
+        || lower.contains("authorization")
+        || lower.contains("password_hash")
+        || lower.contains("identity_dh_key")
+        || lower.contains("identity_sig_key")
+        || lower.contains("signed_prekey")
+        || lower.contains("one_time_prekey")
+        || lower.contains("private_key")
+        || lower.contains("jwt")
+        || looks_like_jwt(value)
+}
+
+fn looks_like_jwt(value: &str) -> bool {
+    value
+        .split(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | ',' | ';' | '(' | ')'))
+        .any(|part| part.len() >= 24 && part.starts_with("eyJ") && part.split('.').count() == 3)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sentry::protocol::{Breadcrumb, Event, Exception, Request, User, Value};
+
+    #[test]
+    fn scrub_sentry_event_removes_sensitive_request_and_user_data() {
+        let mut event = Event::default();
+        let mut request = Request {
+            data: Some("email=alice@example.com&csrf_token=abc".to_string()),
+            query_string: Some("jwt=eyJhbGciOiJSUzI1NiJ9.payload.signature".to_string()),
+            cookies: Some("refresh_token=secret".to_string()),
+            ..Default::default()
+        };
+        request
+            .headers
+            .insert("authorization".to_string(), "Bearer token".to_string());
+        request
+            .headers
+            .insert("x-request-id".to_string(), "safe-id".to_string());
+        event.request = Some(request);
+        event.user = Some(User {
+            email: Some("alice@example.com".to_string()),
+            ..Default::default()
+        });
+
+        let scrubbed = scrub_sentry_event(event).expect("event should be kept");
+        let json = serde_json::to_string(&scrubbed).expect("serialize event");
+
+        assert!(!json.contains("alice@example.com"));
+        assert!(!json.contains("Bearer token"));
+        assert!(!json.contains("refresh_token"));
+        assert!(!json.contains("eyJhbGciOiJSUzI1NiJ9"));
+        assert!(json.contains("safe-id"));
+        assert!(json.contains(SENTRY_REDACTED));
+    }
+
+    #[test]
+    fn scrub_sentry_event_redacts_sensitive_values_under_generic_keys() {
+        let mut event = Event::default();
+        event.extra.insert(
+            "detail".to_string(),
+            Value::String("Bearer eyJhbGciOiJSUzI1NiJ9.payload.signature".to_string()),
+        );
+        event.extra.insert(
+            "safe".to_string(),
+            Value::String("public diagnostic".to_string()),
+        );
+        event.breadcrumbs.values.push(Breadcrumb {
+            message: Some("identity_dh_key=abc signed_prekey=def".to_string()),
+            ..Default::default()
+        });
+        event.exception.values.push(Exception {
+            ty: "Error".to_string(),
+            value: Some("password_hash=$argon2id$v=19$m=19456,t=2,p=1$abc$def".to_string()),
+            ..Default::default()
+        });
+
+        let scrubbed = scrub_sentry_event(event).expect("event should be kept");
+        let json = serde_json::to_string(&scrubbed).expect("serialize event");
+
+        assert!(!json.contains("Bearer"));
+        assert!(!json.contains("eyJhbGciOiJSUzI1NiJ9"));
+        assert!(!json.contains("identity_dh_key"));
+        assert!(!json.contains("signed_prekey"));
+        assert!(!json.contains("$argon2id"));
+        assert!(json.contains("public diagnostic"));
+        assert!(json.contains(SENTRY_REDACTED));
+    }
 }
 
 #[tokio::main]

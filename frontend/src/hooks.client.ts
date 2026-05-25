@@ -3,7 +3,9 @@ import * as Sentry from "@sentry/sveltekit";
 const dsn = import.meta.env.VITE_SENTRY_DSN as string | undefined;
 
 const SENSITIVE_KEY_RE =
-  /(authorization|cookie|set-cookie|token|password|secret|email|message|description|body)/i;
+  /(authorization|cookie|set-cookie|csrf|token|password|password_hash|argon2|secret|email|message|description|body|plaintext|ciphertext|identity_dh_key|identity_sig_key|signed_prekey|one_time_prekey|private_key|jwt|key)/i;
+const SENSITIVE_TEXT_RE =
+  /(@.*\.)|bearer\s+|eyJ[\w-]*\.[\w-]*\.[\w-]*|\$argon2|refresh_token|csrf_token|set-cookie|authorization|password_hash|identity_dh_key|identity_sig_key|signed_prekey|one_time_prekey|private_key|jwt/i;
 
 function scrubValue(value: unknown): unknown {
   if (Array.isArray(value)) {
@@ -17,6 +19,9 @@ function scrubValue(value: unknown): unknown {
       ],
     );
     return Object.fromEntries(entries);
+  }
+  if (typeof value === "string" && SENSITIVE_TEXT_RE.test(value)) {
+    return "[redacted]";
   }
   return value;
 }
