@@ -24,7 +24,7 @@ import {
   loadIdentityKeyPair,
 } from "./keystore.js";
 
-const PBKDF2_ITERS = 1_200_000;
+export const BACKUP_KDF_ITERATIONS = 1_200_000;
 const BACKUP_BLOB_VERSION = 1;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -89,7 +89,7 @@ async function deriveKey(
       name: "PBKDF2",
       salt: salt.slice(),
       hash: "SHA-256",
-      iterations: PBKDF2_ITERS,
+      iterations: BACKUP_KDF_ITERATIONS,
     },
     keyMaterial,
     { name: "AES-GCM", length: 256 },

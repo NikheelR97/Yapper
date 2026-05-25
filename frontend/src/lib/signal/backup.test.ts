@@ -16,9 +16,9 @@ vi.mock("./keystore.js", () => ({
 
 import { api } from "$lib/api/client.js";
 import { importSignalSnapshot, loadIdentityKeyPair } from "./keystore.js";
-import { backupKeys, restoreKeys } from "./backup.js";
+import { BACKUP_KDF_ITERATIONS, backupKeys, restoreKeys } from "./backup.js";
 
-const PBKDF2_ITERS = 1_200_000;
+const PBKDF2_ITERS = BACKUP_KDF_ITERATIONS;
 const BACKUP_BLOB_VERSION = 1;
 
 function u8ToB64(u8: Uint8Array): string {
@@ -160,6 +160,26 @@ describe("signal backup restore", () => {
   it("rejects a 4-digit PIN recovery passphrase", async () => {
     await expect(backupKeys("1234")).rejects.toThrow(/at least 12 characters/i);
     expect(api.put).not.toHaveBeenCalled();
+  });
+
+  it("uses the hardened PBKDF2 iteration count for encrypted backups", async () => {
+    expect(BACKUP_KDF_ITERATIONS).toBeGreaterThanOrEqual(600_000);
+    vi.mocked(api.put).mockResolvedValue({});
+    const deriveKeySpy = vi.spyOn(crypto.subtle, "deriveKey");
+
+    await backupKeys("AlphaPass2468");
+
+    expect(deriveKeySpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "PBKDF2",
+        hash: "SHA-256",
+        iterations: BACKUP_KDF_ITERATIONS,
+      }),
+      expect.anything(),
+      { name: "AES-GCM", length: 256 },
+      false,
+      ["encrypt", "decrypt"],
+    );
   });
 
   it("rejects restore with the wrong recovery passphrase", async () => {
