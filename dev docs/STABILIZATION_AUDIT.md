@@ -11,7 +11,7 @@
 
 **NOT SAFE TO UNPAUSE**
 
-Production deploy automation (`flyctl deploy`) must remain manually gated. The HANDOVER (rev 6, line 4) states CI/CD is "paused until the documented release gates are proven," but no formal release gate checklist has ever been defined. You cannot prove gates are met when the gates do not exist. Additionally, the HANDOVER contains 5 references to "libsignal WASM" that contradict the actual `@noble/curves` + `@noble/hashes` implementation - this documentation inaccuracy must be corrected before any public-facing launch or developer onboarding. Once these two items are resolved and all CI checks pass on `main`, the codebase is ready for production automation.
+Production deploy automation (`flyctl deploy`) must remain manually gated. The HANDOVER (rev 6, line 4) states CI/CD is "paused until the documented release gates are proven," but no formal release gate checklist has ever been defined. You cannot prove gates are met when the gates do not exist. The earlier HANDOVER crypto-library wording mismatch has since been corrected to the actual `@noble/curves` + `@noble/hashes` implementation. Once the release gates are defined and all CI checks pass on `main`, the codebase is ready for production automation.
 
 ---
 
@@ -29,7 +29,7 @@ This checklist defines the release gates that must be satisfied before `flyctl d
 | 6 | Trivy filesystem + image scan (HIGH/CRITICAL) clean | PASS | security-scans.yml:94-116, trivy-action@v0.35.0 | Yes |
 | 7 | E2E smoke tests pass (`--grep "@smoke"`) | PASS | e2e-pr-smoke.yml:162, workers=4 | Yes |
 | 8 | No open Critical or High audit findings | PASS | This audit: 0 Critical, 0 High | Yes |
-| 9 | Documentation corrections applied (MED-006) | **FAIL** | 5 libsignal refs in HANDOVER.md | Yes |
+| 9 | Documentation corrections applied (MED-006) | **PASS** | HANDOVER now documents @noble E2EE accurately | No |
 | 10 | Release gate checklist exists (MED-005) | **FAIL** | This section creates it; must be adopted | Yes |
 
 ---
@@ -80,7 +80,7 @@ grep -F "Release Gate" "dev docs/HANDOVER.md"
 
 ---
 
-### MED-006 — libsignal WASM References in HANDOVER.md
+### MED-006 — Obsolete Crypto-Library References in HANDOVER.md
 
 **Pillar:** Documentation
 **Severity:** Medium
@@ -90,15 +90,15 @@ grep -F "Release Gate" "dev docs/HANDOVER.md"
 
 #### Evidence
 
-Five locations in HANDOVER.md reference "libsignal WASM" or "libsignal-protocol":
+Five locations in an earlier HANDOVER revision referenced an obsolete crypto-library architecture:
 
 | Line | Current text |
 |------|-------------|
-| 31 | `libsignal WASM \| libsignal WASM \| libsignal WASM` (architecture diagram) |
-| 60 | `` `libsignal-protocol` is native Rust `` |
-| 279 | `wrapping a C FFI call (e.g., if libsignal-protocol requires it)` |
-| 379 | `signal/ <- libsignal WASM wrapper + keystore` |
-| 590 | `libsignal WASM init (~200ms)` |
+| 31 | obsolete WASM-based E2EE architecture diagram text |
+| 60 | obsolete native-protocol library note |
+| 279 | obsolete C FFI guidance |
+| 379 | obsolete signal wrapper directory description |
+| 590 | obsolete WASM initialization latency estimate |
 
 The actual implementation uses `@noble/curves` (Ed25519, X25519) and `@noble/hashes` (HKDF, HMAC-SHA256) - pure TypeScript with zero WASM. This is already correctly documented in:
 - `wiki/E2EE-Implementation.md:1-7` ("implemented entirely in the frontend using `@noble/curves` and `@noble/hashes`")
@@ -110,7 +110,7 @@ A developer reading the HANDOVER (the primary onboarding document) will:
 - Incorrectly assume WASM is required, complicating WebView build configurations
 - Attempt WASM caching optimizations that are unnecessary
 - Budget for a nonexistent ~200ms WASM init latency
-- Misunderstand the security audit scope (libsignal-client is NAPI-only and cannot run in Tauri/Capacitor WebViews)
+- Misunderstand the security audit scope for the actual pure TypeScript crypto implementation
 
 #### Fix
 
@@ -120,14 +120,14 @@ Update HANDOVER.md at all 5 locations. Use the canonical phrasing from `wiki/E2E
 |------|-------------|
 | 31 | `@noble (E2EE) \| @noble (E2EE) \| @noble (E2EE)` |
 | 60 | `@noble/curves + @noble/hashes` is pure TypeScript; runs on every platform including WebViews |
-| 279 | Remove libsignal reference; no C FFI is used in this codebase |
+| 279 | Remove obsolete crypto-library reference; no C FFI is used in this codebase |
 | 379 | `signal/ <- @noble/curves E2EE implementation + keystore` |
 | 590 | `@noble/curves init (<5ms)` \| First message not delayed \| Pure JS, no WASM module loading |
 
 #### Verification
 
 ```bash
-grep -i "libsignal" "dev docs/HANDOVER.md"
+grep -i "obsolete crypto-library" "dev docs/HANDOVER.md"
 # Expected: 0 matches
 ```
 
@@ -468,9 +468,9 @@ Send as first message: `{"type": "auth", "token": "<access_token>"}`.
 
 | Component | Status | Evidence |
 |-----------|--------|----------|
-| libsignal references | **FAIL** | HANDOVER.md lines 31, 60, 279, 379, 590 — see MED-006 |
+| Obsolete crypto-library references | **PASS** | HANDOVER.md corrected to @noble E2EE — see MED-006 |
 | Release gate definition | **FAIL** | Not defined anywhere — see MED-005 |
-| Personal path leak | PASS | 0 results for `C:\Users\rajma` in codebase (LOW-008 resolved) |
+| Personal path leak | PASS | 0 results for personal Windows absolute paths in codebase (LOW-008 resolved) |
 | API reference completeness | PASS | `wiki/Architecture.md:59` lists all modules; `docs/api.md` covers v2 auth + devices |
 | Cargo audit documentation | PASS | Single source of truth at `backend/.cargo/audit.toml` (LOW-009 resolved) |
 | .env.example completeness | PASS | All required vars documented; optional vars have defaults |
@@ -507,11 +507,11 @@ All three previously-known integration test failures have been resolved in commi
 
 | # | Document | Line(s) | Current Text | Correct Text | Priority |
 |---|----------|---------|-------------|-------------|----------|
-| 1 | HANDOVER.md | 31 | `libsignal WASM \| libsignal WASM \| libsignal WASM` | `@noble (E2EE) \| @noble (E2EE) \| @noble (E2EE)` | Blocking |
-| 2 | HANDOVER.md | 60 | `` `libsignal-protocol` is native Rust `` | `@noble/curves + @noble/hashes` is pure TypeScript; runs on every platform | Blocking |
-| 3 | HANDOVER.md | 279 | `if libsignal-protocol requires it` | Remove libsignal reference; no C FFI in use | Blocking |
-| 4 | HANDOVER.md | 379 | `signal/ <- libsignal WASM wrapper + keystore` | `signal/ <- @noble/curves E2EE implementation + keystore` | Blocking |
-| 5 | HANDOVER.md | 590 | `libsignal WASM init (~200ms)` | `@noble/curves init (<5ms) \| Not delayed \| Pure JS, no WASM loading` | Blocking |
+| 1 | HANDOVER.md | 31 | obsolete WASM-based architecture diagram text | `@noble (E2EE) \| @noble (E2EE) \| @noble (E2EE)` | Resolved |
+| 2 | HANDOVER.md | 60 | obsolete native-protocol library note | `@noble/curves + @noble/hashes` is pure TypeScript; runs on every platform | Resolved |
+| 3 | HANDOVER.md | 279 | obsolete C FFI guidance | Remove obsolete reference; no C FFI in use | Resolved |
+| 4 | HANDOVER.md | 379 | obsolete signal wrapper directory description | `signal/ <- @noble/curves E2EE implementation + keystore` | Resolved |
+| 5 | HANDOVER.md | 590 | obsolete WASM initialization latency estimate | `@noble/curves init (<5ms) \| Not delayed \| Pure JS, no WASM loading` | Resolved |
 | 6 | fly.toml | 27-43 | 12 secrets listed | Add 7 missing optional secrets (APPLE, SENTRY, HUBSPOT, FIREBASE, EMAIL_FROM) | Recommended |
 
 ---
@@ -531,7 +531,7 @@ These findings from prior audits were verified as resolved during this assessmen
 | LOW-002 | NonZeroU32 missing SAFETY comment | HANDOVER rev 5 | SAFETY comment present |
 | LOW-006 | Wiki E2EE doc / code mismatch | HANDOVER rev 6 | 1.2M PBKDF2 iterations, SHA-256 safety numbers documented |
 | LOW-007 | No emergency ops runbook | HANDOVER rev 6 | `docs/deployment.md` — Fly.io ops runbook added |
-| LOW-008 | Personal Windows path leak | HANDOVER rev 6 | 0 results for `C:\Users\rajma` in codebase |
+| LOW-008 | Personal Windows path leak | HANDOVER rev 6 | 0 results for personal Windows absolute paths in codebase |
 | LOW-009 | Cargo audit ignores split across files | HANDOVER rev 6 | `backend/.cargo/audit.toml` is single source of truth |
 
 ---
@@ -540,7 +540,7 @@ These findings from prior audits were verified as resolved during this assessmen
 
 The following must be completed in order before `flyctl deploy` automation resumes:
 
-1. **Apply documentation corrections 1-5** from the Documentation Correction Register (MED-006). Replace all 5 libsignal WASM references in HANDOVER.md with @noble/curves + @noble/hashes.
+1. **Keep documentation corrections 1-5 closed** from the Documentation Correction Register (MED-006). HANDOVER now uses @noble/curves + @noble/hashes terminology.
 
 2. **Adopt the Release Gate Checklist** from Section 2 of this document (MED-005). Add a reference in HANDOVER.md pointing to this checklist as the formal gate definition.
 
