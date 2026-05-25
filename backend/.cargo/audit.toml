@@ -39,4 +39,16 @@ ignore = [
     # Reviewed: 2026-04-16
     "RUSTSEC-2026-0098",
     "RUSTSEC-2026-0099",
+
+    # rustls-webpki — reachable panic in CRL parsing (DoS via malformed
+    # BIT STRING). Fix is >=0.103.13. The 0.103.x dependency tree (via
+    # aws-sdk → rustls 0.23) was bumped to 0.103.13 in this commit. The
+    # remaining hit is on rustls-webpki 0.101.7 reached via reqwest 0.11
+    # → rustls 0.21, which cannot be patched without the same reqwest 0.12
+    # migration that gates RUSTSEC-2026-0098/0099. Same mitigation applies:
+    # Yapper is a TLS client to well-known pinned Neon/R2/AWS endpoints,
+    # so a malformed-CRL DoS against the client is not an exposed attack
+    # surface. Tracked alongside the reqwest 0.12 migration.
+    # Reviewed: 2026-04-30
+    "RUSTSEC-2026-0104",
 ]

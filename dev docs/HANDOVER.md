@@ -1,6 +1,6 @@
 # YAPPER — Developer Handover Document
 
-**Last updated:** 2026-04-06 (rev 6)
+**Last updated:** 2026-05-20 (rev 7)
 **Project status:** Active development — S0-S16 complete; stabilization in progress; Canvas Expansion + E2EE Media deployed; CI/CD production deploy/release automation is paused until the documented release gates are proven
 
 ---
@@ -82,6 +82,34 @@ Yapper is a greenfield SaaS real-time chat platform targeting community/social a
 ## 3. Coding Standards
 
 This project follows coding standards derived from **NASA/JPL's "Power of Ten" rules** (Gerard Holzmann, 2006), adapted for Rust and TypeScript. These rules exist because Yapper handles E2EE keys, COPPA-protected child data, and financial-grade auth tokens.
+
+### Git Branching Workflow
+
+`main` is the protected production baseline and should stay deployable at all times. Do not do day-to-day implementation directly on `main`, and do not commit directly to `main` unless explicitly performing a documented emergency recovery with owner approval.
+
+Standard workflow:
+
+1. Start from a clean, current baseline:
+   ```bash
+   git fetch origin
+   git switch main
+   git pull --ff-only origin main
+   ```
+2. Create a focused branch before making changes:
+   ```bash
+   git switch -c fix/short-description
+   ```
+3. Use branch prefixes that communicate intent:
+   - `fix/...` for defects, failed tests, security remediations, and audit fixes
+   - `feature/...` for new product work
+   - `docs/...` for documentation-only updates
+   - `chore/...` for dependency, CI, and tooling maintenance
+   - `audit/...` for evidence-gathering or stabilization audit branches
+4. Keep each branch scoped to one logical change. Do not mix unrelated cleanup with production fixes.
+5. Push the branch and open a PR. Let CI run on the branch/PR before merging to `main`.
+6. Production deploy automation should only promote from `main` after release gates pass. Manual Fly.io recovery deploys may use a clean `origin/main` checkout when restoring service, but any code fix must still land through a branch and PR.
+
+Before starting any task, run `git status --short` and `git branch --show-current`. If you are on `main`, create or switch to a task branch first.
 
 ### Rule 1: Simple Control Flow
 
@@ -651,6 +679,7 @@ For any developer picking up this project:
 - [x] Understand the parental controls constraint: **metadata only**
 - [x] Review the database schema, especially the `messages` table and Signal key tables
 - [x] Review the security standards in Section 4 — these are non-negotiable
+- [ ] Confirm you are on a task branch, not `main`, before editing code or docs
 - [ ] Check the current phase status and pick up where it left off
 
 ### Where to Pick Up Next (as of 2026-04-06, rev 6)
