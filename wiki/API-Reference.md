@@ -32,6 +32,7 @@ All authenticated endpoints require:
 |--------|------|------|-------------|
 | POST | `/api/v2/auth/register` | No | Create account and device-bound session |
 | POST | `/api/v2/auth/login` | No | Login with device bootstrap |
+| POST | `/api/v2/auth/oauth/exchange` | No | Exchange OAuth code for a device-aware session |
 | POST | `/api/v2/auth/refresh` | Cookie | Refresh access token |
 | DELETE | `/api/v2/auth/logout` | Yes | Invalidate current refresh-token family |
 
@@ -132,5 +133,6 @@ All authenticated endpoints require:
 | PATCH | `/api/v2/parental/server-joins/:id/decline` | Yes | Decline server join |
 | POST | `/api/v2/support/tickets` | Yes | Submit support ticket |
 | GET | `/api/v2/support/tickets` | Yes | List own tickets |
-| POST | `/api/v2/notifications/register-device` | Yes | Register push token |
-| DELETE | `/api/v2/notifications/register-device` | Yes | Unregister push token |
+| POST | `/api/v2/support/webhooks/hubspot` | No | HubSpot status webhook |
+| PUT | `/api/v2/notifications/push-token` | Yes | Register or update push token |
+| DELETE | `/api/v2/notifications/push-token` | Yes | Unregister push token |
