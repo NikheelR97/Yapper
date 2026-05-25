@@ -13,7 +13,7 @@ permissions:
 jobs:
   probe-auth:
     name: Probe E2E Auth Target
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, e2e, unraid]
     outputs:
       reachable: ${{ steps.probe.outputs.reachable }}
       skip_reason: ${{ steps.probe.outputs.skip_reason }}
@@ -69,7 +69,7 @@ jobs:
             {
               echo "## E2E Security skipped"
               echo ""
-              echo "Auth target \`${VITE_API_URL}\` was unreachable or blocked by edge protection from GitHub-hosted runners."
+              echo "Auth target \`${VITE_API_URL}\` was unreachable or blocked from the self-hosted E2E runner."
               echo "Skipping security E2E jobs instead of failing the repository."
             } >> "$GITHUB_STEP_SUMMARY"
             exit 0
@@ -85,7 +85,7 @@ jobs:
 
   setup-auth:
     name: Setup E2E Auth State
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, e2e, unraid]
     if: ${{ needs.probe-auth.outputs.reachable == 'true' }}
     needs: [probe-auth]
     timeout-minutes: 10
@@ -125,7 +125,7 @@ jobs:
 
   security:
     name: Playwright Security
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, e2e, unraid]
     if: ${{ needs.probe-auth.outputs.reachable == 'true' }}
     needs: [probe-auth, setup-auth]
     timeout-minutes: 12
@@ -153,11 +153,25 @@ jobs:
           name: playwright-auth-state
           path: frontend/tests/auth-state/
 
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}
+
       - name: Install Playwright browsers
+        if: steps.pw-cache.outputs.cache-hit != 'true'
         run: npx playwright install chromium
 
       - name: Install Playwright system deps
-        run: npx playwright install-deps chromium
+        shell: bash
+        run: |
+          if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+            npx playwright install-deps chromium
+          else
+            echo "Skipping Playwright system deps install; runner does not allow passwordless sudo."
+          fi
 
       - name: Run security tests
         run: npx playwright test --grep "@security|@xss|@e2ee|@auth"

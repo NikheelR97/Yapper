@@ -67,7 +67,7 @@ jobs:
 
   probe-auth:
     name: Probe E2E Auth Target
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, e2e, unraid]
     needs: [guard]
     outputs:
       reachable: ${{ steps.probe.outputs.reachable }}
@@ -124,7 +124,7 @@ jobs:
             {
               echo "## E2E Nightly skipped"
               echo ""
-              echo "Auth target \`${VITE_API_URL}\` was unreachable or blocked by edge protection from GitHub-hosted runners."
+              echo "Auth target \`${VITE_API_URL}\` was unreachable or blocked from the self-hosted E2E runner."
               echo "Skipping nightly E2E jobs instead of failing the repository."
             } >> "$GITHUB_STEP_SUMMARY"
             exit 0
@@ -140,7 +140,7 @@ jobs:
 
   setup-auth:
     name: Setup E2E Auth State
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, e2e, unraid]
     if: ${{ needs.probe-auth.outputs.reachable == 'true' }}
     needs: [guard, probe-auth]
     timeout-minutes: 10
@@ -180,7 +180,7 @@ jobs:
 
   seed:
     name: Seed test devices
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, e2e, unraid]
     timeout-minutes: 5
     if: ${{ needs.probe-auth.outputs.reachable == 'true' }}
     needs: [guard, probe-auth]
@@ -215,16 +215,16 @@ jobs:
         include:
           - project: chromium
             shard: 1/3
-            runner: ubuntu-latest
+            runner: [self-hosted, linux, e2e, unraid]
           - project: chromium
             shard: 2/3
-            runner: ubuntu-latest
+            runner: [self-hosted, linux, e2e, unraid]
           - project: chromium
             shard: 3/3
-            runner: ubuntu-latest
+            runner: [self-hosted, linux, e2e, unraid]
           - project: mobile-chrome
             shard: 1/1
-            runner: ubuntu-latest
+            runner: [self-hosted, linux, e2e, unraid]
 
     steps:
       - uses: actions/checkout@v6
@@ -259,7 +259,13 @@ jobs:
         working-directory: frontend
 
       - name: Install Playwright system deps
-        run: npx playwright install-deps chromium webkit
+        shell: bash
+        run: |
+          if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+            npx playwright install-deps chromium webkit
+          else
+            echo "Skipping Playwright system deps install; runner does not allow passwordless sudo."
+          fi
         working-directory: frontend
 
       - name: Run Playwright tests
