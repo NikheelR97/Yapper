@@ -412,7 +412,10 @@ pub async fn put_backup(
 /// GET /api/v2/keys/backup — retrieve the PIN-encrypted key backup blob.
 ///
 /// Rate-limited to 5 retrievals per hour per user to prevent offline PIN brute-force.
-pub async fn get_backup(auth: AuthUser, State(state): State<AppState>) -> AppResult<Json<BackupResp>> {
+pub async fn get_backup(
+    auth: AuthUser,
+    State(state): State<AppState>,
+) -> AppResult<Json<BackupResp>> {
     // H-06: Rate limit backup retrieval to prevent PIN brute-force (5 attempts/hour/user)
     if BACKUP_RETRIEVE_LIMITER.check_key(&auth.user_id).is_err() {
         return Err(AppError::RateLimited);

@@ -1,0 +1,4 @@
+# rustls-webpki 0.101.7 is still pulled through reqwest 0.11. The matching
+# cargo-audit/OSV exception is tracked in backend/osv-scanner.toml; fixing this
+# fully requires the reqwest 0.12/rustls 0.22 migration.
+GHSA-82j2-j2ch-gfr8

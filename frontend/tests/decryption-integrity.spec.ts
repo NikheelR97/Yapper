@@ -1,4 +1,4 @@
-import { test, expect, type Page, type Browser, type BrowserContext } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import {
 	loginViaApi,
 	setInstallationId,
@@ -6,7 +6,6 @@ import {
 	seedTrustedPrimaryDeviceB,
 	PRIMARY_INSTALLATION_ID,
 	B_PRIMARY_INSTALLATION_ID,
-	SECONDARY_INSTALLATION_ID,
 } from './auth-helper.js';
 import { navigateClientSide, waitForKeyBundles } from './helpers/wait-for.js';
 

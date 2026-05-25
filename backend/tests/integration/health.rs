@@ -4,7 +4,9 @@
 //! database pool answers `SELECT 1` within the 2 s timeout, and 503 otherwise.
 //! Prior to this fix the handler returned 200 unconditionally.
 
-use super::{build_test_state_from_pool, spawn_test_server_from_pool, spawn_test_server_from_state};
+use super::{
+    build_test_state_from_pool, spawn_test_server_from_pool, spawn_test_server_from_state,
+};
 use sqlx::PgPool;
 
 #[sqlx::test(migrations = "./migrations")]

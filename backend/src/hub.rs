@@ -119,6 +119,20 @@ const TRUST_CACHE_TTL: Duration = Duration::from_secs(60);
 /// TTL for cached DM recipient and channel membership entries.
 const MEMBERSHIP_CACHE_TTL: Duration = Duration::from_secs(300);
 
+/// Return an insertion timestamp pre-aged by a random fraction of the TTL (±10%).
+/// This spreads cache expiry across a window instead of letting all entries for a
+/// given TTL class expire simultaneously (thundering herd on the DB).
+fn jittered_now(ttl: Duration) -> Instant {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    // Use the current thread ID as a cheap, lock-free entropy source.
+    let mut h = DefaultHasher::new();
+    std::thread::current().id().hash(&mut h);
+    let jitter_pct = (h.finish() % 20) as u32; // 0..19 → 0%..9.5% of TTL
+    let jitter = ttl / 200 * jitter_pct; // ttl * (0..19)/200
+    Instant::now() - jitter
+}
+
 impl Hub {
     pub fn new() -> Self {
         Self::default()
@@ -135,7 +149,7 @@ impl Hub {
     /// Insert or update a trust state in the cache.
     fn cache_trust_state(&self, user_id: Uuid, device_id: Uuid, state: DeviceTrustState) {
         self.trust_cache
-            .insert((user_id, device_id), (state, Instant::now()));
+            .insert((user_id, device_id), (state, jittered_now(TRUST_CACHE_TTL)));
     }
 
     /// Invalidate a cached trust state (called on approve/revoke).
@@ -153,8 +167,10 @@ impl Hub {
 
     /// Cache a DM recipient lookup result.
     fn cache_dm_recipient(&self, conversation_id: Uuid, sender_id: Uuid, recipient_id: Uuid) {
-        self.dm_recipient_cache
-            .insert((conversation_id, sender_id), (recipient_id, Instant::now()));
+        self.dm_recipient_cache.insert(
+            (conversation_id, sender_id),
+            (recipient_id, jittered_now(MEMBERSHIP_CACHE_TTL)),
+        );
     }
 
     /// Look up a cached channel → server_id mapping.
@@ -168,7 +184,7 @@ impl Hub {
     /// Cache a channel → server_id mapping.
     fn cache_channel_server(&self, channel_id: Uuid, server_id: Uuid) {
         self.channel_server_cache
-            .insert(channel_id, (server_id, Instant::now()));
+            .insert(channel_id, (server_id, jittered_now(MEMBERSHIP_CACHE_TTL)));
     }
 
     /// Look up cached server membership.
@@ -181,8 +197,10 @@ impl Hub {
 
     /// Cache a server membership check result.
     fn cache_membership(&self, user_id: Uuid, server_id: Uuid, is_member: bool) {
-        self.membership_cache
-            .insert((user_id, server_id), (is_member, Instant::now()));
+        self.membership_cache.insert(
+            (user_id, server_id),
+            (is_member, jittered_now(MEMBERSHIP_CACHE_TTL)),
+        );
     }
 
     /// Invalidate membership cache for a user in a server (on join/leave).

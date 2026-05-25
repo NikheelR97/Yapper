@@ -1410,6 +1410,10 @@ export async function exportSignalSnapshot(): Promise<SignalBackupSnapshot> {
     };
   }
 
+  // Flush any debounced session/receiver-key writes before reading from IDB,
+  // so that sessions stored mid-ratchet are included in the backup.
+  await flushDebouncedWrites();
+
   const db = await getDB();
   const snapshot = await readSecretSnapshotFromDb(db);
 

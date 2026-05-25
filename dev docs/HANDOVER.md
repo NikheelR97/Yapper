@@ -1,6 +1,6 @@
 # YAPPER — Developer Handover Document
 
-**Last updated:** 2026-04-06 (rev 6)
+**Last updated:** 2026-05-20 (rev 7)
 **Project status:** Active development — S0-S16 complete; stabilization in progress; Canvas Expansion + E2EE Media deployed; CI/CD production deploy/release automation is paused until the documented release gates are proven
 
 ---
@@ -28,7 +28,7 @@ Yapper is a greenfield SaaS real-time chat platform targeting community/social a
 ┌──────────────────────────────────────────────────────────┐
 │                     CLIENTS                               │
 │  SvelteKit (Web PWA) │ Tauri v2 (Desktop) │ Capacitor (Mobile) │
-│  libsignal WASM      │ libsignal WASM     │ libsignal WASM     │
+│  @noble/curves E2EE  │ @noble/curves E2EE │ @noble/curves E2EE │
 └───────────┬──────────┴─────────┬──────────┴────────┬─────┘
             │ HTTPS + WSS                             │
             ▼                                         ▼
@@ -57,7 +57,7 @@ Yapper is a greenfield SaaS real-time chat platform targeting community/social a
 
 | Layer | Technology | Why |
 |-------|-----------|-----|
-| Backend language | **Rust** | Already required for Tauri; `libsignal-protocol` is native Rust; ~10MB idle RAM fits Fly.io 256MB VM; `sqlx` parameterized queries |
+| Backend language | **Rust** | Already required for Tauri; ~10MB idle RAM fits Fly.io 256MB VM; `sqlx` parameterized queries |
 | Backend framework | **Axum + Tokio** | Tower-based middleware, native WebSocket upgrade, async/await |
 | Frontend framework | **SvelteKit** | Static adapter for Tauri/Capacitor; reactive stores; small bundle size |
 | Desktop shell | **Tauri v2** | Rust-native; ~5MB binary vs Electron's ~150MB |
@@ -67,6 +67,7 @@ Yapper is a greenfield SaaS real-time chat platform targeting community/social a
 | Backend hosting | **Fly.io** | Always-on free VMs (no cold starts like Render) |
 | Frontend hosting | **Cloudflare Pages** | Unlimited bandwidth; global CDN; auto-deploy on push |
 | E2EE | **Signal Protocol** | X3DH + Double Ratchet (DMs), Sender Keys (groups); gold standard |
+| E2EE crypto library | **@noble/curves + @noble/hashes** | Pure TypeScript (Ed25519, X25519, HKDF, HMAC-SHA256); no WASM; runs in every WebView (Tauri, Capacitor, browser) |
 | Email | **Resend** | 3K/month free; transactional only |
 
 ### What Is NOT in the Stack
@@ -81,6 +82,34 @@ Yapper is a greenfield SaaS real-time chat platform targeting community/social a
 ## 3. Coding Standards
 
 This project follows coding standards derived from **NASA/JPL's "Power of Ten" rules** (Gerard Holzmann, 2006), adapted for Rust and TypeScript. These rules exist because Yapper handles E2EE keys, COPPA-protected child data, and financial-grade auth tokens.
+
+### Git Branching Workflow
+
+`main` is the protected production baseline and should stay deployable at all times. Do not do day-to-day implementation directly on `main`, and do not commit directly to `main` unless explicitly performing a documented emergency recovery with owner approval.
+
+Standard workflow:
+
+1. Start from a clean, current baseline:
+   ```bash
+   git fetch origin
+   git switch main
+   git pull --ff-only origin main
+   ```
+2. Create a focused branch before making changes:
+   ```bash
+   git switch -c fix/short-description
+   ```
+3. Use branch prefixes that communicate intent:
+   - `fix/...` for defects, failed tests, security remediations, and audit fixes
+   - `feature/...` for new product work
+   - `docs/...` for documentation-only updates
+   - `chore/...` for dependency, CI, and tooling maintenance
+   - `audit/...` for evidence-gathering or stabilization audit branches
+4. Keep each branch scoped to one logical change. Do not mix unrelated cleanup with production fixes.
+5. Push the branch and open a PR. Let CI run on the branch/PR before merging to `main`.
+6. Production deploy automation should only promote from `main` after release gates pass. Manual Fly.io recovery deploys may use a clean `origin/main` checkout when restoring service, but any code fix must still land through a branch and PR.
+
+Before starting any task, run `git status --short` and `git branch --show-current`. If you are on `main`, create or switch to a task branch first.
 
 ### Rule 1: Simple Control Flow
 
@@ -276,7 +305,7 @@ sqlx::query("DELETE FROM sessions WHERE expired < now()")
 **Yapper adaptation:**
 - Limit `Arc<Mutex<Arc<...>>>` nesting. Maximum two levels of smart pointer wrapping. The hub uses `Arc<DashMap<K, V>>` (one level) — this is the upper bound for normal code.
 - Prefer cloning over complex lifetime annotations when the data is small (<1KB). Correctness over micro-optimization.
-- No `unsafe` blocks unless wrapping a C FFI call (e.g., if `libsignal-protocol` requires it). Every `unsafe` block must have a `// SAFETY:` comment explaining the invariant.
+- No `unsafe` blocks unless wrapping a C FFI call. Every `unsafe` block must have a `// SAFETY:` comment explaining the invariant.
 - In TypeScript, avoid deeply nested optional chaining (`a?.b?.c?.d?.e`) — extract intermediate variables.
 
 ### Rule 10: Compile with All Warnings Enabled
@@ -376,7 +405,7 @@ d:\Development\Claude\yapper\
 │   │   │   ├── components/     ← auth/, chat/, canvas/ (7 widgets), explore/, emoji/, profile/, settings/, parental/
 │   │   │   ├── stores/         ← auth.ts, messages.ts, ws.ts, canvas.ts, parental.ts
 │   │   │   ├── api/            ← Typed fetch wrapper
-│   │   │   ├── signal/         ← libsignal WASM wrapper + keystore
+│   │   │   ├── signal/         ← @noble/curves E2EE implementation + keystore
 │   │   │   └── plugins/        ← Capacitor/Tauri plugin bridges
 │   │   └── routes/
 │   │       ├── (auth)/         ← Login, Register, Onboarding
@@ -552,6 +581,17 @@ Testing is embedded from Phase 1, not an afterthought.
 
 ## 10. Deployment
 
+### Release Gates
+
+Production deploy automation (`flyctl deploy`) is **paused** during stabilization. Before re-enabling automated promotion, all gates in the checklist below must pass. See [`dev docs/STABILIZATION_AUDIT.md § Release Gate Checklist`](STABILIZATION_AUDIT.md) for the full pass/fail criteria and current status.
+
+**Quick summary of blocking gates:**
+1. All CI checks green on `main` (backend, frontend, marketing, security-scans)
+2. `cargo audit` clean (3 known ignores documented in `backend/.cargo/audit.toml`)
+3. E2E smoke suite passes against staging
+4. No open Critical or High audit findings
+5. Documentation corrections applied (see audit report)
+
 ### Backend (Fly.io)
 ```bash
 cd backend
@@ -587,7 +627,7 @@ wrangler secret put RESEND_API_KEY  # Set secret
 | Neon 0.5GB storage limit | DB full at ~1000 users | Monitor `pg_database_size()`; upgrade at 400MB |
 | In-memory hub lost on VM restart | Active connections drop | Clients auto-reconnect; undelivered messages replayed from PostgreSQL |
 | Single Fly VM | Single point of failure | Acceptable for MVP; scale to 2 VMs later (requires Redis for hub) |
-| libsignal WASM init (~200ms) | First message delayed | Initialize on app load (background); cache module |
+| @noble/curves init (<5ms, pure JS) | Negligible | No WASM module loading required |
 | Neon cold starts (500ms–2s) | First request slow | Keep `min_connections = 1`; use PgBouncer endpoint |
 
 ---
@@ -639,6 +679,7 @@ For any developer picking up this project:
 - [x] Understand the parental controls constraint: **metadata only**
 - [x] Review the database schema, especially the `messages` table and Signal key tables
 - [x] Review the security standards in Section 4 — these are non-negotiable
+- [ ] Confirm you are on a task branch, not `main`, before editing code or docs
 - [ ] Check the current phase status and pick up where it left off
 
 ### Where to Pick Up Next (as of 2026-04-06, rev 6)

@@ -7,6 +7,25 @@ All state-mutating requests require `X-CSRF-Token: <csrf_token>` (value from the
 
 ---
 
+## WebSocket
+
+### `GET /ws`
+
+Real-time bidirectional event stream. No query parameters — the access token is **never** placed in the URL (it would appear in proxy logs and browser history).
+
+**Connection flow:**
+1. Open `wss://api.yapperhq.com/ws` with no query parameters.
+2. Immediately send the auth frame as the first message:
+   ```json
+   { "type": "auth", "token": "<access_token>" }
+   ```
+3. Server responds with `{ "type": "authenticated" }` on success, or closes the socket with code `4001` on failure.
+4. Proactively re-authenticate before the access token expires: when the server sends `{ "type": "re_auth_required" }`, respond with `{ "type": "reauth", "token": "<new_access_token>" }` within 30 seconds.
+
+**Limits:** max 5 concurrent connections per user; max frame size 64 KB; 5 messages/sec per user (burst 20).
+
+---
+
 ## Health
 
 ### `GET /health`

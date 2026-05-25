@@ -38,6 +38,10 @@ worker-build/
 *.suo
 *.user
 
+# Local AI assistant state
+.claude/settings.local.json
+.codex/
+
 # OS
 .DS_Store
 Thumbs.db
@@ -73,6 +77,9 @@ psi-result.json
 # Build artifacts
 *.wasm
 
-# Local planning and handoff docs
+# Local planning and handoff docs (exclude personal sprint notes, keep formal docs)
 /dev docs/
+!/dev docs/HANDOVER.md
+!/dev docs/SECURITY_AUDIT.md
+!/dev docs/STABILIZATION_AUDIT.md
 wiki-repo/

@@ -1,6 +1,6 @@
-import { test, expect } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { test, expect } from './fixtures/auth.fixture.js';
 import {
-	setInstallationId,
 	seedTrustedPrimaryDevice,
 	PRIMARY_INSTALLATION_ID,
 } from './auth-helper.js';
@@ -24,9 +24,14 @@ const TEST_PASSWORD = process.env.E2E_PASSWORD ?? '';
 
 const client = new E2EApiClient();
 
-test.describe('Media messaging — Yap recorder', () => {
-	test.use({ storageState: { cookies: [], origins: [] } });
+async function openAuthedChannel(page: Page, path: string): Promise<void> {
+	await page.goto('/explore');
+	await waitForAppReady(page);
+	await navigateClientSide(page, path);
+	await expect(page.locator('textarea[aria-label="Message"]').first()).toBeEnabled({ timeout: 60_000 });
+}
 
+test.describe('Media messaging — Yap recorder', () => {
 	test.skip(!TEST_EMAIL, 'Set E2E_EMAIL / E2E_PASSWORD to run media messaging tests');
 
 	let serverId: string;
@@ -40,19 +45,11 @@ test.describe('Media messaging — Yap recorder', () => {
 		channelId = result.channelId;
 	});
 
-	test('clicking Record a Yap button shows the recorder UI @smoke', async ({ page }) => {
+	test('clicking Record a Yap button shows the recorder UI @smoke', async ({ userPage: page }) => {
 		// Inject fake MediaStream before the page loads
 		await mockMediaStream(page);
 
-		await setInstallationId(page, PRIMARY_INSTALLATION_ID);
-		await page.goto('/login');
-		await page.fill('#email', TEST_EMAIL);
-		await page.fill('#password', TEST_PASSWORD);
-		await page.getByRole('button', { name: /Sign In/i }).click();
-		await page.waitForURL(/\/explore/, { timeout: 20_000 });
-		await waitForAppReady(page);
-		await navigateClientSide(page, `/servers/${serverId}/channels/${channelId}`);
-		await expect(page.locator('textarea[aria-label="Message"]').first()).toBeEnabled({ timeout: 60_000 });
+		await openAuthedChannel(page, `/servers/${serverId}/channels/${channelId}`);
 
 		// Find the Yap recorder button — restrict to <button> to avoid matching
 		// the Yapper logo link (aria-label="Yapper home") in the top nav.
@@ -93,8 +90,6 @@ test.describe('Media messaging — Yap recorder', () => {
 });
 
 test.describe('Media messaging — Clip recorder', () => {
-	test.use({ storageState: { cookies: [], origins: [] } });
-
 	test.skip(!TEST_EMAIL, 'Set E2E_EMAIL / E2E_PASSWORD to run media messaging tests');
 
 	let serverId: string;
@@ -108,18 +103,10 @@ test.describe('Media messaging — Clip recorder', () => {
 		channelId = result.channelId;
 	});
 
-	test('clicking Record a Clip button shows the recorder UI @smoke', async ({ page }) => {
+	test('clicking Record a Clip button shows the recorder UI @smoke', async ({ userPage: page }) => {
 		await mockMediaStream(page);
 
-		await setInstallationId(page, PRIMARY_INSTALLATION_ID);
-		await page.goto('/login');
-		await page.fill('#email', TEST_EMAIL);
-		await page.fill('#password', TEST_PASSWORD);
-		await page.getByRole('button', { name: /Sign In/i }).click();
-		await page.waitForURL(/\/explore/, { timeout: 20_000 });
-		await waitForAppReady(page);
-		await navigateClientSide(page, `/servers/${serverId}/channels/${channelId}`);
-		await expect(page.locator('textarea[aria-label="Message"]').first()).toBeEnabled({ timeout: 60_000 });
+		await openAuthedChannel(page, `/servers/${serverId}/channels/${channelId}`);
 
 		// Find the Clip recorder button — restrict to <button> to be safe
 		const clipBtn = page.locator(
@@ -159,7 +146,6 @@ test.describe('Media messaging — Clip recorder', () => {
 // ─── Yap recorder — cancel flow ──────────────────────────────────────────────
 
 test.describe('Media messaging — Yap cancel flow', () => {
-	test.use({ storageState: { cookies: [], origins: [] } });
 	test.skip(!TEST_EMAIL, 'Set E2E_EMAIL / E2E_PASSWORD to run media messaging tests');
 
 	let serverId: string;
@@ -173,7 +159,7 @@ test.describe('Media messaging — Yap cancel flow', () => {
 		channelId = result.channelId;
 	});
 
-	test('cancelling Yap recording dismisses recorder without sending a message @smoke', async ({ page }) => {
+	test('cancelling Yap recording dismisses recorder without sending a message @smoke', async ({ userPage: page }) => {
 		await mockMediaStream(page);
 
 		// Track whether a message POST was issued
@@ -185,15 +171,7 @@ test.describe('Media messaging — Yap cancel flow', () => {
 			await route.continue();
 		});
 
-		await setInstallationId(page, PRIMARY_INSTALLATION_ID);
-		await page.goto('/login');
-		await page.fill('#email', TEST_EMAIL);
-		await page.fill('#password', TEST_PASSWORD);
-		await page.getByRole('button', { name: /Sign In/i }).click();
-		await page.waitForURL(/\/explore/, { timeout: 20_000 });
-		await waitForAppReady(page);
-		await navigateClientSide(page, `/servers/${serverId}/channels/${channelId}`);
-		await expect(page.locator('textarea[aria-label="Message"]').first()).toBeEnabled({ timeout: 60_000 });
+		await openAuthedChannel(page, `/servers/${serverId}/channels/${channelId}`);
 
 		// Open Yap recorder
 		const yapBtn = page.locator(
@@ -228,7 +206,6 @@ test.describe('Media messaging — Yap cancel flow', () => {
 // ─── Yap recorder — size limit ────────────────────────────────────────────────
 
 test.describe('Media messaging — Yap size limit', () => {
-	test.use({ storageState: { cookies: [], origins: [] } });
 	test.skip(!TEST_EMAIL, 'Set E2E_EMAIL / E2E_PASSWORD to run media messaging tests');
 
 	let serverId: string;
@@ -242,7 +219,7 @@ test.describe('Media messaging — Yap size limit', () => {
 		channelId = result.channelId;
 	});
 
-	test('recording that exceeds size limit shows an error toast @regression', async ({ page }) => {
+	test('recording that exceeds size limit shows an error toast @regression', async ({ userPage: page }) => {
 		await mockMediaStream(page);
 
 		// Override MediaRecorder to immediately dispatch an oversized blob (26 MB)
@@ -265,15 +242,7 @@ test.describe('Media messaging — Yap size limit', () => {
 			window.MediaRecorder = FatMediaRecorder as unknown as typeof MediaRecorder;
 		});
 
-		await setInstallationId(page, PRIMARY_INSTALLATION_ID);
-		await page.goto('/login');
-		await page.fill('#email', TEST_EMAIL);
-		await page.fill('#password', TEST_PASSWORD);
-		await page.getByRole('button', { name: /Sign In/i }).click();
-		await page.waitForURL(/\/explore/, { timeout: 20_000 });
-		await waitForAppReady(page);
-		await navigateClientSide(page, `/servers/${serverId}/channels/${channelId}`);
-		await expect(page.locator('textarea[aria-label="Message"]').first()).toBeEnabled({ timeout: 60_000 });
+		await openAuthedChannel(page, `/servers/${serverId}/channels/${channelId}`);
 
 		const yapBtn = page.locator(
 			'button[aria-label*="Yap" i], button[aria-label*="Record a Yap" i], [data-testid="yap-btn"]',
@@ -306,23 +275,16 @@ test.describe('Media messaging — Yap size limit', () => {
 // ─── DM media buttons ─────────────────────────────────────────────────────────
 
 test.describe('Media messaging — DM recorder buttons', () => {
-	test.use({ storageState: { cookies: [], origins: [] } });
-
 	test.skip(!TEST_EMAIL, 'Set E2E_EMAIL / E2E_PASSWORD to run DM media tests');
 
 	test.beforeAll(() => {
 		seedTrustedPrimaryDevice();
 	});
 
-	test('Yap and Clip buttons exist in DM message input toolbar @smoke', async ({ page }) => {
+	test('Yap and Clip buttons exist in DM message input toolbar @smoke', async ({ userPage: page }) => {
 		await mockMediaStream(page);
 
-		await setInstallationId(page, PRIMARY_INSTALLATION_ID);
-		await page.goto('/login');
-		await page.fill('#email', TEST_EMAIL);
-		await page.fill('#password', TEST_PASSWORD);
-		await page.getByRole('button', { name: /Sign In/i }).click();
-		await page.waitForURL(/\/explore/, { timeout: 20_000 });
+		await page.goto('/explore');
 		await waitForAppReady(page);
 		await page.goto('/dm');
 

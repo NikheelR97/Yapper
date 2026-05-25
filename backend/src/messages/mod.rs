@@ -2,11 +2,7 @@ pub mod handlers;
 pub mod service;
 pub mod types;
 
-use axum::{
-    extract::DefaultBodyLimit,
-    routing::get,
-    Router,
-};
+use axum::{extract::DefaultBodyLimit, routing::get, Router};
 
 use crate::AppState;
 use handlers::*;
