@@ -38,6 +38,10 @@ worker-build/
 *.suo
 *.user
 
+# Local AI assistant state
+.claude/settings.local.json
+.codex/
+
 # OS
 .DS_Store
 Thumbs.db
