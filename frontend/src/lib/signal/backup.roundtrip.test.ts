@@ -18,10 +18,7 @@ vi.mock("$lib/desktop/vault.js", () => ({
 }));
 
 import { api } from "$lib/api/client.js";
-import {
-  backupKeys,
-  restoreKeys,
-} from "./backup.js";
+import { BACKUP_KDF_ITERATIONS, backupKeys, restoreKeys } from "./backup.js";
 import {
   clearCurrentSignalStore,
   configureSignalStore,
@@ -91,7 +88,7 @@ async function deriveKey(
       name: "PBKDF2",
       salt: salt.slice(),
       hash: "SHA-256",
-      iterations: 1_200_000,
+      iterations: BACKUP_KDF_ITERATIONS,
     },
     keyMaterial,
     { name: "AES-GCM", length: 256 },
@@ -218,7 +215,9 @@ describe("signal backup round trip", () => {
     resetSignalStoreScope();
     await configureSignalStore(USER_ID, DEVICE_ID);
 
-    vi.mocked(api.get).mockResolvedValue({ encrypted_blob: uploaded.encrypted_blob });
+    vi.mocked(api.get).mockResolvedValue({
+      encrypted_blob: uploaded.encrypted_blob,
+    });
 
     await expect(restoreKeys(PASS_PHRASE)).resolves.toBe(true);
 

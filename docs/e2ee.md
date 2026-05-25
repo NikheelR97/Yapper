@@ -122,10 +122,10 @@ The sender key is rotated whenever a member leaves the channel (post-compromise 
 
 ## Key Backup
 
-Users can back up their key material encrypted with a PIN:
+Users can back up their key material encrypted with a recovery passphrase:
 
 ```
-PIN  →  PBKDF2-SHA256 (100k iterations, device salt)  →  Wrap Key
+Recovery passphrase  →  PBKDF2-SHA256 (1,200,000 iterations, device salt)  →  Wrap Key
                                                               ↓
 Key bundle (IK, ratchet state)  →  AES-256-GCM  →  Encrypted blob
                                                               ↓
