@@ -19,8 +19,10 @@ class MockWebSocket {
 	onclose: ((event: { code: number }) => void) | null = null;
 	send = mockSend;
 	close = mockClose;
+	url: string;
 
-	constructor() {
+	constructor(url: string) {
+		this.url = url;
 		mockInstances.push(this);
 	}
 }
@@ -131,6 +133,23 @@ describe('wsDisconnect', () => {
 		);
 		expect(mockSend).not.toHaveBeenCalledWith(
 			JSON.stringify({ type: 'read', message_id: 'msg-queued', channel_id: 'channel-1' })
+		);
+	});
+});
+
+describe('wsConnect', () => {
+	it('opens the websocket without query-string tokens', () => {
+		wsDisconnect();
+		wsConnect();
+
+		const socket = mockInstances.at(-1);
+		expect(socket).toBeDefined();
+		expect(socket?.url).not.toMatch(/[?&]token=/i);
+		expect(socket?.url).not.toContain('test-token');
+
+		socket?.onopen?.();
+		expect(mockSend).toHaveBeenCalledWith(
+			JSON.stringify({ type: 'auth', token: 'test-token' })
 		);
 	});
 });

@@ -601,6 +601,7 @@ pub fn gc_ws_rate_limiter() {
 pub async fn ws_handler(
     axum::extract::ConnectInfo(peer_addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
     headers: axum::http::HeaderMap,
+    uri: axum::http::Uri,
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
 ) -> impl IntoResponse {
@@ -608,6 +609,12 @@ pub async fn ws_handler(
     let ip = crate::auth::handlers::extract_ip(&headers, Some(peer_addr.ip()), &state);
     if WS_UPGRADE_LIMITER.check_key(&ip).is_err() {
         return StatusCode::TOO_MANY_REQUESTS.into_response();
+    }
+
+    // Reject query strings entirely so access tokens cannot be smuggled into
+    // URLs that may be logged by proxies, browsers, or observability tooling.
+    if uri.query().is_some() {
+        return StatusCode::BAD_REQUEST.into_response();
     }
 
     // MED-010: enforce frame size at the WebSocket protocol layer,

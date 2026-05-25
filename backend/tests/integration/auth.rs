@@ -340,6 +340,23 @@ async fn rest_rejects_device_less_human_tokens(pool: PgPool) {
     );
 }
 
+/// WebSocket auth must reject query-string parameters before the upgrade.
+#[sqlx::test(migrations = "./migrations")]
+async fn ws_rejects_query_parameters_before_upgrade(pool: PgPool) {
+    let Some((state, _server)) = build_test_server(pool).await else {
+        return;
+    };
+    let ws_addr = spawn_ws_server(state).await.expect("ws server");
+    let url = format!("ws://{ws_addr}/ws?token=never-in-url");
+
+    let result = connect_async(url).await;
+
+    assert!(
+        result.is_err(),
+        "query-string WebSocket auth attempts must be rejected before upgrade"
+    );
+}
+
 /// WebSocket auth must reject human access tokens without a device binding.
 #[sqlx::test(migrations = "./migrations")]
 async fn ws_rejects_device_less_human_tokens(pool: PgPool) {
