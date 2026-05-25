@@ -151,14 +151,14 @@ jobs:
       - name: Build backend image for scanning
         if: steps.image-scope.outputs.should-run-image == 'true'
         uses: docker/build-push-action@v6
-        timeout-minutes: 15
+        timeout-minutes: 25
         with:
           context: backend
           file: backend/Dockerfile
           tags: yapper-backend-security-scan:latest
           load: true
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type=gha,mode=min
 
       - name: Run Trivy image scan
         if: steps.image-scope.outputs.should-run-image == 'true'
