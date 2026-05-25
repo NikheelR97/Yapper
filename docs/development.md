@@ -239,6 +239,29 @@ This writes `.gitignore`d files under `frontend/tests/auth-state/`:
 
 Parallel workers must clone fresh browser contexts from those files instead of reusing a single shared authenticated page/session.
 
+### Self-hosted runner disk maintenance
+
+Self-hosted GitHub Actions runners keep browser binaries and work directories on disk between jobs. Run the maintenance script manually first in dry-run mode:
+
+```bash
+cd ~/Yapper
+bash scripts/maintain-gh-runner-disk.sh --dry-run
+```
+
+Apply the cleanup after reviewing the dry-run output:
+
+```bash
+bash scripts/maintain-gh-runner-disk.sh --apply
+```
+
+Recommended cron entry for the runner user:
+
+```cron
+17 3 * * * /bin/bash /home/runner/Yapper/scripts/maintain-gh-runner-disk.sh --apply >> /home/runner/runner-maintenance.log 2>&1
+```
+
+The script keeps the newest Playwright browser builds, prunes stale Playwright/test artifacts older than 14 days, and skips workspace cleanup while an Actions worker process is active.
+
 ---
 
 ## Linting & Formatting
