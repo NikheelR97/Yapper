@@ -1,7 +1,7 @@
 # YAPPER — Sprint Plan
 
 > Generated: 2026-02-27
-> Source: `quizzical-yawning-starfish.md` (Full Implementation Plan)
+> Source: original full implementation plan
 > Methodology: 2-week sprints, each with clear deliverables, acceptance criteria, and team assignments
 > Status: Archived delivery snapshot
 > Archive note (2026-03-27): This sprint log predates the `/api/v1` removal. Any `/api/v1/*` routes mentioned below are historical references to the implementation state at that time, not current API guidance.
@@ -45,7 +45,7 @@
 | Role | Abbreviation | Responsibility |
 |------|-------------|----------------|
 | Backend Engineer | **BE** | Rust/Axum API, DB migrations, WebSocket hub |
-| Frontend Engineer | **FE** | SvelteKit UI, Signal WASM, stores |
+| Frontend Engineer | **FE** | SvelteKit UI, @noble E2EE, stores |
 | Full-Stack / DevOps | **FS** | Infrastructure, CI/CD, Tauri/Capacitor, deployment |
 | Designer | **DS** | UI mockups, brand assets, OG images |
 
@@ -1196,7 +1196,7 @@ S0 (marketing) + B1/B2/B3 run in parallel, no dependencies ───────
 | Sprint | Risk | Impact | Mitigation |
 |--------|------|--------|------------|
 | S0 | Apple FamilyControls entitlement delay | Blocks S8 Screen Time iOS | Apply Day 1; soft-launch without iOS Screen Time |
-| S3 | libsignal WASM integration complexity | Delays E2EE | Budget extra time; Signal's Rust crate has good docs |
+| S3 | Pure TypeScript Signal-style crypto integration complexity | Delays E2EE | Budget extra time for X3DH, Double Ratchet, Sender Keys, and IndexedDB keystore tests |
 | S4 | Sender Key distribution at scale | Performance issues | Cap MVP servers at 500 members |
 | S5 | MediaRecorder API inconsistencies across browsers | Broken recording | Test on Chrome, Firefox, Safari; polyfill as needed |
 | S7 | COPPA consent flow edge cases | Legal compliance risk | Test thoroughly; add idempotency checks |
@@ -1234,5 +1234,3 @@ HUBSPOT_PORTAL_ID=...                  # HubSpot account portal id
 HUBSPOT_WEBHOOK_SECRET=...             # HubSpot webhook signature secret
 FRONTEND_URL=https://app.yapperhq.com    # CORS origin
 ```
-
-
