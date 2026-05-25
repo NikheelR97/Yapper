@@ -15,7 +15,7 @@
     "test:setup-auth": "node tests/setup-auth.mjs",
     "test:e2e:seed:devices": "dotenv -e .env.test -- node tests/seed-devices.mjs",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "lint": "svelte-kit sync && eslint . && svelte-check --tsconfig ./tsconfig.json",
+    "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "tauri": "tauri"
