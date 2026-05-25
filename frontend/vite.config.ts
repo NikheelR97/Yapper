@@ -29,11 +29,6 @@ export default defineConfig({
 		strictPort: true,
 	},
 
-	// Allow libsignal WASM
-	optimizeDeps: {
-		exclude: ['@signalapp/libsignal-client'],
-	},
-
 	build: {
 		// Tauri uses a static webview - no SSR
 		target: 'esnext',

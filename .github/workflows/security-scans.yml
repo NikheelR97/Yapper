@@ -1,12 +1,9 @@
 name: Security Scans
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   schedule:
     - cron: "23 3 * * *"
+  workflow_dispatch:
   workflow_call:
 
 permissions:
@@ -16,6 +13,7 @@ jobs:
   security-scans:
     name: Repository Security Scans
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
 
@@ -27,7 +25,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
@@ -51,12 +49,16 @@ jobs:
         run: npm ci
         working-directory: marketing
 
+      # --audit-level=high aligns the npm audit gate with the Trivy gate
+      # below (which already filters to severity: HIGH,CRITICAL). Moderate
+      # advisories surface in Dependabot alerts and are tracked there
+      # without blocking every push to main.
       - name: Run npm audit (frontend)
-        run: npm audit --omit=dev
+        run: npm audit --omit=dev --audit-level=high
         working-directory: frontend
 
       - name: Run npm audit (marketing)
-        run: npm audit --omit=dev
+        run: npm audit --omit=dev --audit-level=high
         working-directory: marketing
 
       - name: Run gitleaks
@@ -76,6 +78,46 @@ jobs:
       - name: Run OSV-Scanner
         run: ~/go/bin/osv-scanner scan source --recursive .
 
+  heavy-security-scans:
+    name: Heavy Security Scans
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    if: ${{ github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    permissions:
+      contents: read
+      actions: write
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Detect backend image scan scope
+        id: image-scope
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          should_run=false
+          if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            should_run=true
+          elif [[ "${{ github.event_name }}" == "push" ]]; then
+            base="${{ github.event.before }}"
+            head="${{ github.sha }}"
+            if [[ -z "$base" || "$base" =~ ^0+$ ]]; then
+              should_run=true
+            elif git diff --name-only "$base" "$head" | grep -Eq '^(backend/|\.github/workflows/(ci|security-scans)\.yml|\.dockerignore$)'; then
+              should_run=true
+            fi
+          fi
+
+          echo "should-run-image=${should_run}" >> "$GITHUB_OUTPUT"
+          if [[ "$should_run" == "true" ]]; then
+            echo "Backend image scan is in scope."
+          else
+            echo "Skipping backend image scan; no backend, Docker, or security workflow files changed."
+          fi
+
       - name: Generate CycloneDX SBOM
         uses: anchore/sbom-action@v0
         with:
@@ -92,7 +134,7 @@ jobs:
           if-no-files-found: error
 
       - name: Run Trivy filesystem scan
-        uses: aquasecurity/trivy-action@v0.35.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -102,14 +144,29 @@ jobs:
           ignore-unfixed: true
           exit-code: 1
 
+      - name: Set up Docker Buildx
+        if: steps.image-scope.outputs.should-run-image == 'true'
+        uses: docker/setup-buildx-action@v3
+
       - name: Build backend image for scanning
-        run: docker build -t yapper-backend-security-scan -f backend/Dockerfile backend
+        if: steps.image-scope.outputs.should-run-image == 'true'
+        uses: docker/build-push-action@v6
+        timeout-minutes: 25
+        with:
+          context: backend
+          file: backend/Dockerfile
+          tags: yapper-backend-security-scan:latest
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=min
 
       - name: Run Trivy image scan
-        uses: aquasecurity/trivy-action@v0.35.0
+        if: steps.image-scope.outputs.should-run-image == 'true'
+        uses: aquasecurity/trivy-action@v0.36.0
+        timeout-minutes: 8
         with:
           scan-type: image
-          image-ref: yapper-backend-security-scan
+          image-ref: yapper-backend-security-scan:latest
           scanners: vuln,secret,config
           severity: HIGH,CRITICAL
           ignore-unfixed: true
