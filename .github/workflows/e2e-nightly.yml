@@ -254,7 +254,6 @@ jobs:
           key: playwright-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}
 
       - name: Install Playwright browsers
-        if: steps.pw-cache.outputs.cache-hit != 'true'
         run: npx playwright install chromium webkit
         working-directory: frontend
 
