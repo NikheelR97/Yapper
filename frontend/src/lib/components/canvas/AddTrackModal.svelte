@@ -52,10 +52,10 @@
 <svelte:window on:keydown={handleKeydown} />
 
 <!-- svelte-ignore a11y-click-events-have-key-events -->
-<div class="modal-backdrop" on:click={handleBackdropClick} role="dialog" aria-modal="true" aria-label="Add track">
-	<div class="modal">
+<div class="modal-backdrop" on:click={handleBackdropClick} role="presentation">
+	<div class="modal" role="dialog" aria-modal="true" aria-labelledby="add-track-modal-title" tabindex="-1">
 		<div class="modal-header">
-			<h3>Add Track</h3>
+			<h3 id="add-track-modal-title">Add Track</h3>
 			<button class="btn-close" on:click={onClose} aria-label="Close">
 				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 					<line x1="18" y1="6" x2="6" y2="18"/>
@@ -90,8 +90,8 @@
 			</div>
 
 			<div class="field">
-				<label>Duration</label>
-				<div class="duration-row">
+				<span id="add-track-duration-label" class="field-label">Duration</span>
+				<div class="duration-row" role="group" aria-labelledby="add-track-duration-label">
 					<input
 						type="number"
 						bind:value={durationMin}
@@ -99,6 +99,7 @@
 						max="1440"
 						placeholder="min"
 						class="dur-input"
+						aria-label="Duration minutes"
 					/>
 					<span class="dur-sep">:</span>
 					<input
@@ -108,6 +109,7 @@
 						max="59"
 						placeholder="sec"
 						class="dur-input"
+						aria-label="Duration seconds"
 					/>
 					<span class="dur-preview">{durationSecs > 0 ? `${durationSecs}s` : ''}</span>
 				</div>
@@ -208,7 +210,8 @@
 		gap: 0.25rem;
 	}
 
-	label {
+	label,
+	.field-label {
 		font-size: 0.75rem;
 		font-weight: 600;
 		color: var(--color-text-secondary);

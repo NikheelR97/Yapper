@@ -92,10 +92,10 @@
 <svelte:window on:keydown={handleKeydown} />
 
 <!-- svelte-ignore a11y-click-events-have-key-events -->
-<div class="modal-backdrop" on:click={handleBackdropClick} role="dialog" aria-modal="true" aria-label="Create poll">
-	<div class="modal">
+<div class="modal-backdrop" on:click={handleBackdropClick} role="presentation">
+	<div class="modal" role="dialog" aria-modal="true" aria-labelledby="create-poll-modal-title" tabindex="-1">
 		<div class="modal-header">
-			<h3>Create Poll</h3>
+			<h3 id="create-poll-modal-title">Create Poll</h3>
 			<button class="btn-close" on:click={onClose} aria-label="Close">
 				<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 					<line x1="18" y1="6" x2="6" y2="18"/>
@@ -107,24 +107,27 @@
 		<form on:submit|preventDefault={handleSubmit}>
 			<!-- Poll type -->
 			<div class="field">
-				<label>Type</label>
-				<div class="type-selector">
+				<span id="poll-type-label" class="field-label">Type</span>
+				<div class="type-selector" role="group" aria-labelledby="poll-type-label">
 					<button
 						type="button"
 						class="type-btn"
 						class:active={pollType === 'binary'}
+						aria-pressed={pollType === 'binary'}
 						on:click={() => (pollType = 'binary')}
 					>Binary</button>
 					<button
 						type="button"
 						class="type-btn"
 						class:active={pollType === 'multiple_choice'}
+						aria-pressed={pollType === 'multiple_choice'}
 						on:click={() => (pollType = 'multiple_choice')}
 					>Multiple</button>
 					<button
 						type="button"
 						class="type-btn"
 						class:active={pollType === 'emoji_reaction'}
+						aria-pressed={pollType === 'emoji_reaction'}
 						on:click={() => (pollType = 'emoji_reaction')}
 					>Emoji</button>
 				</div>
@@ -146,13 +149,15 @@
 			<!-- Options -->
 			{#if pollType === 'emoji_reaction'}
 				<div class="field">
-					<label>Reactions ({options.length}/6)</label>
-					<div class="emoji-grid">
+					<span id="poll-reactions-label" class="field-label">Reactions ({options.length}/6)</span>
+					<div class="emoji-grid" role="group" aria-labelledby="poll-reactions-label">
 						{#each DEFAULT_EMOJI as emoji}
 							<button
 								type="button"
 								class="emoji-toggle"
 								class:selected={options.includes(emoji)}
+								aria-label="Toggle {emoji} reaction"
+								aria-pressed={options.includes(emoji)}
 								on:click={() => toggleEmoji(emoji)}
 							>{emoji}</button>
 						{/each}
@@ -160,7 +165,7 @@
 				</div>
 			{:else}
 				<div class="field">
-					<label>Options ({options.length}/6)</label>
+					<span class="field-label">Options ({options.length}/6)</span>
 					<div class="options-list">
 						{#each options as opt, i}
 							<div class="option-row">
@@ -170,9 +175,10 @@
 									maxlength="200"
 									placeholder="Option {i + 1}"
 									disabled={pollType === 'binary'}
+									aria-label="Poll option {i + 1}"
 								/>
 								{#if options.length > 2 && pollType !== 'binary'}
-									<button type="button" class="btn-remove-opt" on:click={() => removeOption(i)}>
+									<button type="button" class="btn-remove-opt" aria-label="Remove option {i + 1}" on:click={() => removeOption(i)}>
 										<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 											<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
 										</svg>
@@ -191,13 +197,14 @@
 
 			<!-- Duration -->
 			<div class="field">
-				<label>Duration</label>
-				<div class="duration-btns">
+				<span id="poll-duration-label" class="field-label">Duration</span>
+				<div class="duration-btns" role="group" aria-labelledby="poll-duration-label">
 					{#each DURATIONS as d}
 						<button
 							type="button"
 							class="dur-btn"
 							class:active={duration === d.value}
+							aria-pressed={duration === d.value}
 							on:click={() => (duration = d.value)}
 						>{d.label}</button>
 					{/each}
@@ -284,7 +291,8 @@
 		gap: 0.25rem;
 	}
 
-	label {
+	label,
+	.field-label {
 		font-size: 0.75rem;
 		font-weight: 600;
 		color: var(--color-text-secondary);
