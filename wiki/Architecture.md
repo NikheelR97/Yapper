@@ -41,9 +41,9 @@
 ### Backend
 | Layer | Choice | Reason |
 |-------|--------|--------|
-| Language | Rust 1.85 | Memory safety, ~10 MB idle RAM (critical on 256 MB Fly VM), native libsignal support |
+| Language | Rust 1.80+ | Memory safety, ~10 MB idle RAM (critical on 256 MB Fly VM); encryption/decryption stays client-side |
 | Web framework | Axum 0.7 | Tokio-native, ergonomic extractors, WebSocket support |
-| Database | sqlx 0.7 (async, compile-time checked) | No ORM overhead; offline query cache for CI |
+| Database | sqlx 0.8 (async, compile-time checked) | No ORM overhead; offline query cache for CI |
 | Auth | JWT RS256 (jsonwebtoken) + Argon2 | Industry standard; RS256 allows public-key verification |
 | Rate limiting | governor + dashmap | In-memory, no Redis dependency |
 | Image processing | image crate | Pure Rust; converts uploads to WebP |
@@ -63,7 +63,7 @@
 ### Infrastructure (all free tier)
 | Service | Role |
 |---------|------|
-| Fly.io | Backend API (2 always-on machines, jnb) |
+| Fly.io | Backend API (single always-on shared-cpu-1x machine, jnb) |
 | Neon | PostgreSQL 0.5 GB |
 | Cloudflare Pages | Frontend + marketing hosting |
 | Cloudflare R2 | Media storage (10 GB) |

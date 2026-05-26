@@ -22,7 +22,7 @@ This checklist defines the release gates that must be satisfied before `flyctl d
 | # | Gate | Status | Evidence | Blocking? |
 |---|------|--------|----------|-----------|
 | 1 | All CI checks pass on `main` (backend, frontend, marketing, security-scans) | PASS | CI workflow has no `needs:` chain; all jobs run in parallel. Deploy jobs commented out (ci.yml:202-255) | Yes |
-| 2 | `cargo audit` clean (3 known ignores with rationale) | PASS | `backend/.cargo/audit.toml:12-29` — all 3 advisories documented with review dates 2026-04-06 | Yes |
+| 2 | `cargo audit` clean (1 known ignore with rationale) | PASS | `backend/.cargo/audit.toml:12-18` — active advisory documented with review date 2026-05-26 | Yes |
 | 3 | `cargo clippy -D warnings` clean | PASS | ci.yml:102 enforces on every push/PR | Yes |
 | 4 | `npm audit --omit=dev` clean (frontend + marketing) | PASS | security-scans.yml:54-60 | Yes |
 | 5 | Gitleaks full history scan clean | PASS | security-scans.yml:62-66 | Yes |
@@ -558,10 +558,8 @@ Once all 6 conditions are met, CI/CD production deploy automation can safely res
 
 ## Appendix: Cargo Audit Ignore List (Acknowledged)
 
-The following advisories are tracked in `backend/.cargo/audit.toml:12-29` with documented rationale and quarterly review dates. They are not re-flagged in this audit per the absolute constraints.
+The following advisory is tracked in `backend/.cargo/audit.toml:12-18` with documented rationale and quarterly review date. It is not re-flagged in this audit per the absolute constraints.
 
 | Advisory | Crate Path | Rationale | Next Review |
 |----------|-----------|-----------|-------------|
-| RUSTSEC-2023-0071 | `rsa` via `sqlx-mysql` | Yapper uses Postgres only; code path unreachable | 2026-07-06 |
-| RUSTSEC-2024-0363 | `sqlx 0.7.x` | Requires `sqlx 0.8` major migration (post-launch) | 2026-07-06 |
-| RUSTSEC-2024-0421 | `idna` via `validator` | Gated on upstream `validator` major release | 2026-07-06 |
+| RUSTSEC-2023-0071 | `rsa` via `sqlx-mysql` and `jsonwebtoken` | sqlx-mysql path unreachable; RS256 JWT signing/verification path accepted pending upstream or auth-library replacement | 2026-08-26 |

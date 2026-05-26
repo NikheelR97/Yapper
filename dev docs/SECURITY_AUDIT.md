@@ -23,7 +23,7 @@ The following scans run on every push/PR to `main` and on a nightly schedule:
 
 | Tool | Scope | Result | Notes |
 |------|-------|--------|-------|
-| `cargo audit` | Rust dependency CVEs | **PASS** (3 ignores) | See Section 2.2 |
+| `cargo audit` | Rust dependency CVEs | **PASS** (1 ignore) | See Section 2.2 |
 | `npm audit` (frontend) | Node.js dependency CVEs | **PASS** | `--omit=dev` |
 | `npm audit` (marketing) | Node.js dependency CVEs | **PASS** | `--omit=dev` |
 | Gitleaks | Hardcoded secrets | **PASS** | Full history scan |
@@ -41,11 +41,9 @@ The single source of truth for the ignore list is [`backend/.cargo/audit.toml`](
 
 | Advisory | Crate path | Reason for Ignore | Risk Assessment | Reviewed |
 |----------|-----------|-------------------|-----------------|----------|
-| RUSTSEC-2023-0071 | `rsa` via `sqlx-mysql` | Yapper uses Postgres only; the rsa code path is never reached. Remediation: drop `sqlx-mysql` when migrating to `sqlx 0.8`. | **Low** — unreachable code path | 2026-04-06 |
-| RUSTSEC-2024-0363 | `sqlx 0.7.x` | Fix requires a `sqlx 0.8` major version migration that touches every query. Scheduled post-launch after the messages/keys module split (audit ref MED-004). | **Low** — internal query layer only | 2026-04-06 |
-| RUSTSEC-2024-0421 | `idna` via `validator` | Fix requires a `validator` major version bump that the upstream crate has not yet released. Tracked upstream. | **Low** — input validation only, not network parsing | 2026-04-06 |
+| RUSTSEC-2023-0071 | `rsa` via `sqlx-mysql` and `jsonwebtoken` | No patched `rsa` release exists. Yapper uses Postgres only, so the sqlx-mysql path is unreachable; jsonwebtoken uses RSA for RS256 JWT signing/verification, so this remains accepted risk pending upstream or auth-library replacement. | **Medium** — reviewed dependency risk | 2026-05-26 |
 
-**Remediation path:** the three ignores are gated on a `sqlx 0.7 → 0.8` migration plus an upstream `validator` release. Re-review quarterly. Update the `Reviewed` column AND the matching comment in `backend/.cargo/audit.toml` whenever the list changes.
+**Remediation path:** re-review quarterly. Update the `Reviewed` column AND the matching comment in `backend/.cargo/audit.toml` whenever the list changes.
 
 ### 2.3 npm Dependency Overrides
 
@@ -166,12 +164,12 @@ Security-motivated overrides in `frontend/package.json`:
 - **Risk:** Parental controls feature (COPPA-related) is non-functional on mobile.
 - **Recommendation:** Apply for Apple FamilyControls entitlement. Implement Android UsageStatsManager.
 
-### 5.3 MEDIUM — Three cargo-audit CVEs Ignored
+### 5.3 MEDIUM — One cargo-audit CVE Ignored
 
-- **Location:** `.github/workflows/security-scans.yml:47-49`
-- **Description:** RUSTSEC-2023-0071, RUSTSEC-2024-0363, RUSTSEC-2024-0421 are transitive deps from `reqwest 0.11`.
-- **Risk:** Low — `reqwest` only connects to trusted APIs (Resend, Discord, FCM), not attacker-controlled endpoints.
-- **Recommendation:** Upgrade `reqwest` to 0.12+ to eliminate ignores.
+- **Location:** `backend/.cargo/audit.toml`
+- **Description:** RUSTSEC-2023-0071 remains active through `rsa` via `sqlx-mysql` and `jsonwebtoken`.
+- **Risk:** Medium dependency risk. The sqlx-mysql path is unreachable because Yapper uses Postgres only; jsonwebtoken uses RSA for RS256 JWT signing/verification, so the advisory remains accepted risk until upstream or an auth-library replacement provides a patched path.
+- **Recommendation:** Re-review quarterly and before public launch; remove the ignore immediately if a patched `rsa`/JWT path lands.
 
 ### 5.4 RESOLVED — ESLint Rules Now Configured
 

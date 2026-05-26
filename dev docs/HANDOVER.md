@@ -514,7 +514,7 @@ The following cross-cutting UI components were built and wired into `(app)/+layo
 ## 8. Development Environment Setup
 
 ### Prerequisites
-1. **Rust 1.93+** — `rustup update stable`
+1. **Rust 1.80+** — `rustup update stable`
 2. **Node.js 20+** — for SvelteKit + Astro
 3. **Docker** — for local PostgreSQL
 4. **cargo-watch** — `cargo install cargo-watch`
@@ -587,7 +587,7 @@ Production deploy automation (`flyctl deploy`) is **paused** during stabilizatio
 
 **Quick summary of blocking gates:**
 1. All CI checks green on `main` (backend, frontend, marketing, security-scans)
-2. `cargo audit` clean (3 known ignores documented in `backend/.cargo/audit.toml`)
+2. `cargo audit` clean (1 known ignore documented in `backend/.cargo/audit.toml`)
 3. E2E smoke suite passes against staging
 4. No open Critical or High audit findings
 5. Documentation corrections applied (see audit report)
@@ -688,9 +688,7 @@ For any developer picking up this project:
 
 **Currently ignored cargo-audit advisories** (rationale + review dates in [`backend/.cargo/audit.toml`](../backend/.cargo/audit.toml) and [`dev docs/SECURITY_AUDIT.md § 2.2`](SECURITY_AUDIT.md)):
 
-- `RUSTSEC-2023-0071` — `rsa` via `sqlx-mysql` (Postgres only, unreachable)
-- `RUSTSEC-2024-0363` — `sqlx 0.7.x` (gated on `sqlx 0.8` migration, post-launch)
-- `RUSTSEC-2024-0421` — `idna` via `validator` (gated on upstream `validator` major release)
+- `RUSTSEC-2023-0071` — `rsa` via `sqlx-mysql` and `jsonwebtoken` (no patched `rsa` release; sqlx-mysql is unreachable, JWT signing/verification path remains accepted risk pending upstream or auth-library replacement)
 
 **S0–S16 complete. Canvas Expansion + E2EE Media deployed. Code review remediation done.** Priority order:
 

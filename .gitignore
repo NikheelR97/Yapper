@@ -3,6 +3,7 @@ target/
 backend/target-integration/
 Cargo.lock
 !backend/Cargo.lock
+!frontend/src-tauri/Cargo.lock
 **/*.rs.bk
 *.pdb
 
@@ -55,7 +56,10 @@ logs/
 .sentryclirc
 
 # sqlx offline cache
+# The backend query cache is intentionally tracked for CI compile-time checks.
 .sqlx/
+!backend/.sqlx/
+!backend/.sqlx/**
 
 # Secrets (JWT keys, service accounts)
 backend/secrets/
@@ -78,8 +82,12 @@ psi-result.json
 *.wasm
 
 # Local planning and handoff docs (exclude personal sprint notes, keep formal docs)
-/dev docs/
+/dev docs/*
+!/dev docs/
 !/dev docs/HANDOVER.md
+!/dev docs/INFRASTRUCTURE.md
 !/dev docs/SECURITY_AUDIT.md
+!/dev docs/SPRINT_PLAN.md
 !/dev docs/STABILIZATION_AUDIT.md
+!/dev docs/STARTUP_CREDITS.md
 wiki-repo/

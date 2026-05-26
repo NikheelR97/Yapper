@@ -51,7 +51,7 @@ It ships as:
 ### Backend
 | | |
 |-|-|
-| Language | Rust 1.85 + Tokio async runtime |
+| Language | Rust 1.80+ + Tokio async runtime |
 | Web framework | Axum 0.7 |
 | Database | PostgreSQL 16 (Neon serverless) via sqlx |
 | Real-time | In-memory WebSocket hub (`DashMap` + `mpsc` channels) |
@@ -74,7 +74,7 @@ It ships as:
 ### Infrastructure (all free tier)
 | Service | Role |
 |---------|------|
-| Fly.io | Backend API (2 always-on machines, Johannesburg) |
+| Fly.io | Backend API (single always-on shared-cpu-1x machine, Johannesburg) |
 | Neon | PostgreSQL 0.5 GB |
 | Cloudflare Pages | Frontend + marketing hosting |
 | Cloudflare R2 | Encrypted media storage (10 GB) |
@@ -111,7 +111,7 @@ yapper/
 │   │   ├── discord/     # Discord profile import
 │   │   ├── premium/     # Stripe webhooks + promo codes
 │   │   └── support/     # Support tickets → HubSpot CRM
-│   ├── migrations/      # sqlx SQL migrations (26 total)
+│   ├── migrations/      # sqlx SQL migrations (37 total)
 │   └── Dockerfile       # cargo-chef multi-stage build
 │
 ├── frontend/            # SvelteKit app (PWA + Tauri + Capacitor)
@@ -141,7 +141,7 @@ yapper/
 
 ### Prerequisites
 
-- Rust 1.85+ — [rustup.rs](https://rustup.rs)
+- Rust 1.80+ — [rustup.rs](https://rustup.rs)
 - Node.js 20+ — [nodejs.org](https://nodejs.org)
 - PostgreSQL 16+ (or Docker)
 - `cargo install sqlx-cli --no-default-features --features postgres`
@@ -217,7 +217,7 @@ Full documentation is available in the [GitHub Wiki](https://github.com/NikheelR
 | [Getting Started](https://github.com/NikheelR97/Yapper/wiki/Getting-Started) | Full local development setup |
 | [Backend Development](https://github.com/NikheelR97/Yapper/wiki/Backend-Development) | Module guide, patterns, conventions |
 | [Frontend Development](https://github.com/NikheelR97/Yapper/wiki/Frontend-Development) | SvelteKit + Tauri + Capacitor guide |
-| [Database](https://github.com/NikheelR97/Yapper/wiki/Database) | Schema, all 26 migrations, sqlx cache workflow |
+| [Database](https://github.com/NikheelR97/Yapper/wiki/Database) | Schema, all 37 migrations, sqlx cache workflow |
 | [API Reference](https://github.com/NikheelR97/Yapper/wiki/API-Reference) | All HTTP endpoints |
 | [E2EE Implementation](https://github.com/NikheelR97/Yapper/wiki/E2EE-Implementation) | X3DH, double ratchet, sender keys, media encryption |
 | [Deployment](https://github.com/NikheelR97/Yapper/wiki/Deployment) | Fly.io, Cloudflare Pages, CI/CD pipeline |
