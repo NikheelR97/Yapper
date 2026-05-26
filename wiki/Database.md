@@ -8,36 +8,43 @@ All migrations live in `backend/migrations/` and are applied automatically on se
 
 | # | File | Description |
 |---|------|-------------|
-| 001 | `20260225000001_initial_schema.sql` | Users, servers, channels, messages, relationships |
-| 002 | `20260225000002_add_refresh_tokens.sql` | JWT refresh tokens |
-| 003 | `20260225000003_add_invites.sql` | Server invite links |
-| 004 | `20260226000004_add_email_verification.sql` | Email verification tokens |
-| 005 | `20260226000005_add_password_reset.sql` | Password reset tokens |
-| 006 | `20260227000006_add_oauth_providers.sql` | OAuth provider columns |
-| 007 | `20260228000007_add_signal_keys.sql` | Signal identity keys + prekeys |
-| 008 | `20260228000008_add_media.sql` | Media attachments |
-| 009 | `20260301000009_add_signing_key.sql` | `signing_key` on identity_keys |
-| 010 | `20260301000010_add_pin_backup.sql` | E2EE key backup (PIN-encrypted) |
-| 011 | `20260302000011_parental_controls.sql` | Child accounts, parent relationships, approval queues |
-| 012 | `20260303000012_canvas_and_explore.sql` | Canvas (music/polls/clips), server tags, search indexes |
-| 013 | `20260303000013_screen_time.sql` | Screen time reports |
-| 014 | `20260303000014_profile_and_social.sql` | Follow graph, friend requests, hype moments |
-| 015 | `20260303000015_user_settings.sql` | Privacy, appearance, notification preferences |
-| 016 | `20260303000016_sender_keys.sql` | Channel Sender Key distributions |
-| 017 | `20260303000017_audit_log.sql` | Parental audit trail |
-| 018 | `20260303000018_emojis.sql` | Custom server emojis |
-| 019 | `20260304000019_bots.sql` | Discord bot import (token hash) |
-| 020 | `20260304000020_premium.sql` | Subscription status, promo codes |
-| 021 | `20260306000019_multidevice_e2ee.sql` | Devices, Signal device IDs, trust states |
+| 001 | `20260301000001_users.sql` | Users and core account fields |
+| 002 | `20260301000002_sessions.sql` | Sessions and refresh-token storage |
+| 003 | `20260301000003_signal_keys.sql` | Signal identity keys, signed prekeys, and one-time prekeys |
+| 004 | `20260301000004_servers_channels.sql` | Servers, channels, memberships, and invite links |
+| 005 | `20260301000005_messages.sql` | DM conversations, messages, and read receipts |
+| 006 | `20260301000006_social.sql` | Friendships, followers, and hype moments |
+| 007 | `20260301000007_parental.sql` | Parent/child relationships and approval queues |
+| 008 | `20260301000008_canvas_emojis.sql` | Initial Canvas and custom emoji tables |
+| 009 | `20260301000009_add_signing_key.sql` | Channel signing key support |
+| 010 | `20260301000010_key_backups.sql` | PIN-encrypted E2EE key backups |
+| 011 | `20260301000011_sender_keys_group.sql` | Sender Key group distribution |
+| 012 | `20260301000012_explore_tags.sql` | Explore tags and discovery metadata |
+| 013 | `20260303000013_screentime_settings.sql` | Screen-time settings |
+| 014 | `20260303000014_user_settings.sql` | User settings |
+| 015 | `20260303000015_emoji_indexes.sql` | Emoji indexes |
+| 016 | `20260303000016_user_appearance_settings.sql` | Appearance preferences |
+| 017 | `20260303000017_user_notification_settings.sql` | Notification preferences |
+| 018 | `20260304000018_screen_time_records.sql` | Screen-time records |
+| 019 | `20260304000019_bots.sql` | Bot application tables |
+| 020 | `20260304000020_premium.sql` | Premium status and promo codes |
+| 021 | `20260306000019_multidevice_e2ee.sql` | Multi-device E2EE metadata and trust state |
 | 022 | `20260307000020_dm_envelope_msg_num.sql` | DM envelope message numbers |
-| 023 | `20260307000021_fix_device_installation_unique_index.sql` | Index fix |
-| 024 | `20260309000022_auth_security_hardening.sql` | Login attempt tracking |
-| 025 | `20260309000023_dm_double_ratchet.sql` | Double ratchet chain state columns |
-| 026 | `20260315000026_support_tickets.sql` | User support tickets + HubSpot ID |
-| 027 | `20260316000027_device_sync_events.sql` | Device sync events for multi-device trust |
-| 028 | `20260321000028_push_tokens.sql` | FCM push token registration |
-| 029 | `20260321000029_canvas_expansion.sql` | Canvas music queue, enhanced polls, clip reactions, events |
-| 030 | `20260322000030_media_uploads.sql` | Media upload tracking + per-user quota |
+| 023 | `20260307000021_fix_device_installation_unique_index.sql` | Device installation uniqueness fix |
+| 024 | `20260309000022_auth_security_hardening.sql` | Login-attempt tracking and auth hardening |
+| 025 | `20260309000023_dm_double_ratchet.sql` | Double Ratchet chain-state columns |
+| 026 | `20260312000024_relax_msg_has_content_for_v2_dms.sql` | V2 DM envelope content constraint relaxation |
+| 027 | `20260312000025_friendships_requested_by.sql` | Friend request initiator tracking |
+| 028 | `20260315000026_support_tickets.sql` | Support tickets and HubSpot sync ID |
+| 029 | `20260320000027_performance_indexes.sql` | Performance indexes and counters |
+| 030 | `20260321000028_push_tokens.sql` | FCM push-token registration |
+| 031 | `20260321000029_canvas_expansion.sql` | Canvas music queue, enhanced polls, clips, reactions, and events |
+| 032 | `20260322000030_media_uploads.sql` | Media upload tracking and per-user quota |
+| 033 | `20260324000031_deleted_account_retention.sql` | Deleted-account retention metadata |
+| 034 | `20260326000032_normalize_email_and_linked_identities.sql` | Normalized email and linked identities |
+| 035 | `20260326000033_message_and_join_invariants.sql` | Message and join invariants |
+| 036 | `20260327000034_media_upload_expiry_backfill.sql` | Media upload expiry backfill |
+| 037 | `20260328000031_fix_message_ciphertext_xor_plaintext.sql` | Enforce ciphertext/plaintext XOR constraint |
 
 ## Key tables
 

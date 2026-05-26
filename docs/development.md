@@ -4,7 +4,7 @@
 
 | Tool | Version | Install |
 |------|---------|---------|
-| Rust | 1.78+ | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
+| Rust | 1.80+ | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
 | Node.js | 20+ | [nodejs.org](https://nodejs.org) |
 | Docker | any | [docker.com](https://www.docker.com) |
 | sqlx-cli | latest | `cargo install sqlx-cli --no-default-features --features postgres` |
@@ -46,7 +46,7 @@ These are gitignored. Never commit them.
 
 ```bash
 make db-up       # starts Docker postgres on port 5432
-make migrate     # runs all 12 sqlx migrations
+make migrate     # runs all migrations in backend/migrations/
 ```
 
 Verify:
@@ -219,7 +219,7 @@ Tests live alongside the code in `#[cfg(test)]` modules. Auth service has tests 
 cd frontend && npm run check   # svelte-check + TypeScript
 ```
 
-### E2E (Playwright — not yet implemented)
+### E2E (Playwright)
 
 ```bash
 make test-e2e

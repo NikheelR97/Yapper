@@ -66,9 +66,7 @@ Public values that are safe to expose in the repo:
 
 | Advisory | Package | Reason ignored |
 |----------|---------|---------------|
-| RUSTSEC-2023-0071 | rsa (via sqlx-mysql) | We use Postgres only; rsa code path never reached |
-| RUSTSEC-2024-0363 | sqlx 0.7.x | Fix requires sqlx 0.8 major migration; tracked in backlog |
-| RUSTSEC-2024-0421 | idna (via validator) | Fix requires validator upgrade; tracked in backlog |
+| RUSTSEC-2023-0071 | rsa (via sqlx-mysql/jsonwebtoken) | No patched `rsa` release exists. The sqlx-mysql path is unreachable because Yapper uses Postgres only; jsonwebtoken uses RSA for RS256 JWT signing/verification, so this remains a reviewed launch-risk item. |
 
 ## Responsible disclosure
 
