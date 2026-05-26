@@ -28,5 +28,5 @@ export function log(category: LogCategory, action: string, message: string): voi
 	const now = new Date();
 	const pad = (n: number, len = 2) => String(n).padStart(len, '0');
 	const ts = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}.${pad(now.getMilliseconds(), 3)}`;
-	console.log(`[${ts}] [${category}] [${action}] ${message}`);
+	console.debug(`[${ts}] [${category}] [${action}] ${message}`);
 }

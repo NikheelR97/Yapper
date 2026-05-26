@@ -317,7 +317,7 @@ test.describe('Seeded DM flow', () => {
 		// loadMessages sequentially decrypts all old messages (many will fail with
 		// OperationError in fresh IDB contexts) — this can take >20s with 30+ msgs.
 		await expect(input).toBeEnabled({ timeout: 60_000 });
-		console.log('[test] Input enabled');
+		console.debug('[test] Input enabled');
 
 		// Wait for B's browser to finish loading (loading screen gone).
 		// Then poll the API until BOTH users' key bundles are confirmed on the
@@ -325,23 +325,23 @@ test.describe('Seeded DM flow', () => {
 		// loading screen hides (boot-perf fix), so encryptDm() calling
 		// fetchKeyBundles(myUserId) can fail if A's own keys aren't uploaded yet.
 		await bKeysDone;
-		console.log('[test] bKeysDone resolved');
+		console.debug('[test] bKeysDone resolved');
 		await Promise.all([
 			waitForBundles(sessionAAccessToken, userAId),
 			waitForBundles(sessionAAccessToken, userBId),
 		]);
-		console.log('[test] waitForBundles resolved');
+		console.debug('[test] waitForBundles resolved');
 
 		const testMsg = `E2E DM test ${Date.now()}`;
 		await input.fill(testMsg);
-		console.log('[test] Pressing Enter at', new Date().toISOString());
+		console.debug('[test] Pressing Enter at', new Date().toISOString());
 		await input.press('Enter');
 
 		await expect(page.getByTestId('dm-message-list')).toContainText(testMsg, { timeout: 10_000 });
 
 		if (consoleLogs.length > 0) {
 			const recent = consoleLogs.splice(0);
-			for (const log of recent) console.log(log);
+			for (const log of recent) console.debug(log);
 		}
 		} finally {
 			await ctxB.close();

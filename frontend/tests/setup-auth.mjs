@@ -70,7 +70,7 @@ async function login(email, password, installationId, label) {
 	let lastError;
 	for (let attempt = 1; attempt <= LOGIN_RETRIES; attempt += 1) {
 		try {
-			console.log(
+			console.debug(
 				`[setup-auth] login attempt ${attempt}/${LOGIN_RETRIES} for ${email} via ${API_URL}`,
 			);
 			const response = await fetch(`${API_URL}/api/v2/auth/login`, {

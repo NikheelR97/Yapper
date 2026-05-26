@@ -94,18 +94,18 @@ async function main() {
 		process.exit(1);
 	}
 
-	console.log('Logging in as USER_A:', emailA);
+	console.debug('Logging in as USER_A:', emailA);
 	const sessionA = await login(emailA, passA);
-	console.log(`  USER_A id: ${sessionA.userId} (@${sessionA.username})`);
+	console.debug(`  USER_A id: ${sessionA.userId} (@${sessionA.username})`);
 
-	console.log('Logging in as USER_B:', emailB);
+	console.debug('Logging in as USER_B:', emailB);
 	const sessionB = await login(emailB, passB);
-	console.log(`  USER_B id: ${sessionB.userId} (@${sessionB.username})`);
+	console.debug(`  USER_B id: ${sessionB.userId} (@${sessionB.username})`);
 
 	// Ã¢â€â‚¬Ã¢â€â‚¬ Seed 1: DM conversation Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-	console.log('\nCreating DM conversation between USER_A and USER_B...');
+	console.debug('\nCreating DM conversation between USER_A and USER_B...');
 	const convo = await createDmConversation(sessionA, sessionB.userId);
-	console.log(`  Conversation id: ${convo.id} (already existed or freshly created)`);
+	console.debug(`  Conversation id: ${convo.id} (already existed or freshly created)`);
 
 	// Ã¢â€â‚¬Ã¢â€â‚¬ Seed 2: Joinable public server Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 	// Check USER_A's current servers Ã¢â‚¬â€ we need a server USER_A is NOT in.
@@ -119,24 +119,24 @@ async function main() {
 	let server;
 	if (existing) {
 		server = existing;
-		console.log(`\nJoinable server already exists: "${server.name}" (id: ${server.id})`);
+		console.debug(`\nJoinable server already exists: "${server.name}" (id: ${server.id})`);
 	} else {
-		console.log(`\nCreating joinable server "${seedName}" as USER_B...`);
+		console.debug(`\nCreating joinable server "${seedName}" as USER_B...`);
 		server = await createServer(sessionB, seedName);
-		console.log(`  Server id: ${server.id}`);
+		console.debug(`  Server id: ${server.id}`);
 	}
 
 	// Confirm USER_A is NOT in that server
 	const serversA = await listMyServers(sessionA);
 	const alreadyMember = Array.isArray(serversA) && serversA.some((s) => s.id === server.id);
 	if (alreadyMember) {
-		console.log(`  USER_A is already a member of "${seedName}" Ã¢â‚¬â€ test 24 may still skip.`);
-		console.log('  Tip: create a new server manually or use a third account.');
+		console.debug(`  USER_A is already a member of "${seedName}" Ã¢â‚¬â€ test 24 may still skip.`);
+		console.debug('  Tip: create a new server manually or use a third account.');
 	} else {
-		console.log(`  USER_A is NOT a member of "${seedName}" Ã¢â‚¬â€ test 24 should pass.`);
+		console.debug(`  USER_A is NOT a member of "${seedName}" Ã¢â‚¬â€ test 24 should pass.`);
 	}
 
-	console.log('\nSeeding complete.');
+	console.debug('\nSeeding complete.');
 }
 
 main().catch((err) => {

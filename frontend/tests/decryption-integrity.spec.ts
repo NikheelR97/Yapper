@@ -572,15 +572,15 @@ test.describe('Channel decryption integrity', () => {
 
 			// Print captured Signal logs before the critical send so they appear
 			// in the test output even if waitForMessage times out.
-			console.log('=== Signal logs before send ===');
-			console.log([...aLogs, ...bLogs].join('\n') || '(none)');
-			console.log('=== B decrypt errors before send:', await countDecryptErrors(pageB));
+			console.debug('=== Signal logs before send ===');
+			console.debug([...aLogs, ...bLogs].join('\n') || '(none)');
+			console.debug('=== B decrypt errors before send:', await countDecryptErrors(pageB));
 
 			// 90 s: allows for one extra retry cycle in case of transient WS delay.
 			await waitForMessage(pageB, afterJoinMsg, 90_000);
 
-			console.log('=== Signal logs after message visible ===');
-			console.log([...aLogs, ...bLogs].join('\n') || '(none)');
+			console.debug('=== Signal logs after message visible ===');
+			console.debug([...aLogs, ...bLogs].join('\n') || '(none)');
 
 			await assertNoDecryptErrors(
 				pageB,
@@ -590,8 +590,8 @@ test.describe('Channel decryption integrity', () => {
 		} finally {
 			// Always dump logs on failure for post-mortem analysis
 			if (aLogs.length || bLogs.length) {
-				console.log('=== Final Signal logs ===');
-				console.log([...aLogs, ...bLogs].join('\n'));
+				console.debug('=== Final Signal logs ===');
+				console.debug([...aLogs, ...bLogs].join('\n'));
 			}
 			await ctxA.close();
 			await ctxB.close();
