@@ -1,9 +1,9 @@
 # SECURITY_AUDIT.md — Yapper Pre-Launch Security Assessment
 
-**Date:** 2026-04-04
-**Revision:** 1
+**Date:** 2026-05-27
+**Revision:** 2
 **Scope:** Full-stack security assessment against HANDOVER.md (rev 5) requirements
-**Status:** 0 Critical, 0 High, 2 Medium (2 resolved), 4 Low (4 resolved) findings
+**Status:** 0 Critical, 0 High, 2 Medium (2 resolved), 4 Low (4 resolved) findings; GitHub Security tab clean (0 open across Dependabot, code scanning, secret scanning)
 
 ---
 
@@ -51,6 +51,26 @@ Security-motivated overrides in `frontend/package.json`:
 - `cookie` → `^0.7.0` (patched)
 - `brace-expansion` → `^5.0.5` (via `minimatch` override)
 - `serialize-javascript` → `^7.0.5` (patched)
+
+### 2.4 GitHub Security Tab — Dismissed Alerts
+
+Audited on 2026-05-27 against `main` after PR #136 (`chore/dependabot-tauri-policy`). All open alerts were triaged and dismissed with rationale via the GitHub REST API. Current open count: **Dependabot 0, code scanning 0, secret scanning 0.**
+
+| # | Source | Severity | Target | Reason | Rationale |
+|---|--------|----------|--------|--------|-----------|
+| 84 | Dependabot | medium | `glib` (frontend/src-tauri/Cargo.lock) | `tolerable_risk` | RUSTSEC-2024-0429; pulled by Tauri 2.11 webkit2gtk/gtk transitives. Upgrade to `glib 0.20` requires upstream Tauri/wry movement. Documented in [`frontend/src-tauri/osv-scanner.toml`](../frontend/src-tauri/osv-scanner.toml) and ignored in [`.github/dependabot.yml`](../.github/dependabot.yml). |
+| 91 | Dependabot | low | `rand` (frontend/src-tauri/Cargo.lock) | `tolerable_risk` | RUSTSEC-2026-0097; pulled through `tauri-utils → kuchikiki → selectors` build-time parser path after all compatible patch updates. Documented in [`frontend/src-tauri/osv-scanner.toml`](../frontend/src-tauri/osv-scanner.toml) and ignored in [`.github/dependabot.yml`](../.github/dependabot.yml). |
+| 30 | Code scanning | high | `frontend/tests/xss-injection.spec.ts:87` | `false positive` | `error.includes('evil.com')` is a test assertion verifying no XSS-related console errors fired — it confirms the payload did NOT execute. Not URL sanitization. |
+| 29 | Code scanning | high | `frontend/tests/uat/uat.spec.ts:494` | `false positive` | `uid('uat')` generates a random test username for UAT data. Not used in any security context; test-only data generation. |
+
+**Remediation path:** Re-review the Dependabot dismissals when Tauri / wry / GTK3 upstream produces compatible releases. The CodeQL dismissals are stable — they pin to test-only files.
+
+**Verification command** (non-mutating):
+```powershell
+gh api repos/NikheelR97/Yapper/dependabot/alerts --jq '[.[] | select(.state=="open")] | length'
+gh api repos/NikheelR97/Yapper/code-scanning/alerts --jq '[.[] | select(.state=="open")] | length'
+gh api repos/NikheelR97/Yapper/secret-scanning/alerts --jq '[.[] | select(.state=="open")] | length'
+```
 
 ---
 
