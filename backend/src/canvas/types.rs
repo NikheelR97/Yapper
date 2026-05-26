@@ -175,9 +175,10 @@ fn default_poll_type() -> String {
     "multiple_choice".to_string()
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Validate)]
 #[serde(deny_unknown_fields)]
 pub struct VoteReq {
+    #[validate(range(min = 0, max = 5))]
     pub option_index: i32,
 }
 
