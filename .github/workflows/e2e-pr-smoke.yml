@@ -134,8 +134,10 @@ jobs:
         include:
           - shard_index: 1
             shard_total: 2
+            port: 6173
           - shard_index: 2
             shard_total: 2
+            port: 6174
 
     defaults:
       run:
@@ -174,6 +176,8 @@ jobs:
         run: npx playwright test --grep "@smoke" --shard=${{ matrix.shard_index }}/${{ matrix.shard_total }} --workers=4
         env:
           CI: 'true'
+          BASE_URL: http://localhost:${{ matrix.port }}
+          PLAYWRIGHT_WEB_SERVER_URL: http://localhost:${{ matrix.port }}
           E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
           E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
           E2E_EMAIL_2: ${{ secrets.E2E_EMAIL_2 }}
