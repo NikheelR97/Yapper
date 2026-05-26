@@ -55,6 +55,25 @@ updates:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
 
+  # ── Tauri desktop shell (Rust) ─────────────────────────────────────────────
+  # Accepted-risk transitives for this directory are documented in
+  # frontend/src-tauri/osv-scanner.toml. Ignore entries below match advisories
+  # that cannot be resolved without upstream Tauri/wry/GTK3 movement.
+  - package-ecosystem: cargo
+    directory: /frontend/src-tauri
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Africa/Johannesburg
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+      # Blocked by Tauri/wry/GTK3 Linux desktop stack — see osv-scanner.toml.
+      - dependency-name: "glib"
+      # Blocked by Tauri tauri-utils -> kuchikiki -> selectors parser chain.
+      - dependency-name: "rand"
+
   # ── GitHub Actions ─────────────────────────────────────────────────────────
   - package-ecosystem: github-actions
     directory: /
