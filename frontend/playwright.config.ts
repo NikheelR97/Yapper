@@ -1,5 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const baseURL = process.env.BASE_URL ?? 'http://localhost:5173';
+const webServerUrl = process.env.PLAYWRIGHT_WEB_SERVER_URL ?? baseURL;
+const webServerPort = new URL(webServerUrl).port || '5173';
+
 /**
  * Playwright E2E test configuration.
  *
@@ -39,7 +43,7 @@ export default defineConfig({
 		: 'list',
 
 	use: {
-		baseURL: process.env.BASE_URL ?? 'http://localhost:5173',
+		baseURL,
 		trace: process.env.CI ? 'retain-on-failure' : 'on-first-retry',
 		screenshot: 'only-on-failure',
 		video: process.env.CI ? 'retain-on-failure' : 'off',
@@ -94,8 +98,8 @@ export default defineConfig({
 		: process.env.BASE_URL && !process.env.BASE_URL.includes('localhost')
 			? undefined
 			: {
-					command: 'npm run dev',
-					url: 'http://localhost:5173',
+					command: `npm run dev -- --host 127.0.0.1 --port ${webServerPort}`,
+					url: webServerUrl,
 					reuseExistingServer: !process.env.CI,
 					timeout: 120_000,
 				},

@@ -122,11 +122,22 @@ jobs:
           retention-days: 1
 
   smoke:
-    name: Playwright Smoke
+    name: Playwright Smoke (shard ${{ matrix.shard_index }}/${{ matrix.shard_total }})
     runs-on: [self-hosted, linux, e2e, unraid]
     timeout-minutes: 10
     needs: [setup-auth]
     if: ${{ github.event_name == 'pull_request' && needs.setup-auth.result == 'success' }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard_index: 1
+            shard_total: 2
+            port: 6173
+          - shard_index: 2
+            shard_total: 2
+            port: 6174
 
     defaults:
       run:
@@ -162,9 +173,11 @@ jobs:
           fi
 
       - name: Run smoke tests
-        run: npx playwright test --grep "@smoke" --workers=4
+        run: npx playwright test --grep "@smoke" --shard=${{ matrix.shard_index }}/${{ matrix.shard_total }} --workers=4
         env:
           CI: 'true'
+          BASE_URL: http://localhost:${{ matrix.port }}
+          PLAYWRIGHT_WEB_SERVER_URL: http://localhost:${{ matrix.port }}
           E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
           E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
           E2E_EMAIL_2: ${{ secrets.E2E_EMAIL_2 }}
@@ -174,7 +187,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: smoke-test-results
+          name: smoke-test-results-${{ matrix.shard_index }}-of-${{ matrix.shard_total }}
           path: |
             frontend/test-results/
             frontend/playwright-report/
