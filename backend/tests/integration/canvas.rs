@@ -141,6 +141,45 @@ async fn music_queue_rejects_non_admin_enqueue_attempts(pool: PgPool) {
 }
 
 #[sqlx::test(migrations = "./migrations")]
+async fn music_now_playing_rejects_non_admin_patch_attempts(pool: PgPool) {
+    let Some((_state, server)) = build_canvas_test_server(pool).await else {
+        return;
+    };
+
+    let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
+    let owner_session = register_test_session(&server, &format!("canvas_owner_{suffix}")).await;
+    let member_session = register_test_session(&server, &format!("canvas_member_{suffix}")).await;
+    let owner_client = TestClient::from_session(&server, &owner_session);
+    let member_client = TestClient::from_session(&server, &member_session);
+    let server_id =
+        create_public_server(&owner_client, &format!("Canvas Now Playing {suffix}")).await;
+
+    let join = member_client
+        .post(&format!("/api/v2/servers/{server_id}/join"))
+        .await;
+    assert!(
+        join.status_code().is_success(),
+        "member join failed: {}",
+        join.text()
+    );
+
+    let patch = member_client
+        .patch(&format!("/api/v2/canvas/servers/{server_id}/music"))
+        .json(&serde_json::json!({
+            "artist": "Member Artist",
+            "title": "Member Track",
+            "duration_secs": 180
+        }))
+        .await;
+
+    assert_eq!(
+        patch.status_code().as_u16(),
+        403,
+        "non-admin direct now-playing patch should be rejected"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
 async fn music_queue_rejects_tracks_when_at_capacity(pool: PgPool) {
     let Some((state, server)) = build_canvas_test_server(pool).await else {
         return;
@@ -183,6 +222,32 @@ async fn music_queue_rejects_tracks_when_at_capacity(pool: PgPool) {
         response.text().contains("Music queue is full"),
         "unexpected queue-cap rejection: {}",
         response.text()
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn canvas_state_rejects_channel_from_another_server(pool: PgPool) {
+    let Some((state, server)) = build_canvas_test_server(pool).await else {
+        return;
+    };
+
+    let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
+    let owner_session =
+        register_test_session(&server, &format!("canvas_state_owner_{suffix}")).await;
+    let owner_client = TestClient::from_session(&server, &owner_session);
+    let server_a = create_public_server(&owner_client, &format!("Canvas State A {suffix}")).await;
+    let server_b = create_public_server(&owner_client, &format!("Canvas State B {suffix}")).await;
+    let channel_b = general_channel_id(&state, server_b).await;
+
+    let response = owner_client
+        .get(&format!("/api/v2/canvas/servers/{server_a}/state"))
+        .add_query_param("channel_id", channel_b.to_string())
+        .await;
+
+    assert_eq!(
+        response.status_code().as_u16(),
+        403,
+        "canvas state must not hydrate polls from a channel outside the requested server"
     );
 }
 

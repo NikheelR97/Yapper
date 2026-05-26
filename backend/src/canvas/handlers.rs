@@ -29,7 +29,7 @@ pub async fn patch_music(
 ) -> AppResult<impl IntoResponse> {
     body.validate()
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
-    service::require_member(server_id, auth.user_id, &state).await?;
+    service::require_admin_or_dj(server_id, auth.user_id, &state).await?;
     service::set_music(server_id, auth.user_id, &body, &state).await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -192,6 +192,8 @@ pub async fn vote_poll(
     Path(poll_id): Path<Uuid>,
     Json(body): Json<VoteReq>,
 ) -> AppResult<impl IntoResponse> {
+    body.validate()
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
     let (result, _server_id) =
         service::vote_poll(poll_id, auth.user_id, body.option_index, &state).await?;
     Ok(Json(result))
@@ -324,6 +326,11 @@ pub async fn get_canvas_state(
     Query(query): Query<CanvasStateQuery>,
 ) -> AppResult<impl IntoResponse> {
     service::require_member(server_id, auth.user_id, &state).await?;
+    let channel_server_id =
+        service::require_channel_member(query.channel_id, auth.user_id, &state).await?;
+    if channel_server_id != server_id {
+        return Err(AppError::Forbidden);
+    }
     let result =
         service::get_canvas_state(server_id, query.channel_id, auth.user_id, &state).await?;
     Ok(([("cache-control", "private, max-age=5")], Json(result)))
