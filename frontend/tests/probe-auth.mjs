@@ -72,7 +72,7 @@ async function main() {
 			process.exit(1);
 		}
 
-		console.log(`Auth probe succeeded against ${API_URL}.`);
+		console.debug(`Auth probe succeeded against ${API_URL}.`);
 	} catch (error) {
 		if (!isNetworkError(error)) {
 			console.error(`Auth probe failed with a non-network error at ${API_URL}: ${error}`);

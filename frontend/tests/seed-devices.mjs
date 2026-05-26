@@ -147,7 +147,7 @@ async function ensureTrustedPrimarySession(email, password, primarySession) {
 		);
 	}
 
-	console.log(
+	console.debug(
 		`Reusing trusted controller ${controller.id} (${controller.label}) to approve the primary device...`,
 	);
 	const controllerSession = await loginV2(
@@ -176,7 +176,7 @@ async function ensureTrustedPrimarySession(email, password, primarySession) {
 
 function printDevices(devices) {
 	for (const device of devices) {
-		console.log(
+		console.debug(
 			`  - ${device.label} (${device.id}) signal#${device.signal_device_id} state=${device.trust_state}`,
 		);
 	}
@@ -192,14 +192,14 @@ async function revokeStaleDevices(primarySession) {
 	);
 
 	if (stale.length === 0) {
-		console.log('No stale pending devices to revoke.');
+		console.debug('No stale pending devices to revoke.');
 		return;
 	}
 
-	console.log(`Revoking ${stale.length} stale pending device(s)...`);
+	console.debug(`Revoking ${stale.length} stale pending device(s)...`);
 	for (const d of stale) {
 		await revokeDevice(primarySession, d.id);
-		console.log(`  Revoked: ${d.label} (${d.id})`);
+		console.debug(`  Revoked: ${d.label} (${d.id})`);
 	}
 }
 
@@ -217,7 +217,7 @@ async function main() {
 
 	await assertV2AuthAvailable();
 
-	console.log(`Logging in primary device for ${email}...`);
+	console.debug(`Logging in primary device for ${email}...`);
 	let primarySession = await loginV2(
 		email,
 		password,
@@ -225,7 +225,7 @@ async function main() {
 		'E2E Primary Browser',
 	);
 	primarySession = await ensureTrustedPrimarySession(email, password, primarySession);
-	console.log(
+	console.debug(
 		`  Primary device: ${primarySession.device.id} state=${primarySession.device.trust_state}`,
 	);
 
@@ -244,36 +244,36 @@ async function main() {
 		existingSecondary &&
 		SECONDARY_INSTALLATION_ID !== PRIMARY_INSTALLATION_ID
 	) {
-		console.log(`Removing existing secondary device ${existingSecondary.id}...`);
+		console.debug(`Removing existing secondary device ${existingSecondary.id}...`);
 		await revokeDevice(primarySession, existingSecondary.id);
 		devices = await listDevices(primarySession);
 	}
 	if (skipSecondary) {
-		console.log('\nCurrent devices:');
+		console.debug('\nCurrent devices:');
 		printDevices(devices);
-		console.log('\nSkipping secondary device registration.');
-		console.log('\nDevice seeding complete.');
+		console.debug('\nSkipping secondary device registration.');
+		console.debug('\nDevice seeding complete.');
 		return;
 	}
 	if (resetSecondary && existingSecondary) {
-		console.log(`Recycling existing secondary device ${existingSecondary.id}...`);
+		console.debug(`Recycling existing secondary device ${existingSecondary.id}...`);
 		await revokeDevice(primarySession, existingSecondary.id);
 		devices = await listDevices(primarySession);
 	}
 
-	console.log('Logging in secondary device...');
+	console.debug('Logging in secondary device...');
 	const secondarySession = await loginV2(
 		email,
 		password,
 		SECONDARY_INSTALLATION_ID,
 		'E2E Secondary Browser',
 	);
-	console.log(
+	console.debug(
 		`  Secondary device: ${secondarySession.device.id} state=${secondarySession.device.trust_state}`,
 	);
 
 	devices = await listDevices(primarySession);
-	console.log('\nCurrent devices:');
+	console.debug('\nCurrent devices:');
 	printDevices(devices);
 
 	if (approvePending) {
@@ -284,17 +284,17 @@ async function main() {
 		);
 
 		if (!pendingDevice) {
-			console.log('\nNo pending secondary device found to approve.');
+			console.debug('\nNo pending secondary device found to approve.');
 		} else {
-			console.log(`\nApproving secondary device ${pendingDevice.id}...`);
+			console.debug(`\nApproving secondary device ${pendingDevice.id}...`);
 			await approveDevice(primarySession, pendingDevice.id);
 			devices = await listDevices(primarySession);
-			console.log('Updated devices:');
+			console.debug('Updated devices:');
 			printDevices(devices);
 		}
 	}
 
-	console.log('\nDevice seeding complete.');
+	console.debug('\nDevice seeding complete.');
 }
 
 main().catch((error) => {

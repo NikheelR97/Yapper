@@ -104,7 +104,7 @@ test.describe('Offline message delivery', () => {
 			if (resp.url().includes('/api/v2/keys') || resp.status() >= 400) {
 				const msg = `[A][response] ${resp.status()} ${resp.url()}`;
 				aLogs.push(msg);
-				console.log(msg);  // immediate output for timing analysis
+				console.debug(msg);  // immediate output for timing analysis
 			}
 		});
 
@@ -130,18 +130,18 @@ test.describe('Offline message delivery', () => {
 			await expect(inputA).toBeEnabled({ timeout: 60_000 });
 			await inputA.fill(testMsg);
 			await inputA.press('Enter');
-			for (const log of aLogs.splice(0)) console.log(log);
+			for (const log of aLogs.splice(0)) console.debug(log);
 			await expect(pageA.getByTestId('dm-message-list')).toContainText(testMsg, { timeout: 10_000 });
 
 			// Step 3: User B opens the conversation in the same context (same IndexedDB →
 			// same private key → can decrypt A's message).
 			await ctxB.setOffline(false);
-			for (const log of aLogs.splice(0)) console.log(log);
-			console.log('[test] Navigating B to DM');
+			for (const log of aLogs.splice(0)) console.debug(log);
+			console.debug('[test] Navigating B to DM');
 			await navigateClientSide(pageB, `/dm/${conversationId}`);
-			for (const log of bLogs.splice(0)) console.log(log);
+			for (const log of bLogs.splice(0)) console.debug(log);
 			await expect(pageB.getByTestId('dm-message-list')).toContainText(testMsg, { timeout: 15_000 });
-			for (const log of bLogs.splice(0)) console.log(log);
+			for (const log of bLogs.splice(0)) console.debug(log);
 		} finally {
 			await ctxA.close();
 			await ctxB.close();

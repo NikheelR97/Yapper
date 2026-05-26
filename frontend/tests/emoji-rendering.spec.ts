@@ -164,12 +164,12 @@ async function setupAuthWithServer(
 	await mockExploreEndpoints(page);
 	page.on('response', (response) => {
 		if (response.status() === 401 || response.status() === 403 || response.status() >= 500) {
-			console.log('[emoji response]', response.status(), response.url());
+			console.debug('[emoji response]', response.status(), response.url());
 		}
 	});
-	page.on('pageerror', (err) => console.log('[emoji pageerror]', err.message));
+	page.on('pageerror', (err) => console.debug('[emoji pageerror]', err.message));
 	page.on('console', (msg) => {
-		if (msg.type() === 'error') console.log('[emoji console]', msg.text());
+		if (msg.type() === 'error') console.debug('[emoji console]', msg.text());
 	});
 }
 
