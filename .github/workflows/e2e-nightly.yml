@@ -343,6 +343,16 @@ jobs:
   # This job enforces that ALL playwright shards passed. The combine-allure job
   # runs with if: always() to generate reports even on failure, but this job
   # will fail the workflow if any shard failed.
+  #
+  # An edge-blocked auth target (probe-auth.outputs.reachable != 'true') used
+  # to exit 0 here, on the theory that a self-hosted runner's intermittent
+  # network problem should not page the team. In practice it produced silent
+  # green nightlies for at least 6 consecutive nights against an un-provisioned
+  # staging environment — false-green is worse than red. The gate now treats
+  # edge-blocked as a real failure so the nightly's status reflects whether
+  # the suite actually ran. The graceful-skip behaviour was removed
+  # deliberately, not by accident; do not re-introduce without a real signal
+  # path replacing it.
   e2e-result:
     name: E2E Result
     runs-on: ubuntu-latest
@@ -354,8 +364,8 @@ jobs:
         shell: bash
         run: |
           if [[ "${{ needs.probe-auth.outputs.reachable }}" != "true" ]]; then
-            echo "E2E nightly skipped due to edge-blocked auth target: ${{ needs.probe-auth.outputs.skip_reason }}"
-            exit 0
+            echo "::error::E2E nightly auth target was unreachable (reason: ${{ needs.probe-auth.outputs.skip_reason }}). Suite did not run. Provision staging or fix runner egress; see docs/deployment.md § Staging environment."
+            exit 1
           fi
           if [[ "${{ needs.playwright.result }}" != "success" ]]; then
             echo "::error::E2E tests did not pass. Result: ${{ needs.playwright.result }}"
