@@ -9,9 +9,18 @@
 
 ## Production Automation Verdict
 
-**NOT SAFE TO UNPAUSE**
+**ALL DOCUMENTED GATES SATISFIED — UNPAUSE REQUIRES OWNER APPROVAL**
 
-Production deploy automation (`flyctl deploy`) must remain manually gated. The HANDOVER (rev 6, line 4) states CI/CD is "paused until the documented release gates are proven," but no formal release gate checklist has ever been defined. You cannot prove gates are met when the gates do not exist. The earlier HANDOVER crypto-library wording mismatch has since been corrected to the actual `@noble/curves` + `@noble/hashes` implementation. Once the release gates are defined and all CI checks pass on `main`, the codebase is ready for production automation.
+Original verdict (2026-04-16): "NOT SAFE TO UNPAUSE" — gates undefined (MED-005), HANDOVER crypto-library wording inconsistent (MED-006).
+
+Re-verification (2026-05-27, against `main @ dbe09fb`): **all 10 documented release gates PASS** (see [Re-verification](#re-verification-2026-05-27) below). MED-005 and MED-006 are resolved.
+
+Re-enabling `flyctl deploy` automation is not blocked by documentation any longer, but it remains a state-changing infrastructure action that requires:
+- Explicit owner approval.
+- Required reviewers configured on the GitHub `production` environment.
+- Uncommenting the `deploy-backend` / `deploy-frontend` jobs in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) (lines 209-255).
+
+The doc gates do not, by themselves, authorize the operational change.
 
 ---
 
@@ -22,7 +31,7 @@ This checklist defines the release gates that must be satisfied before `flyctl d
 | # | Gate | Status | Evidence | Blocking? |
 |---|------|--------|----------|-----------|
 | 1 | All CI checks pass on `main` (backend, frontend, marketing, security-scans) | PASS | CI workflow has no `needs:` chain; all jobs run in parallel. Deploy jobs commented out (ci.yml:202-255) | Yes |
-| 2 | `cargo audit` clean (1 known ignore with rationale) | PASS | `backend/.cargo/audit.toml:12-18` — active advisory documented with review date 2026-05-26 | Yes |
+| 2 | `cargo audit` clean (1 known ignore with rationale) | PASS | [`backend/.cargo/audit.toml`](../backend/.cargo/audit.toml) — RUSTSEC-2023-0071 documented with rationale, review date 2026-05-26 | Yes |
 | 3 | `cargo clippy -D warnings` clean | PASS | ci.yml:102 enforces on every push/PR | Yes |
 | 4 | `npm audit --omit=dev` clean (frontend + marketing) | PASS | security-scans.yml:54-60 | Yes |
 | 5 | Gitleaks full history scan clean | PASS | security-scans.yml:62-66 | Yes |
@@ -30,19 +39,41 @@ This checklist defines the release gates that must be satisfied before `flyctl d
 | 7 | E2E smoke tests pass (`--grep "@smoke"`) | PASS | e2e-pr-smoke.yml:162, workers=4 | Yes |
 | 8 | No open Critical or High audit findings | PASS | This audit: 0 Critical, 0 High | Yes |
 | 9 | Documentation corrections applied (MED-006) | **PASS** | HANDOVER now documents @noble E2EE accurately | No |
-| 10 | Release gate checklist exists (MED-005) | **FAIL** | This section creates it; must be adopted | Yes |
+| 10 | Release gate checklist exists (MED-005) | **PASS** | This section defines it; [`HANDOVER.md` § Release Gates](HANDOVER.md) references it as the formal pass/fail criteria | Yes |
+
+---
+
+## Re-verification 2026-05-27
+
+The full checklist was re-walked against `main @ dbe09fb` using non-mutating commands only. All 10 gates PASS.
+
+| Gate | Evidence (2026-05-27) |
+|------|------------------------|
+| 1 | CI workflow runs `26480257961` + E2E Security `26480257963` + Push on main `26480257348` — all `success` for `dbe09fb` |
+| 2 | [`backend/.cargo/audit.toml`](../backend/.cargo/audit.toml) — one ignore (RUSTSEC-2023-0071), reviewed 2026-05-26 |
+| 3 | [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) lines 105-107 — `cargo clippy -- -D warnings` |
+| 4 | [`.github/workflows/security-scans.yml`](../.github/workflows/security-scans.yml) lines 46-52 — `npm audit --omit=dev --audit-level=high` for frontend and marketing |
+| 5 | [`.github/workflows/security-scans.yml`](../.github/workflows/security-scans.yml) lines 54-58 — `gitleaks/gitleaks-action@v2` full-history scan |
+| 6 | [`.github/workflows/security-scans.yml`](../.github/workflows/security-scans.yml) lines 72-81 — `trivy-action@v0.36.0` (minor drift from `v0.35.0` recorded in original audit; no functional impact) |
+| 7 | [`.github/workflows/e2e-pr-smoke.yml`](../.github/workflows/e2e-pr-smoke.yml) — `--grep "@smoke"` smoke suite present and passing on frontend/backend-touching PRs |
+| 8 | [`dev docs/SECURITY_AUDIT.md`](SECURITY_AUDIT.md) revision 2 — 0 Critical, 0 High; STABILIZATION_AUDIT has no open Critical or High findings either |
+| 9 | HANDOVER Section 2 documents `@noble/curves + @noble/hashes` accurately (MED-006 resolved) |
+| 10 | [`HANDOVER.md` § Release Gates](HANDOVER.md) (line 584 area) references this checklist as the authoritative pass/fail criteria (MED-005 resolved) |
+
+GitHub Security tab on `main` is also clean as of 2026-05-27: 0 open across Dependabot, code scanning, and secret scanning (see [`SECURITY_AUDIT.md` § 2.4](SECURITY_AUDIT.md)).
 
 ---
 
 ## Findings
 
-### MED-005 — Release Gates Undefined
+### MED-005 — Release Gates Undefined (RESOLVED 2026-05-27)
 
 **Pillar:** Infrastructure / Documentation
 **Severity:** Medium
 **Component:** `dev docs/HANDOVER.md:4`
 **Regression from freeze:** No (never existed)
 **Blocking production automation:** Yes
+**Status:** RESOLVED — HANDOVER.md § Release Gates (line 584 area) now references this document's Release Gate Checklist as the formal pass/fail criteria. Re-verified 10/10 PASS on 2026-05-27.
 
 #### Evidence
 
