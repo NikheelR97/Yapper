@@ -9,6 +9,13 @@ on:
 permissions:
   contents: read
 
+env:
+  # Pinned versions for reproducibility. Bump deliberately — a change here
+  # invalidates the cache below and triggers a fresh --locked build from
+  # source, preserving the supply-chain integrity of the install path.
+  CARGO_AUDIT_VERSION: "0.22.1"
+  OSV_SCANNER_VERSION: "2.3.3"
+
 jobs:
   security-scans:
     name: Repository Security Scans
@@ -27,11 +34,28 @@ jobs:
         with:
           node-version: "22"
 
+      # cargo-audit is installed once per version pin and cached. The cache
+      # key includes the pinned version, so a deliberate version bump
+      # invalidates the cache and triggers a fresh `cargo install --locked`
+      # build from the same RustSec source the in-line install would have
+      # produced. Same binary, same scan, faster wall time on cache hits.
+      - name: Cache cargo-audit binary
+        id: cache-cargo-audit
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-audit
+          key: cargo-audit-${{ env.CARGO_AUDIT_VERSION }}-${{ runner.os }}
+
       - name: Install Rust toolchain
+        if: steps.cache-cargo-audit.outputs.cache-hit != 'true'
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
+        if: steps.cache-cargo-audit.outputs.cache-hit != 'true'
+        run: cargo install cargo-audit --version "${CARGO_AUDIT_VERSION}" --locked
+
+      - name: Ensure cargo bin on PATH
+        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       - name: Run cargo audit
         # Ignore list is sourced from backend/.cargo/audit.toml so local and
@@ -57,14 +81,25 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_ENABLE_COMMENTS: false
 
+      # osv-scanner follows the same cache pattern as cargo-audit above:
+      # version-pinned, cache-keyed by version, fresh `go install` on miss.
+      - name: Cache osv-scanner binary
+        id: cache-osv-scanner
+        uses: actions/cache@v4
+        with:
+          path: ~/go/bin/osv-scanner
+          key: osv-scanner-${{ env.OSV_SCANNER_VERSION }}-${{ runner.os }}
+
       - name: Setup Go
+        if: steps.cache-osv-scanner.outputs.cache-hit != 'true'
         uses: actions/setup-go@v6
         with:
           go-version: "1.25"
           cache: false
 
       - name: Install OSV-Scanner
-        run: go install github.com/google/osv-scanner/v2/cmd/osv-scanner@v2.3.3
+        if: steps.cache-osv-scanner.outputs.cache-hit != 'true'
+        run: go install "github.com/google/osv-scanner/v2/cmd/osv-scanner@v${OSV_SCANNER_VERSION}"
 
       - name: Run OSV-Scanner
         run: ~/go/bin/osv-scanner scan source --recursive .
