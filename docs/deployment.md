@@ -160,6 +160,118 @@ If user-facing degradation lasts more than 5 minutes, post to status.yapperhq.co
 
 ---
 
+## Staging environment
+
+### Current state (2026-05-27)
+
+Staging is **referenced but not provisioned**. The E2E nightly workflow defaults to `https://staging.yapperhq.com` and `https://staging-api.yapperhq.com`, but:
+
+- There is no `yapper-api-staging` Fly app — only `yapper-api` exists.
+- `staging-api.yapperhq.com` returns Cloudflare `HTTP 502` because the Fly proxy has no cert/app matching that hostname (`yapper-api` only has the `api.yapperhq.com` cert). Fly logs show `proxy [error] client problem: invalid authority` for staging requests.
+- As a result the nightly's `probe-auth` job has been reporting `edge-blocked` and the actual Playwright shards have been **skipped on every scheduled run** for at least the past week, while the workflow still exits green.
+
+The PR smoke suite (`e2e-pr-smoke.yml`) runs against a different target and is not affected; it remains the working E2E signal for PRs.
+
+### Goals
+
+Full isolation from production. Staging exists to validate a release candidate before promoting to production, so it must not share secrets, database, or media storage with production. Cost target: stay on Fly + Neon + R2 + Cloudflare free tiers.
+
+### Provisioning runbook
+
+Run these steps from a workstation that has `flyctl auth login` for the same Fly organization as `yapper-api`, and the same Cloudflare / Neon credentials used for production. Each step is independently reversible.
+
+1. **Create a Neon staging branch.**
+   Use the Neon console (Branches → "Create branch" from the `main` branch) or `neonctl branches create --name staging`. This gives staging its own data plane while sharing the same Neon project quota. Capture the staging branch connection string for `DATABASE_URL`.
+
+2. **Provision a staging R2 prefix.**
+   Cheapest path: reuse the existing `yapper-media` bucket with the env-aware key prefix the backend already supports (`APP_ENV=staging` ⇒ `staging/<...>`). Alternative: create a separate `yapper-media-staging` bucket if isolation of object lifecycle and metrics is required. The R2 API token can be re-used or scoped narrower. Capture `R2_BUCKET_NAME` and `R2_PUBLIC_URL` (staging).
+
+3. **Generate a staging JWT keypair.**
+   Do not reuse the production key material. Generate fresh RS256 keys:
+   ```bash
+   openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out jwt_private.pem
+   openssl rsa -in jwt_private.pem -pubout -out jwt_public.pem
+   ```
+   Keep both files out of the repo; they will be loaded into Fly secrets only.
+
+4. **Create the Fly app `yapper-api-staging`.**
+   From `backend/`:
+   ```bash
+   flyctl apps create yapper-api-staging
+   flyctl config save -a yapper-api -o fly.staging.toml
+   # edit fly.staging.toml: change `app = "yapper-api"` -> `app = "yapper-api-staging"`,
+   # keep primary_region = "jnb", keep the same vm/concurrency/http_service settings.
+   flyctl deploy -a yapper-api-staging -c fly.staging.toml
+   ```
+   The deploy will fail the health check until secrets are set in the next step; that is expected.
+
+5. **Set secrets on `yapper-api-staging`.**
+   Mirror the production secret names listed by `flyctl secrets list -a yapper-api`, with all values pointing at staging resources:
+   ```bash
+   flyctl secrets set -a yapper-api-staging \
+     APP_ENV="staging" \
+     DATABASE_URL="<neon staging branch URL>" \
+     JWT_PRIVATE_KEY="$(cat jwt_private.pem)" \
+     JWT_PUBLIC_KEY="$(cat jwt_public.pem)" \
+     API_BASE_URL="https://staging-api.yapperhq.com" \
+     FRONTEND_URL="https://staging.yapperhq.com" \
+     CORS_ORIGINS="https://staging.yapperhq.com,http://tauri.localhost,capacitor://localhost" \
+     R2_ACCOUNT_ID="<same as prod or scoped staging account>" \
+     R2_ACCESS_KEY_ID="<scoped staging token>" \
+     R2_SECRET_ACCESS_KEY="<scoped staging token>" \
+     R2_BUCKET_NAME="<staging bucket or shared bucket name>" \
+     R2_PUBLIC_URL="<staging media URL>" \
+     EMAIL_FROM="staging@yapperhq.com" \
+     SENTRY_DSN="<staging Sentry project DSN, or empty>" \
+     FCM_SERVICE_ACCOUNT_JSON="<staging Firebase service account JSON>" \
+     DISCORD_CLIENT_ID="<staging Discord OAuth app>" \
+     DISCORD_CLIENT_SECRET="<staging Discord OAuth app>" \
+     GOOGLE_CLIENT_ID="<staging Google OAuth client>" \
+     GOOGLE_CLIENT_SECRET="<staging Google OAuth client>" \
+     HUBSPOT_ACCESS_TOKEN="<test HubSpot token or empty>"
+   ```
+   OAuth credentials must be separate apps because the production OAuth apps' redirect URIs are scoped to `api.yapperhq.com`. Without staging-specific OAuth apps, login-via-OAuth tests cannot pass on staging.
+
+6. **Run database migrations against the staging branch.**
+   ```bash
+   DATABASE_URL="<neon staging branch URL>" make migrate
+   ```
+
+7. **Attach the custom domain.**
+   ```bash
+   flyctl certs add staging-api.yapperhq.com -a yapper-api-staging
+   ```
+   In Cloudflare DNS, ensure `staging-api.yapperhq.com` is a proxied CNAME to `yapper-api-staging.fly.dev` (orange-cloud), and that the SSL/TLS mode is "Full (strict)" — the same configuration used for `api.yapperhq.com`.
+
+8. **Verify backend.**
+   ```bash
+   curl -i https://staging-api.yapperhq.com/health    # expect 200, body indicates db:true
+   ```
+   If the response is still `502`, run `flyctl certs check staging-api.yapperhq.com -a yapper-api-staging` to confirm cert issuance and DNS pointing.
+
+9. **Provision the staging frontend on Cloudflare Pages.**
+   Either (a) create a second Pages project `yapper-app-staging` pointed at the same repo's `frontend/` directory with the `staging` branch as the production branch, or (b) reuse the existing `yapper-app` project's preview deployments (`*.pages.dev`) and add a custom domain alias `staging.yapperhq.com` pointing at a specific preview environment. Option (a) is simpler operationally; option (b) avoids a second project. Either way, the Pages project's environment variables must include `VITE_API_URL=https://staging-api.yapperhq.com`.
+
+10. **Verify staging end-to-end.**
+    ```bash
+    curl -sI https://staging.yapperhq.com/ | head -5     # expect 200 + Cloudflare headers
+    curl -s https://staging-api.yapperhq.com/health      # expect db-healthy JSON
+    ```
+    Then trigger the nightly manually with `gh workflow run e2e-nightly.yml` and confirm the `probe-auth` step now reports `reachable=true` and the Playwright shards actually run instead of being skipped.
+
+11. **Update the E2E secrets if needed.**
+    The `E2E_EMAIL` / `E2E_PASSWORD` GitHub repo secrets must correspond to test accounts that exist in the staging database. If they currently point at production, create matching accounts on staging (one trusted-device user, one secondary) and either rotate the secrets or seed staging with the same credentials.
+
+### Future cleanup
+
+Once staging is provisioned and the nightly is producing real signal, consider:
+
+- Replacing the workflow's `edge-blocked` graceful-skip with a hard failure — silent skips were the original blind spot.
+- Documenting staging-vs-prod secret rotation cadence (quarterly) in `dev docs/SECURITY_AUDIT.md`.
+- Re-running the release gate checklist against the staging environment; it has only ever been validated against production today.
+
+---
+
 ## Frontend — Cloudflare Pages
 
 The frontend is deployed automatically by Cloudflare Pages on push to `main`. That provider-side deploy is outside the GitHub release gate and should be treated as a separate production promotion path.
