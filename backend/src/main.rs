@@ -263,11 +263,20 @@ async fn main() -> anyhow::Result<()> {
         std::env::var("SENTRY_DSN").unwrap_or_default(),
         sentry::ClientOptions {
             release: sentry::release_name!(),
-            environment: Some(if std::env::var("FLY_APP_NAME").is_ok() {
-                "production".into()
-            } else {
-                "development".into()
-            }),
+            // SENTRY_ENVIRONMENT takes precedence so non-Fly deploys (e.g. the
+            // Coolify staging stack) can report their own environment. Falls
+            // back to the original Fly.io auto-detection when unset.
+            environment: Some(
+                std::env::var("SENTRY_ENVIRONMENT")
+                    .unwrap_or_else(|_| {
+                        if std::env::var("FLY_APP_NAME").is_ok() {
+                            "production".to_string()
+                        } else {
+                            "development".to_string()
+                        }
+                    })
+                    .into(),
+            ),
             before_send: Some(std::sync::Arc::new(scrub_sentry_event)),
             ..Default::default()
         },

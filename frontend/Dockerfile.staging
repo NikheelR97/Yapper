@@ -1,0 +1,45 @@
+# Staging frontend image for the Coolify-hosted staging environment.
+# Builds the SvelteKit adapter-static bundle and serves it via Nginx.
+# Production frontend is deployed to Cloudflare Pages and does NOT use this file.
+
+# ─── Build stage ─────────────────────────────────────────────────────────────
+# node:22-alpine matches the Node version used in CI (.github/workflows/*).
+FROM node:22-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+
+# Vite env vars are baked into the static bundle at build time, so they must be
+# present as build args. Coolify supplies these (see COOLIFY_SELF_HOST_PLAN.md
+# Phase 4.3).
+ARG VITE_API_URL
+ARG VITE_WS_URL
+ARG VITE_FIREBASE_VAPID_KEY
+ARG VITE_R2_PUBLIC_URL
+ARG VITE_SENTRY_DSN
+
+RUN npm run build
+
+# ─── Runtime stage ───────────────────────────────────────────────────────────
+# nginx-unprivileged runs as UID 101 (nginx user) and listens on 8080 by
+# default — satisfies Trivy DS-0002 (non-root container) without the port-80
+# bind / PID-file issues that hand-patching nginx:alpine with `USER nginx`
+# would cause. Coolify frontend service must target internal port 8080.
+FROM nginxinc/nginx-unprivileged:alpine
+
+# Briefly switch to root to drop in the SPA fallback config, then back to the
+# unprivileged nginx user (UID 101) that the base image already defaults to.
+USER root
+RUN printf 'server {\n\
+  listen 8080;\n\
+  root /usr/share/nginx/html;\n\
+  location / {\n\
+    try_files $uri $uri/ /index.html;\n\
+  }\n\
+}\n' > /etc/nginx/conf.d/default.conf
+
+COPY --from=builder --chown=nginx:nginx /app/build /usr/share/nginx/html
+
+USER nginx
+EXPOSE 8080
