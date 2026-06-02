@@ -57,7 +57,7 @@
     .empty-state {
         text-align: center;
         max-width: 320px;
-        color: var(--color-text-muted);
+        color: var(--color-text-secondary);
     }
 
     .empty-state svg {

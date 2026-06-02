@@ -165,8 +165,8 @@
 
 	.add-row input {
 		flex: 1;
-		background: rgba(255, 255, 255, 0.05);
-		border: 1px solid rgba(255, 255, 255, 0.1);
+		background: var(--color-bg-elevated);
+		border: 1px solid var(--color-border);
 		border-radius: 8px;
 		color: var(--color-text-primary);
 		padding: 0.6rem 0.85rem;
@@ -197,7 +197,7 @@
 
 	.muted {
 		font-size: 0.875rem;
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-secondary);
 	}
 
 	.request-list {
@@ -213,8 +213,8 @@
 		display: flex;
 		align-items: center;
 		gap: 0.75rem;
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(255, 255, 255, 0.07);
+		background: var(--color-bg-surface);
+		border: 1px solid var(--color-border);
 		border-radius: 10px;
 		padding: 0.65rem 0.85rem;
 	}
@@ -238,7 +238,7 @@
 		width: 40px;
 		height: 40px;
 		border-radius: 50%;
-		background: linear-gradient(135deg, #7c3aed, #2e1065);
+		background: linear-gradient(135deg, var(--color-brand), var(--color-brand-dark));
 		color: white;
 		font-size: 16px;
 		font-weight: 700;
@@ -266,7 +266,7 @@
 
 	.req-username {
 		font-size: 0.78rem;
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-secondary);
 	}
 
 	.req-actions {
@@ -287,9 +287,9 @@
 	}
 
 	.btn-reject {
-		background: rgba(255, 255, 255, 0.06);
-		color: var(--color-text-secondary, #9ca3af);
-		border: 1px solid rgba(255, 255, 255, 0.1);
+		background: var(--color-bg-surface);
+		color: var(--color-text-secondary);
+		border: 1px solid var(--color-border);
 		border-radius: 6px;
 		padding: 0.35rem 0.75rem;
 		font-size: 0.8rem;

@@ -238,7 +238,11 @@
 					</a>
 				{:else if user?.accountType === 'child'}
 					<div class="family-info-card">
-						<span class="family-info-icon">🛡</span>
+						<span class="family-info-icon">
+							<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+								<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
+							</svg>
+						</span>
 						<div>
 							<strong>Managed Account</strong>
 							<p>This account is managed by a parent. Some features may require parental approval.</p>
@@ -247,28 +251,44 @@
 				{:else}
 					<div class="family-explainer">
 						<div class="family-explainer-item">
-							<span>🛡</span>
+							<span>
+								<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+									<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
+								</svg>
+							</span>
 							<div>
 								<strong>Approve Friend Requests</strong>
 								<p>Review who your child connects with before friendships are established.</p>
 							</div>
 						</div>
 						<div class="family-explainer-item">
-							<span>🌐</span>
+							<span>
+								<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+									<circle cx="12" cy="12" r="10" /><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" /><path d="M2 12h20" />
+								</svg>
+							</span>
 							<div>
 								<strong>Approve Server Joins</strong>
 								<p>Your child's server join requests come to you first.</p>
 							</div>
 						</div>
 						<div class="family-explainer-item">
-							<span>⏱</span>
+							<span>
+								<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+									<circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+								</svg>
+							</span>
 							<div>
 								<strong>Screen Time</strong>
 								<p>Set daily limits and view usage reports.</p>
 							</div>
 						</div>
 						<div class="family-explainer-item">
-							<span>🔒</span>
+							<span>
+								<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+									<rect width="18" height="11" x="3" y="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
+								</svg>
+							</span>
 							<div>
 								<strong>E2EE Preserved</strong>
 								<p>Message content is never visible — only activity metadata.</p>
@@ -296,10 +316,16 @@
 			<h3 class="sidebar-card-title">Account</h3>
 			<div class="sidebar-actions">
 				<button class="action-btn" on:click={exportData}>
-					📦 Export My Data
+					<svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<path d="m7.5 4.27 9 5.15" /><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z" /><path d="M3.3 7 12 12l8.7-5" /><path d="M12 22V12" />
+					</svg>
+					Export My Data
 				</button>
 				<button class="action-btn" on:click={logout}>
-					🚪 Log Out
+					<svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" x2="9" y1="12" y2="12" />
+					</svg>
+					Log Out
 				</button>
 			</div>
 		</div>
@@ -353,7 +379,12 @@
 		<div class="sidebar-card danger-card">
 			<h3 class="sidebar-card-title danger-title">Danger Zone</h3>
 			<div class="sidebar-actions">
-				<button class="danger-btn"> ⏸ Disable Account </button>
+				<button class="danger-btn">
+						<svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+							<rect x="14" y="4" width="4" height="16" rx="1" /><rect x="6" y="4" width="4" height="16" rx="1" />
+						</svg>
+						Disable Account
+					</button>
 				{#if showDeleteConfirm}
 					<div class="delete-confirm">
 						<p class="delete-warn">
@@ -378,7 +409,10 @@
 						class="delete-btn"
 						on:click={() => (showDeleteConfirm = true)}
 					>
-						🗑 Delete Account
+						<svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+							<path d="M3 6h18" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><line x1="10" x2="10" y1="11" y2="17" /><line x1="14" x2="14" y1="11" y2="17" />
+						</svg>
+						Delete Account
 					</button>
 				{/if}
 			</div>
@@ -387,7 +421,11 @@
 		<!-- GoPro promo (if not premium) -->
 		{#if !isPremium}
 			<div class="sidebar-card pro-card">
-				<div class="pro-icon">🚀</div>
+				<div class="pro-icon">
+						<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+							<path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z" /><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z" /><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0" /><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" />
+						</svg>
+					</div>
 				<h3 class="pro-title">Go GoPro</h3>
 				<p class="pro-desc">
 					Animated avatars, 100 custom emojis, HD clips and more.
@@ -409,14 +447,14 @@
 		flex: 1;
 		height: 100%;
 		overflow: hidden;
-		background: var(--color-bg-base, #0a0a0f);
+		background: var(--color-bg-base);
 	}
 
 	/* Left nav */
 	.settings-nav {
 		width: 220px;
-		background: #0f1117;
-		border-right: 1px solid rgba(255, 255, 255, 0.06);
+		background: var(--color-bg-surface);
+		border-right: 1px solid var(--color-border);
 		padding: 20px 0;
 		display: flex;
 		flex-direction: column;
@@ -430,19 +468,19 @@
 		align-items: baseline;
 		gap: 6px;
 		padding: 0 16px 16px;
-		border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+		border-bottom: 1px solid var(--color-border);
 		margin-bottom: 8px;
 	}
 
 	.nav-title {
 		font-size: 16px;
 		font-weight: 800;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 	}
 
 	.nav-version {
 		font-size: 11px;
-		color: #4b5563;
+		color: var(--color-text-muted);
 	}
 
 	.nav-items {
@@ -468,7 +506,7 @@
 	}
 
 	.nav-item:hover {
-		background: rgba(255, 255, 255, 0.04);
+		background: var(--color-bg-elevated);
 	}
 
 	.nav-item.active {
@@ -477,11 +515,11 @@
 
 	.nav-label {
 		font-size: 14px;
-		color: #d1d5db;
+		color: var(--color-text-secondary);
 	}
 
 	.nav-item.active .nav-label {
-		color: #a78bfa;
+		color: var(--color-brand-light);
 		font-weight: 600;
 	}
 
@@ -491,7 +529,7 @@
 		padding: 2px 7px;
 		border-radius: 20px;
 		background: rgba(124, 58, 237, 0.2);
-		color: #a78bfa;
+		color: var(--color-brand-light);
 	}
 
 	/* Main content */
@@ -510,13 +548,13 @@
 		flex-direction: column;
 		gap: 16px;
 		overflow-y: auto;
-		border-left: 1px solid rgba(255, 255, 255, 0.06);
+		border-left: 1px solid var(--color-border);
 		flex-shrink: 0;
 	}
 
 	.sidebar-card {
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(255, 255, 255, 0.07);
+		background: var(--color-bg-surface);
+		border: 1px solid var(--color-border);
 		border-radius: 14px;
 		padding: 18px;
 		display: flex;
@@ -527,7 +565,7 @@
 	.sidebar-card-title {
 		font-size: 12px;
 		font-weight: 700;
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 		margin: 0;
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
@@ -552,14 +590,14 @@
 		gap: 12px;
 		padding: 10px 12px;
 		border-radius: 10px;
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(255, 255, 255, 0.06);
+		background: var(--color-bg-elevated);
+		border: 1px solid var(--color-border);
 	}
 
 	.device-name {
 		font-size: 13px;
 		font-weight: 600;
-		color: #f3f4f6;
+		color: var(--color-text-primary);
 		display: flex;
 		align-items: center;
 		gap: 8px;
@@ -570,18 +608,18 @@
 		font-size: 10px;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
-		color: #a78bfa;
+		color: var(--color-brand-light);
 	}
 
 	.device-meta {
 		font-size: 11px;
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 		margin-top: 4px;
 	}
 
 	.device-action {
 		padding: 8px 10px;
-		border-radius: 8px;
+		border-radius: var(--radius-full);
 		border: 1px solid rgba(239, 68, 68, 0.25);
 		background: rgba(239, 68, 68, 0.08);
 		color: #fca5a5;
@@ -598,7 +636,11 @@
 	.device-empty {
 		margin: 0;
 		font-size: 12px;
-		color: #9ca3af;
+		color: var(--color-text-secondary);
+	}
+
+	.btn-icon {
+		flex-shrink: 0;
 	}
 
 	.action-btn {
@@ -606,10 +648,10 @@
 		align-items: center;
 		gap: 8px;
 		padding: 10px 12px;
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(255, 255, 255, 0.08);
-		border-radius: 8px;
-		color: #d1d5db;
+		background: var(--color-bg-surface);
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-full);
+		color: var(--color-text-secondary);
 		font-size: 13px;
 		font-weight: 500;
 		cursor: pointer;
@@ -619,7 +661,7 @@
 	}
 
 	.action-btn:hover {
-		background: rgba(255, 255, 255, 0.08);
+		background: var(--color-bg-elevated);
 	}
 
 	/* Danger zone */
@@ -629,7 +671,7 @@
 	}
 
 	.danger-title {
-		color: #ef4444;
+		color: var(--color-error);
 	}
 
 	.danger-btn {
@@ -639,8 +681,8 @@
 		padding: 10px 12px;
 		background: rgba(239, 68, 68, 0.06);
 		border: 1px solid rgba(239, 68, 68, 0.2);
-		border-radius: 8px;
-		color: #ef4444;
+		border-radius: var(--radius-full);
+		color: var(--color-error);
 		font-size: 13px;
 		font-weight: 500;
 		cursor: pointer;
@@ -660,8 +702,8 @@
 		padding: 10px 12px;
 		background: rgba(239, 68, 68, 0.1);
 		border: 1px solid rgba(239, 68, 68, 0.3);
-		border-radius: 8px;
-		color: #ef4444;
+		border-radius: var(--radius-full);
+		color: var(--color-error);
 		font-size: 13px;
 		font-weight: 600;
 		cursor: pointer;
@@ -686,16 +728,16 @@
 
 	.delete-warn {
 		font-size: 12px;
-		color: #ef4444;
+		color: var(--color-error);
 		margin: 0;
 	}
 
 	.delete-confirm-btn {
 		padding: 8px;
-		background: #ef4444;
+		background: var(--color-error);
 		color: white;
 		border: none;
-		border-radius: 6px;
+		border-radius: var(--radius-full);
 		font-size: 13px;
 		font-weight: 700;
 		cursor: pointer;
@@ -715,7 +757,7 @@
 	.cancel-link {
 		background: none;
 		border: none;
-		color: #6b7280;
+		color: var(--color-text-secondary);
 		font-size: 12px;
 		cursor: pointer;
 		text-align: center;
@@ -726,8 +768,8 @@
 	.pro-card {
 		background: linear-gradient(
 			135deg,
-			rgba(124, 58, 237, 0.12),
-			rgba(219, 39, 119, 0.05)
+			rgba(124, 58, 237, 0.14),
+			rgba(124, 58, 237, 0.04)
 		);
 		border-color: rgba(124, 58, 237, 0.25);
 		align-items: center;
@@ -735,29 +777,30 @@
 	}
 
 	.pro-icon {
-		font-size: 32px;
+		color: var(--color-brand);
+		line-height: 0;
 	}
 
 	.pro-title {
 		font-size: 16px;
 		font-weight: 800;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		margin: 0;
 	}
 
 	.pro-desc {
 		font-size: 13px;
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 		margin: 0;
 		line-height: 1.5;
 	}
 
 	.pro-btn {
 		padding: 10px 20px;
-		background: linear-gradient(135deg, #7c3aed, #db2777);
+		background: var(--color-brand);
 		color: white;
 		border: none;
-		border-radius: 8px;
+		border-radius: var(--radius-full);
 		font-size: 13px;
 		font-weight: 700;
 		cursor: pointer;
@@ -768,21 +811,58 @@
 		opacity: 0.85;
 	}
 
+	/* Below 900px the three-column shell stacks into one scrollable page so
+	   account / device / danger actions stay reachable (they used to be
+	   display:none, stranding logout, device revoke, export and delete on
+	   mobile — a primary Capacitor platform). */
 	@media (max-width: 900px) {
-		.settings-sidebar {
-			display: none;
+		.settings-page {
+			flex-direction: column;
+			overflow-y: auto;
 		}
-	}
 
-	@media (max-width: 600px) {
 		.settings-nav {
-			width: 56px;
+			width: 100%;
+			flex-direction: row;
+			align-items: center;
+			gap: 4px;
+			padding: 8px;
+			overflow-x: auto;
+			overflow-y: visible;
+			border-right: none;
+			border-bottom: 1px solid var(--color-border);
+			position: sticky;
+			top: 0;
+			z-index: 1;
 		}
 
-		.nav-label,
-		.nav-badge,
 		.nav-header {
 			display: none;
+		}
+
+		.nav-items {
+			flex-direction: row;
+			flex-wrap: nowrap;
+			padding: 0;
+		}
+
+		.nav-item {
+			width: auto;
+			white-space: nowrap;
+			flex-shrink: 0;
+		}
+
+		.settings-main {
+			overflow-y: visible;
+			padding: 20px;
+		}
+
+		.settings-sidebar {
+			width: 100%;
+			flex-direction: column;
+			overflow-y: visible;
+			border-left: none;
+			border-top: 1px solid var(--color-border);
 		}
 	}
 
@@ -811,7 +891,7 @@
 	.family-btn {
 		display: inline-block;
 		padding: 0.65rem 1.25rem;
-		border-radius: 8px;
+		border-radius: var(--radius-full);
 		font-size: 0.875rem;
 		font-weight: 600;
 		text-decoration: none;
@@ -824,9 +904,9 @@
 	}
 
 	.family-btn-secondary {
-		background: rgba(255, 255, 255, 0.06);
+		background: var(--color-bg-surface);
 		color: var(--color-text-primary);
-		border: 1px solid rgba(255, 255, 255, 0.1);
+		border: 1px solid var(--color-border);
 	}
 
 	.family-btn:hover {
@@ -839,8 +919,8 @@
 		gap: 0.75rem;
 		align-items: flex-start;
 		padding: 1rem;
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(255, 255, 255, 0.08);
+		background: var(--color-bg-surface);
+		border: 1px solid var(--color-border);
 		border-radius: 10px;
 		font-size: 0.875rem;
 		color: var(--color-text-secondary, #9ca3af);
@@ -872,8 +952,8 @@
 		gap: 0.75rem;
 		align-items: flex-start;
 		padding: 0.875rem 1rem;
-		background: rgba(255, 255, 255, 0.03);
-		border: 1px solid rgba(255, 255, 255, 0.07);
+		background: var(--color-bg-surface);
+		border: 1px solid var(--color-border);
 		border-radius: 10px;
 		font-size: 0.875rem;
 	}
@@ -894,7 +974,7 @@
 
 	.family-explainer-item p {
 		margin: 0;
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-secondary);
 		font-size: 0.8125rem;
 		line-height: 1.4;
 	}

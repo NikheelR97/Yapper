@@ -404,7 +404,7 @@
 		width: 7px;
 		height: 7px;
 		border-radius: 50%;
-		background: #ef4444;
+		background: var(--color-error);
 		animation: pulse 2s ease-in-out infinite;
 	}
 
@@ -560,13 +560,13 @@
 	}
 
 	.pending-badge {
-		background: rgba(255, 255, 255, 0.06);
-		color: var(--color-text-muted);
+		background: var(--color-bg-surface);
+		color: var(--color-text-secondary);
 	}
 
 	.empty-msg, .no-results {
 		font-size: 0.875rem;
-		color: var(--color-text-muted);
+		color: var(--color-text-secondary);
 		text-align: center;
 		padding: 2rem 0;
 	}

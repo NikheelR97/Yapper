@@ -1233,8 +1233,9 @@
     left: 0;
     right: 0;
     z-index: 100;
-    background: #b45309;
-    color: #fff;
+    background: var(--color-warning);
+    color: #0a0a0f;
+    font-weight: 600;
     text-align: center;
     padding: 4px;
     font-size: 12px;
