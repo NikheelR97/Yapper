@@ -107,7 +107,7 @@
 		justify-content: center;
 		gap: 12px;
 		padding: 80px 24px;
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 		text-align: center;
 	}
 
@@ -118,7 +118,7 @@
 	.error-state h2 {
 		font-size: 20px;
 		font-weight: 700;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		margin: 0;
 	}
 

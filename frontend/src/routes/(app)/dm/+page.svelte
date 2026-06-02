@@ -299,7 +299,7 @@
 
 	.btn-reject:hover {
 		background: rgba(239, 68, 68, 0.15);
-		color: #fca5a5;
+		color: var(--color-error-text);
 		border-color: rgba(239, 68, 68, 0.3);
 	}
 </style>

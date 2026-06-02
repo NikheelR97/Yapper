@@ -1273,7 +1273,7 @@
 
   .secure-store-actions button {
     border: 0;
-    border-radius: 999px;
+    border-radius: var(--radius-full);
     padding: 0.75rem 1.25rem;
     font: inherit;
     cursor: pointer;
@@ -1282,7 +1282,7 @@
   }
 
   .secure-store-actions button.secondary {
-    background: var(--color-bg-muted);
+    background: var(--color-bg-elevated);
     color: var(--color-text-primary);
   }
 </style>

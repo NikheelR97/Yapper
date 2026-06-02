@@ -321,7 +321,7 @@
 		line-height: 1.2;
 	}
 	.peer-status.online {
-		color: #22c55e;
+		color: var(--color-success);
 	}
 
 	.e2ee-badge {
@@ -345,7 +345,7 @@
 		color: var(--color-text-secondary);
 	}
 	.e2ee-badge.key-changed {
-		color: #fbbf24;
+		color: var(--color-warning);
 		border-color: rgba(234, 179, 8, 0.4);
 	}
 

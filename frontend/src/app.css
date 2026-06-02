@@ -26,6 +26,7 @@
 	--color-success: #22C55E;
 	--color-warning: #F59E0B;
 	--color-error: #EF4444;
+	--color-error-text: #FCA5A5; /* softened red for destructive text/labels on dark surfaces */
 	--color-info: #3B82F6;
 
 	/* Typography */
@@ -54,6 +55,7 @@
 	--color-text-muted: #A1A1AA;
 	--color-border: #D4D4D8;
 	--color-border-subtle: #E4E4E7;
+	--color-error-text: #DC2626; /* darker red keeps ≥4.5:1 on the light surface */
 }
 
 /* ─── Tauri / Desktop vibrancy overrides ─────────────────────────────────────── */

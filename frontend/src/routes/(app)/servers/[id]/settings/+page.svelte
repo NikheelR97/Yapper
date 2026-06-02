@@ -369,7 +369,7 @@
 	}
 
 	.danger-zone h2 {
-		color: #f87171;
+		color: var(--color-error);
 	}
 
 	.danger-text {
@@ -384,7 +384,7 @@
 	}
 
 	.btn-danger {
-		background: #dc2626;
+		background: var(--color-error);
 		color: white;
 		border: none;
 		border-radius: 8px;
@@ -396,8 +396,8 @@
 
 	.btn-danger-outline {
 		background: transparent;
-		color: #f87171;
-		border: 1px solid #f87171;
+		color: var(--color-error);
+		border: 1px solid var(--color-error);
 		border-radius: 8px;
 		padding: 0.6rem 1.2rem;
 		font-size: 0.875rem;
