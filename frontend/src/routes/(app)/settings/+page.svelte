@@ -37,6 +37,8 @@
 	let activeSection: Section = "profile";
 	let showDeleteConfirm = false;
 	let deleting = false;
+	let showDisableConfirm = false;
+	let disabling = false;
 	let devicesLoading = false;
 	let devices: Array<{
 		id: string;
@@ -156,6 +158,18 @@
 			toast.success("Data export downloaded.");
 		} catch (e: any) {
 			toast.error(e.message ?? "Failed to export data");
+		}
+	}
+
+	async function disableAccount() {
+		disabling = true;
+		try {
+			await api.post("/api/v2/account/disable");
+			clearAuth();
+			await goto("/login");
+		} catch (e: any) {
+			toast.error(e.message ?? "Failed to disable account");
+			disabling = false;
 		}
 	}
 
@@ -379,12 +393,33 @@
 		<div class="sidebar-card danger-card">
 			<h3 class="sidebar-card-title danger-title">Danger Zone</h3>
 			<div class="sidebar-actions">
-				<button class="danger-btn">
+				{#if showDisableConfirm}
+					<div class="delete-confirm">
+						<p class="delete-warn">
+							Your account will be deactivated and you'll be signed out everywhere. Signing back in reactivates it — nothing is deleted.
+						</p>
+						<button
+							class="delete-confirm-btn"
+							on:click={disableAccount}
+							disabled={disabling}
+						>
+							{disabling ? "Disabling…" : "Disable my account"}
+						</button>
+						<button
+							class="cancel-link"
+							on:click={() => (showDisableConfirm = false)}
+						>
+							Cancel
+						</button>
+					</div>
+				{:else}
+					<button class="danger-btn" on:click={() => (showDisableConfirm = true)}>
 						<svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
 							<rect x="14" y="4" width="4" height="16" rx="1" /><rect x="6" y="4" width="4" height="16" rx="1" />
 						</svg>
 						Disable Account
 					</button>
+				{/if}
 				{#if showDeleteConfirm}
 					<div class="delete-confirm">
 						<p class="delete-warn">
@@ -622,7 +657,7 @@
 		border-radius: var(--radius-full);
 		border: 1px solid rgba(239, 68, 68, 0.25);
 		background: rgba(239, 68, 68, 0.08);
-		color: #fca5a5;
+		color: var(--color-error-text);
 		font-size: 12px;
 		font-weight: 600;
 		cursor: pointer;

@@ -215,6 +215,14 @@ async fn login(
 
     state.login_limiter.record_success(ip);
 
+    // Reactivate a previously disabled account on successful sign-in. The login
+    // query above intentionally does not filter on `disabled_at` so a disabled
+    // user can authenticate back in; deleted accounts remain excluded.
+    sqlx::query("UPDATE users SET disabled_at = NULL WHERE id = $1 AND disabled_at IS NOT NULL")
+        .bind(user_id)
+        .execute(state.db.pool())
+        .await?;
+
     let user = UserDto {
         id: user_id,
         username: row.try_get("username")?,
