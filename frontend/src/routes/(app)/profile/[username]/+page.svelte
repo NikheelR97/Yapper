@@ -84,7 +84,7 @@
 	.profile-page {
 		flex: 1;
 		overflow-y: auto;
-		background: var(--color-bg-base, #0a0a0f);
+		background: var(--color-bg-base, #0F0F0F);
 		min-height: 0;
 	}
 

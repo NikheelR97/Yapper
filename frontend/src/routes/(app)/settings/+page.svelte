@@ -918,7 +918,7 @@
 
 	.section-desc {
 		font-size: 0.875rem;
-		color: var(--color-text-secondary, #9ca3af);
+		color: var(--color-text-secondary, #A1A1AA);
 		margin: 0;
 		line-height: 1.5;
 	}
@@ -958,7 +958,7 @@
 		border: 1px solid var(--color-border);
 		border-radius: 10px;
 		font-size: 0.875rem;
-		color: var(--color-text-secondary, #9ca3af);
+		color: var(--color-text-secondary, #A1A1AA);
 	}
 
 	.family-info-icon {

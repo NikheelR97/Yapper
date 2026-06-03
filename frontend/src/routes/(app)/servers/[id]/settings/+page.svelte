@@ -217,7 +217,7 @@
 	.back-btn {
 		background: none;
 		border: none;
-		color: var(--color-text-secondary, #9ca3af);
+		color: var(--color-text-secondary, #A1A1AA);
 		cursor: pointer;
 		font-size: 0.875rem;
 		padding: 0;
@@ -246,7 +246,7 @@
 		font-weight: 700;
 		letter-spacing: 0.08em;
 		text-transform: uppercase;
-		color: var(--color-text-secondary, #9ca3af);
+		color: var(--color-text-secondary, #A1A1AA);
 		margin: 0 0 1rem;
 	}
 
@@ -298,7 +298,7 @@
 	}
 
 	.prefix {
-		color: var(--color-text-secondary, #9ca3af);
+		color: var(--color-text-secondary, #A1A1AA);
 		font-weight: 600;
 	}
 
@@ -331,7 +331,7 @@
 	.invite-code {
 		flex: 1;
 		font-size: 0.8rem;
-		color: var(--color-text-secondary, #9ca3af);
+		color: var(--color-text-secondary, #A1A1AA);
 		word-break: break-all;
 		font-family: monospace;
 	}
@@ -407,6 +407,6 @@
 
 	.muted {
 		font-size: 0.875rem;
-		color: var(--color-text-muted, #6b7280);
+		color: var(--color-text-muted, #52525B);
 	}
 </style>
