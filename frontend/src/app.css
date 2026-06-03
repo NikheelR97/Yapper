@@ -52,9 +52,13 @@
 
 /* Light theme override */
 [data-theme='light'] {
-	--color-bg-base: #FFFFFF;
-	--color-bg-surface: #F4F4F5;
-	--color-bg-elevated: #E4E4E7;
+	/* Depth comes from tonal layers, not just borders: cards (surface=white) and
+	   the nav sit raised above a soft-zinc page canvas (base), with inputs/chips
+	   (elevated) a faint step inset from the white cards. Every text-bearing layer
+	   (surface/elevated) is at least as light as before, so contrast can't regress. */
+	--color-bg-base: #F1F1F4;
+	--color-bg-surface: #FFFFFF;
+	--color-bg-elevated: #E8E8EC;
 	--color-bg-nav: #F8F8FA;
 	--color-bg-deeper: #EDEDF0;
 	--color-text-primary: #09090B;

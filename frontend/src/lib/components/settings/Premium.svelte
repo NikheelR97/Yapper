@@ -551,6 +551,6 @@
 
 	.cta-note {
 		font-size: 13px;
-		color: var(--color-text-muted);
+		color: var(--color-text-secondary);
 	}
 </style>

@@ -185,9 +185,21 @@ small functional status set. The violet is the only chromatic voice in the room.
 scarcity — primary CTAs, the active element, and live/real-time signals. If a
 screen has more than a few violet elements competing, the glow has become wallpaper.
 
-**The Light-Theme Parity Rule.** A `[data-theme='light']` mode exists
-(`bg-base #FFFFFF`, zinc neutrals). Any new surface MUST define both themes; a
-component that only works in the dark room is unfinished.
+**The Light-Theme Parity Rule.** A `[data-theme='light']` mode exists: white
+cards (`bg-surface #FFFFFF`) and nav sit raised above a soft-zinc page canvas
+(`bg-base #F1F1F4`), with inputs a faint step inset (`bg-elevated #E8E8EC`), so
+depth still comes from tonal layers rather than borders alone. Any new surface
+MUST define both themes; a component that only works in the dark room is
+unfinished.
+
+Brand and status hues read as *text* differently per theme: the saturated palette
+values (violet `#7C3AED`, danger `#EF4444`, amber `#F59E0B`) are bright enough for
+white text on near-black but fail AA as dark-on-tint in light. Light theme
+therefore uses darker text tokens — `--color-brand-text #5B21B6`,
+`--color-error-text #B42318`, `--color-warning-text #854D0E` — for colored labels
+and destructive actions, while the *tinted backgrounds* keep the canonical hue.
+This hue shift in light is intentional AA adaptation, not drift. (Dark theme keeps
+the bright `--color-*-text` values: brand `#A78BFA`, error `#FCA5A5`, etc.)
 
 ## 3. Typography
 

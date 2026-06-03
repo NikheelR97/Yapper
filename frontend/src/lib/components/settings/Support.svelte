@@ -358,11 +358,13 @@
 	}
 
 	.priority-chip.selected {
-		background: color-mix(in srgb, var(--chip-color) 15%, transparent);
-		border-color: color-mix(in srgb, var(--chip-color) 50%, transparent);
-		/* Selection is carried by the tinted fill + border; keep the label on a
-		   theme text token so it clears AA (raw --chip-color fails on light). */
-		color: var(--color-text-primary);
+		background: color-mix(in srgb, var(--chip-color) 18%, transparent);
+		border-color: var(--chip-color);
+		/* Keep the label in the chip's hue but mix toward the theme ink so it
+		   brightens on dark and darkens on light, clearing AA on either tint
+		   (raw --chip-color is too light on the pale light-theme fill). */
+		color: color-mix(in srgb, var(--chip-color) 50%, var(--color-text-primary));
+		font-weight: 700;
 	}
 
 	/* Inputs */
@@ -456,7 +458,7 @@
 
 	.tickets-empty {
 		font-size: 13px;
-		color: var(--color-text-muted);
+		color: var(--color-text-secondary);
 		padding: 12px 0;
 	}
 
