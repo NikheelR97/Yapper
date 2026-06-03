@@ -1,0 +1,371 @@
+---
+/*
+  ProductDemos — the two visual features (Live Canvas, Voice Yaps) pulled out of
+  the feature grid into wide, image-led rows that actually show the thing.
+
+  Both demos are real markup/SVG with self-contained motion and a
+  prefers-reduced-motion fallback. Violet stays rationed: the canvas uses two
+  distinct collaborator colors (legitimate multi-user identity, not decorative
+  rainbow), the player uses brand violet for the played portion only.
+*/
+
+// Pre-built waveform bar heights (deterministic, no layout thrash).
+const bars = Array.from({ length: 56 }, (_, i) =>
+  18 + Math.round((Math.abs(Math.sin(i * 0.7)) * 0.6 + Math.abs(Math.sin(i * 1.9)) * 0.4) * 78)
+);
+---
+
+<section class="demos section" id="demos" aria-label="Live Canvas and Voice Yaps">
+  <div class="container">
+
+    <!-- Live Canvas -->
+    <div class="demo">
+      <div class="demo-copy">
+        <span class="demo-eyebrow">Live Canvas</span>
+        <h3 class="demo-title">Draw on the same page, in real time.</h3>
+        <p class="demo-body">
+          Open a shared canvas inside any DM or channel and sketch together as it
+          happens. You see each other's cursors and strokes the instant they
+          land. Every stroke is encrypted before it leaves your device.
+        </p>
+        <ul class="demo-points">
+          <li>Live cursors with names, no refresh</li>
+          <li>Pen, shapes, and sticky notes</li>
+          <li>End-to-end encrypted, like everything else</li>
+        </ul>
+      </div>
+
+      <figure class="demo-visual" aria-label="A shared canvas where two people, Maya and you, are drawing together. Their cursors move as colored strokes appear.">
+        <div class="canvas-frame">
+          <div class="canvas-bar" aria-hidden="true">
+            <span class="canvas-tool is-on"></span>
+            <span class="canvas-tool"></span>
+            <span class="canvas-tool"></span>
+            <span class="canvas-collabs">
+              <span class="chip chip--maya">Maya</span>
+              <span class="chip chip--you">You</span>
+            </span>
+          </div>
+          <svg class="canvas-svg" viewBox="0 0 480 280" aria-hidden="true" preserveAspectRatio="xMidYMid slice">
+            <defs>
+              <pattern id="cgrid" width="32" height="32" patternUnits="userSpaceOnUse">
+                <path d="M32 0H0V32" fill="none" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
+              </pattern>
+            </defs>
+            <rect width="480" height="280" fill="url(#cgrid)"/>
+
+            <!-- Maya's stroke (violet) -->
+            <path class="stroke stroke--maya" pathLength="1" d="M70 200 C 110 120, 160 120, 190 180 S 260 240, 300 160"
+                  fill="none" stroke="#a78bfa" stroke-width="4" stroke-linecap="round"/>
+            <!-- Your stroke (teal accent — distinct collaborator identity) -->
+            <path class="stroke stroke--you" pathLength="1" d="M300 90 C 330 60, 380 70, 390 110 S 400 180, 360 200"
+                  fill="none" stroke="#2dd4bf" stroke-width="4" stroke-linecap="round"/>
+
+            <!-- Cursors -->
+            <g class="cursor cursor--maya">
+              <path d="M0 0 L0 16 L4.5 12 L7 18 L9.5 17 L7 11 L13 11 Z" fill="#a78bfa" stroke="#0a0a0f" stroke-width="0.75"/>
+              <rect x="10" y="16" width="42" height="16" rx="4" fill="#a78bfa"/>
+              <text x="16" y="27" font-size="10" font-weight="700" fill="#1a1030" font-family="Inter, sans-serif">Maya</text>
+            </g>
+            <g class="cursor cursor--you">
+              <path d="M0 0 L0 16 L4.5 12 L7 18 L9.5 17 L7 11 L13 11 Z" fill="#2dd4bf" stroke="#0a0a0f" stroke-width="0.75"/>
+              <rect x="10" y="16" width="34" height="16" rx="4" fill="#2dd4bf"/>
+              <text x="16" y="27" font-size="10" font-weight="700" fill="#04201c" font-family="Inter, sans-serif">You</text>
+            </g>
+          </svg>
+        </div>
+      </figure>
+    </div>
+
+    <!-- Voice Yaps -->
+    <div class="demo demo--reverse">
+      <div class="demo-copy">
+        <span class="demo-eyebrow">Voice Yaps</span>
+        <h3 class="demo-title">Say it faster than you could type it.</h3>
+        <p class="demo-body">
+          Hold to record, release to send. Scrub the waveform to find a moment,
+          bump to 2× when you're in a hurry, and let it auto-delete once it's
+          been heard. The audio is encrypted end to end before it uploads.
+        </p>
+        <ul class="demo-points">
+          <li>Waveform scrubbing and 2× playback</li>
+          <li>Auto-delete after listening</li>
+          <li>AES-256-GCM, encrypted on your device</li>
+        </ul>
+      </div>
+
+      <figure class="demo-visual" aria-label="A voice Yap player: a play button, a waveform with the played portion highlighted in violet, an elapsed time of eleven seconds, and an auto-delete toggle.">
+        <div class="player">
+          <div class="player-top">
+            <span class="player-avatar">MO</span>
+            <span class="player-id">
+              <span class="player-name">Maya Okafor</span>
+              <span class="player-sub">Voice Yap · 0:11</span>
+            </span>
+            <span class="player-speed">2×</span>
+          </div>
+          <div class="player-row">
+            <button class="player-play" type="button" aria-label="Play voice Yap (demo)">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+            </button>
+            <span class="player-wave" aria-hidden="true">
+              {bars.map((h, i) => (
+                <span class={i < 18 ? 'is-played' : ''} style={`height:${h}%`}></span>
+              ))}
+              <span class="player-scrub"></span>
+            </span>
+            <span class="player-time">0:04</span>
+          </div>
+          <div class="player-foot" aria-hidden="true">
+            <span class="player-flag">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+              Auto-deletes after listening
+            </span>
+            <span class="player-lock">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              Encrypted
+            </span>
+          </div>
+        </div>
+      </figure>
+    </div>
+
+  </div>
+</section>
+
+<style>
+  .demos {
+    display: flex;
+    flex-direction: column;
+    gap: clamp(4rem, 9vw, 7rem);
+  }
+
+  .demo {
+    display: grid;
+    grid-template-columns: 1fr 1.05fr;
+    align-items: center;
+    gap: clamp(2rem, 5vw, 4.5rem);
+  }
+  .demo--reverse .demo-copy { order: 2; }
+  .demo--reverse .demo-visual { order: 1; }
+
+  .demo-copy { display: flex; flex-direction: column; gap: 1.1rem; align-items: flex-start; }
+
+  .demo-eyebrow {
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: var(--color-brand-light);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .demo-title {
+    font-size: clamp(1.6rem, 3vw, 2.3rem);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1.12;
+    text-wrap: balance;
+  }
+  .demo-body {
+    color: var(--color-text-secondary);
+    font-size: 1.0625rem;
+    line-height: 1.7;
+    max-width: 46ch;
+  }
+  .demo-points {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    margin-top: 0.25rem;
+  }
+  .demo-points li {
+    position: relative;
+    padding-left: 1.6rem;
+    font-size: 0.95rem;
+    color: var(--color-text-secondary);
+  }
+  .demo-points li::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0.35em;
+    width: 14px; height: 8px;
+    border-left: 2px solid var(--color-brand-light);
+    border-bottom: 2px solid var(--color-brand-light);
+    transform: rotate(-45deg);
+  }
+
+  /* --- Shared visual frame ------------------------------------------ */
+  .demo-visual { margin: 0; position: relative; }
+
+  /* --- Canvas ------------------------------------------------------- */
+  .canvas-frame {
+    border: 1px solid var(--color-border-light);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    background: var(--color-bg-surface);
+    box-shadow: 0 30px 60px -30px rgba(0, 0, 0, 0.7), 0 0 50px rgba(124, 58, 237, 0.08);
+  }
+  .canvas-bar {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.65rem 0.85rem;
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-bg-base);
+  }
+  .canvas-tool {
+    width: 22px; height: 22px;
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border);
+  }
+  .canvas-tool.is-on { border-color: var(--color-brand-light); background: rgba(124,58,237,0.18); }
+  .canvas-collabs { margin-left: auto; display: flex; gap: 0.4rem; }
+  .chip {
+    font-size: 0.7rem; font-weight: 700;
+    padding: 0.2rem 0.55rem;
+    border-radius: var(--radius-full);
+    color: #0a0a0f;
+  }
+  .chip--maya { background: #a78bfa; }
+  .chip--you { background: #2dd4bf; }
+  .canvas-svg { width: 100%; height: auto; display: block; background: var(--color-bg-base); }
+
+  .stroke {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: draw 4.5s ease-in-out infinite;
+  }
+  .stroke--maya { animation-delay: 0s; }
+  .stroke--you { animation-delay: 1.6s; }
+  @keyframes draw {
+    0%, 6%   { stroke-dashoffset: 1; }
+    22%  { stroke-dashoffset: 0; }
+    78%  { stroke-dashoffset: 0; }
+    100% { stroke-dashoffset: 0; opacity: 1; }
+  }
+
+  .cursor { animation: cursor-maya 4.5s ease-in-out infinite; }
+  .cursor--maya { animation-name: cursor-maya; }
+  .cursor--you { animation-name: cursor-you; animation-delay: 1.6s; }
+  @keyframes cursor-maya {
+    0%   { transform: translate(70px, 196px); }
+    22%  { transform: translate(296px, 156px); }
+    100% { transform: translate(296px, 156px); }
+  }
+  @keyframes cursor-you {
+    0%   { transform: translate(300px, 86px); }
+    22%  { transform: translate(356px, 196px); }
+    100% { transform: translate(356px, 196px); }
+  }
+
+  /* --- Voice player ------------------------------------------------- */
+  .player {
+    background: var(--color-bg-card);
+    border: 1px solid var(--color-border-light);
+    border-radius: var(--radius-lg);
+    padding: 1.4rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.1rem;
+    box-shadow: 0 30px 60px -30px rgba(0, 0, 0, 0.7), 0 0 50px rgba(124, 58, 237, 0.08);
+    max-width: 460px;
+  }
+  .player-top { display: flex; align-items: center; gap: 0.75rem; }
+  .player-avatar {
+    width: 40px; height: 40px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, var(--color-brand-dark), var(--color-brand));
+    color: #fff; font-size: 0.72rem; font-weight: 700;
+  }
+  .player-id { display: flex; flex-direction: column; gap: 0.1rem; }
+  .player-name { font-size: 0.95rem; font-weight: 700; color: var(--color-text-primary); }
+  .player-sub {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 0.72rem; color: var(--color-text-muted);
+  }
+  .player-speed {
+    margin-left: auto;
+    font-size: 0.78rem; font-weight: 700;
+    color: var(--color-brand-light);
+    background: rgba(124,58,237,0.14);
+    border: 1px solid rgba(167,139,250,0.25);
+    border-radius: var(--radius-full);
+    padding: 0.25rem 0.6rem;
+  }
+
+  .player-row { display: flex; align-items: center; gap: 0.85rem; }
+  .player-play {
+    width: 44px; height: 44px; flex-shrink: 0;
+    border-radius: 50%;
+    border: none;
+    background: var(--color-brand);
+    color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    transition: background var(--transition-fast), box-shadow var(--transition-fast);
+  }
+  .player-play:hover { background: var(--color-brand-dark); box-shadow: 0 0 20px var(--color-brand-glow); }
+
+  .player-wave {
+    position: relative;
+    flex: 1;
+    display: flex; align-items: center; gap: 2.5px;
+    height: 46px;
+  }
+  .player-wave > span:not(.player-scrub) {
+    flex: 1;
+    min-width: 2px;
+    border-radius: 2px;
+    background: var(--color-border-light);
+  }
+  .player-wave > span.is-played { background: var(--color-brand-light); }
+  .player-scrub {
+    position: absolute;
+    top: -3px; bottom: -3px;
+    left: calc(18 / 56 * 100%);
+    width: 3px;
+    border-radius: 3px;
+    background: #fff;
+    box-shadow: 0 0 8px rgba(255,255,255,0.6);
+    animation: scrub 6s linear infinite;
+  }
+  @keyframes scrub {
+    0%   { left: 4%; }
+    100% { left: 96%; }
+  }
+
+  .player-time {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 0.74rem; color: var(--color-text-muted);
+    flex-shrink: 0;
+  }
+
+  .player-foot {
+    display: flex; align-items: center; justify-content: space-between;
+    padding-top: 0.9rem;
+    border-top: 1px solid var(--color-border);
+  }
+  .player-flag, .player-lock {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    font-size: 0.78rem;
+  }
+  .player-flag { color: var(--color-text-muted); }
+  .player-lock { color: var(--color-brand-light); font-weight: 600; }
+
+  /* --- Responsive --------------------------------------------------- */
+  @media (max-width: 820px) {
+    .demo, .demo--reverse {
+      grid-template-columns: 1fr;
+      gap: 2rem;
+    }
+    .demo--reverse .demo-copy { order: 1; }
+    .demo--reverse .demo-visual { order: 2; }
+    .player { max-width: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .stroke { stroke-dashoffset: 0; animation: none; }
+    .cursor--maya { transform: translate(296px, 156px); animation: none; }
+    .cursor--you { transform: translate(356px, 196px); animation: none; }
+    .player-scrub { animation: none; }
+  }
+</style>

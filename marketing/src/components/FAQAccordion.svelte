@@ -2,27 +2,27 @@
   const items = [
     {
       q: 'Is Yapper really end-to-end encrypted?',
-      a: 'Yes. Every direct message and group channel uses the Signal Protocol — the same cryptography used by Signal, WhatsApp, and Google Messages. Messages are encrypted on your device before they leave it. Not even Yapper employees can read your chats.',
+      a: 'Yes. Every direct message and group channel uses the Signal Protocol, the same cryptography used by Signal, WhatsApp, and Google Messages. Messages are encrypted on your device before they leave it. Not even Yapper employees can read your chats.',
     },
     {
       q: 'How is Yapper different from Discord?',
-      a: 'Discord is not end-to-end encrypted — their team can read your messages and comply with data requests. Yapper encrypts everything by default. We also ship parental controls that respect E2EE — parents manage who their child connects with, not what they say.',
+      a: 'Discord is not end-to-end encrypted, so their team can read your messages and comply with data requests. Yapper encrypts everything by default. We also ship parental controls that respect E2EE: parents manage who their child connects with, not what they say.',
     },
     {
       q: 'Is Yapper available now?',
-      a: "Yes! Yapper is live on web, Windows, macOS, and Linux. iOS and Android apps are available on the App Store and Google Play. Head to <a href='https://app.yapperhq.com/register'>app.yapperhq.com</a> to create your account.",
+      a: "Yes! Yapper is live on the web and on Windows, macOS, and Linux. Native iOS and Android apps are coming soon. Head to <a href='https://app.yapperhq.com/register'>app.yapperhq.com</a> to create your account.",
     },
     {
       q: 'Is it free?',
-      a: 'The core Yapper experience — DMs, servers, voice Yaps, video Clips, live canvas — is free forever. A Premium tier ($4.99/month) adds larger storage, unlimited servers, HD video, and custom badges. We will never paywall core features.',
+      a: 'The core Yapper experience (DMs, servers, voice Yaps, video Clips, live canvas) is free forever. A Premium tier ($4.99/month) adds larger storage, unlimited servers, HD video, and custom badges. We will never paywall core features.',
     },
     {
       q: 'How do parental controls work with E2EE?',
-      a: "E2EE is inviolable — parents can never read message content and that's by design. What parents control is the social graph: friend requests to children require parent approval before any encrypted session is established. Server joins work the same way. Screen time limits use iOS DeviceActivity and Android UsageStatsManager APIs at the OS level.",
+      a: "E2EE is inviolable: parents can never read message content, and that's by design. What parents control is the social graph: friend requests to children require parent approval before any encrypted session is established. Server joins work the same way. Screen time limits use iOS DeviceActivity and Android UsageStatsManager APIs at the OS level.",
     },
     {
       q: 'What platforms is Yapper available on?',
-      a: 'Yapper is available on Web, iOS, Android, macOS, Windows, and Linux. All platforms share the same end-to-end encryption and sync seamlessly across your devices.',
+      a: 'Yapper is available today on the web and on macOS, Windows, and Linux, all sharing the same end-to-end encryption and syncing across your devices. Native iOS and Android apps are coming soon.',
     },
   ];
 
@@ -36,8 +36,7 @@
 <section class="faq-section" id="faq">
   <div class="container">
     <div class="section-header">
-      <div class="badge">FAQ</div>
-      <h2 class="section-title">Questions, <span class="gradient-text">answered.</span></h2>
+      <h2 class="section-title">The privacy questions <span class="gradient-text">people actually ask.</span></h2>
     </div>
 
     <div class="accordion" role="list">
@@ -158,11 +157,9 @@
     to   { opacity: 1; transform: translateY(0); }
   }
 
-  /* Make section-title and badge work without global CSS in svelte */
+  /* Solid violet accent (matches global .gradient-text) — scoped styles
+     don't inherit the global rule, so restate it here. */
   :global(.section-title .gradient-text) {
-    background: linear-gradient(135deg, #c4b5fd 0%, #7c3aed 50%, #a78bfa 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    color: var(--color-brand-light);
   }
 </style>

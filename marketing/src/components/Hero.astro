@@ -20,7 +20,7 @@ import WishlistForm from './WishlistForm.svelte';
 
       <p class="hero-sub">
         End-to-end encrypted messages, voice <strong>Yaps</strong>, video
-        <strong>Clips</strong>, and live canvases - all in one place.
+        <strong>Clips</strong>, and live canvases, all in one place.
         Not even we can read your chats.
       </p>
 
@@ -105,7 +105,7 @@ import WishlistForm from './WishlistForm.svelte';
   .hero-title {
     font-size: clamp(3rem, 6vw, 5rem);
     font-weight: 900;
-    letter-spacing: -0.03em;
+    letter-spacing: -0.02em;
     line-height: 1.05;
   }
 
@@ -227,5 +227,50 @@ import WishlistForm from './WishlistForm.svelte';
     .sphere      { width: 180px; height: 180px; }
     .ring-1      { width: 220px; height: 220px; }
     .ring-2      { width: 258px; height: 258px; }
+  }
+
+  /* --- Orchestrated page-load entrance ---------------------------------
+     One rehearsed reveal: the copy column rises in sequence while the
+     sphere scales up and sharpens from a soft blur. CSS-only and ungated,
+     so it always plays (no IntersectionObserver, no class toggle that
+     could ship the hero blank on a hidden tab or headless render). Uses
+     fill-mode: both so each element holds its hidden start during its
+     delay instead of flashing in first. */
+  @keyframes hero-rise {
+    from { opacity: 0; transform: translateY(18px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes sphere-in {
+    from { opacity: 0; transform: scale(0.82); filter: blur(10px); }
+    to   { opacity: 1; transform: scale(1);    filter: blur(0); }
+  }
+
+  .hero-copy > * {
+    animation: hero-rise 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .hero-copy > *:nth-child(1) { animation-delay: 0.06s; }
+  .hero-copy > *:nth-child(2) { animation-delay: 0.14s; }
+  .hero-copy > *:nth-child(3) { animation-delay: 0.22s; }
+  .hero-copy > *:nth-child(4) { animation-delay: 0.30s; }
+  .hero-copy > *:nth-child(5) { animation-delay: 0.38s; }
+  .hero-copy > *:nth-child(6) { animation-delay: 0.46s; }
+
+  .sphere-wrap {
+    animation: sphere-in 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: 0.12s;
+  }
+
+  /* Reduced motion: skip the choreography entirely, show the final state.
+     Explicit override (not just the global duration kill-switch) so no
+     animation-delay can leave an element briefly hidden. */
+  @media (prefers-reduced-motion: reduce) {
+    .hero-copy > *,
+    .sphere-wrap {
+      animation: none;
+      opacity: 1;
+      transform: none;
+      filter: none;
+    }
   }
 </style>
