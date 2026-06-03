@@ -43,7 +43,7 @@
 							class="progress-fill"
 							class:warning={isWarning}
 							class:danger={isOver}
-							style="width: {Math.min(100, usagePercent ?? 0)}%"
+							style="transform: scaleX({Math.min(100, usagePercent ?? 0) / 100})"
 						></div>
 					</div>
 				{/if}
@@ -76,7 +76,7 @@
 	.section-title {
 		font-size: 14px;
 		font-weight: 700;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		margin: 0;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
@@ -89,8 +89,8 @@
 	}
 
 	.stat-card {
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(255, 255, 255, 0.07);
+		background: var(--color-bg-elevated);
+		border: 1px solid var(--color-border);
 		border-radius: 12px;
 		padding: 16px;
 	}
@@ -104,7 +104,7 @@
 
 	.stat-label {
 		font-size: 12px;
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 		font-weight: 600;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
@@ -119,46 +119,49 @@
 
 	.badge.warning {
 		background: rgba(245, 158, 11, 0.15);
-		color: #f59e0b;
+		color: var(--color-warning-text);
 	}
 
 	.badge.danger {
 		background: rgba(239, 68, 68, 0.15);
-		color: #ef4444;
+		color: var(--color-error-text);
 	}
 
 	.stat-value {
 		font-size: 28px;
 		font-weight: 800;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 	}
 
 	.stat-sub {
 		font-size: 12px;
-		color: #6b7280;
+		color: var(--color-text-muted);
 		margin: 2px 0 10px;
 	}
 
 	.progress-track {
 		height: 6px;
-		background: rgba(255, 255, 255, 0.07);
+		background: var(--color-border);
 		border-radius: 3px;
 		overflow: hidden;
 	}
 
 	.progress-fill {
+		width: 100%;
 		height: 100%;
-		background: #7c3aed;
+		background: var(--color-brand);
 		border-radius: 3px;
-		transition: width 600ms ease;
+		transform-origin: left;
+		/* Animate transform, not width, to keep the meter off the layout path. */
+		transition: transform 600ms ease;
 	}
 
 	.progress-fill.warning {
-		background: #f59e0b;
+		background: var(--color-warning);
 	}
 
 	.progress-fill.danger {
-		background: #ef4444;
+		background: var(--color-error);
 	}
 
 	.mini-stats {
@@ -168,8 +171,8 @@
 	}
 
 	.mini-card {
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(255, 255, 255, 0.07);
+		background: var(--color-bg-elevated);
+		border: 1px solid var(--color-border);
 		border-radius: 12px;
 		padding: 14px;
 		display: flex;
@@ -185,17 +188,17 @@
 	.mini-value {
 		font-size: 22px;
 		font-weight: 800;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 	}
 
 	.mini-label {
 		font-size: 11px;
-		color: #6b7280;
+		color: var(--color-text-muted);
 	}
 
 	.empty {
 		font-size: 13px;
-		color: #6b7280;
+		color: var(--color-text-muted);
 		padding: 20px;
 		text-align: center;
 	}

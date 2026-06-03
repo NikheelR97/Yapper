@@ -70,7 +70,7 @@
 	<div class="now-playing">
 		<div class="album-art-wrap">
 			{#if music.album_art_url}
-				<img class="album-art" src={music.album_art_url} alt="Album art" />
+				<img class="album-art" src={music.album_art_url} alt="Album art" loading="lazy" decoding="async" />
 			{:else}
 				<div class="album-art-placeholder" aria-hidden="true">
 					<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -101,7 +101,7 @@
 		<div class="progress-row">
 			<span class="time-label">{formatTime(elapsedMs)}</span>
 			<div class="progress-track">
-				<div class="progress-fill" style="width: {progressPct}%" class:ended></div>
+				<div class="progress-fill" style="transform: scaleX({progressPct / 100})" class:ended></div>
 			</div>
 			<span class="time-label">{formatTime(durationMs)}</span>
 		</div>
@@ -261,9 +261,12 @@
 	.eq-bars span {
 		display: block;
 		width: 3px;
+		height: 18px;
 		background: var(--color-brand-light);
 		border-radius: 2px;
-		animation: eq-bounce var(--dur, 0.8s) ease-in-out infinite alternate;
+		transform-origin: bottom;
+		/* Animate transform, not height, so the eq bars don't trigger layout every frame. */
+		animation: eq-pulse var(--dur, 0.8s) ease-in-out infinite alternate;
 	}
 
 	.eq-bars span:nth-child(1) { --dur: 0.7s; animation-delay: 0s; }
@@ -271,7 +274,7 @@
 	.eq-bars span:nth-child(3) { --dur: 0.6s; animation-delay: 0.3s; }
 	.eq-bars span:nth-child(4) { --dur: 1.1s; animation-delay: 0.45s; }
 
-	@keyframes eq-bounce { from { height: 4px; } to { height: 18px; } }
+	@keyframes eq-pulse { from { transform: scaleY(0.22); } to { transform: scaleY(1); } }
 
 	/* Progress bar */
 	.progress-row {
@@ -300,10 +303,13 @@
 	}
 
 	.progress-fill {
+		width: 100%;
 		height: 100%;
 		background: var(--color-brand-light);
 		border-radius: 2px;
-		transition: width 1s linear;
+		transform-origin: left;
+		/* Animate transform instead of width to keep the fill off the layout path. */
+		transition: transform 1s linear;
 	}
 
 	.progress-fill.ended {
@@ -326,8 +332,10 @@
 	.btn-control {
 		display: flex;
 		align-items: center;
+		justify-content: center;
 		gap: 0.25rem;
-		padding: 0.25rem 0.5rem;
+		min-height: 44px;
+		padding: 0.25rem 0.625rem;
 		font-size: 0.6875rem;
 		color: var(--color-text-secondary);
 		background: rgba(124, 58, 237, 0.08);

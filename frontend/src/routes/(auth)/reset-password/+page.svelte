@@ -107,7 +107,7 @@
 							<div class="strength-bar">
 								<div
 									class="strength-fill"
-									style="width: {(strength / 4) * 100}%; background: {strengthColor}"
+									style="transform: scaleX({strength / 4}); background: {strengthColor}"
 								></div>
 							</div>
 							<span class="strength-label" style="color: {strengthColor}">{strengthLabel}</span>
@@ -271,8 +271,11 @@
 	}
 
 	.strength-fill {
+		width: 100%;
 		height: 100%;
-		transition: width 0.3s ease, background 0.3s ease;
+		transform-origin: left;
+		/* Animate transform, not width, to keep the strength meter off the layout path. */
+		transition: transform 0.3s ease, background 0.3s ease;
 	}
 
 	.strength-label {

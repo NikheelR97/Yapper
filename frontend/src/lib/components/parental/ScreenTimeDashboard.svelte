@@ -146,7 +146,7 @@
 					class="progress-fill"
 					class:warning={isWarning}
 					class:danger={isOver}
-					style="width: {usagePercent}%"
+					style="transform: scaleX({usagePercent / 100})"
 				></div>
 			</div>
 			<div class="summary-sub">Daily limit: {formatTime(limitMinutes)}</div>
@@ -166,7 +166,7 @@
 							<div
 								class="app-bar-fill"
 								class:yapper-bar={app.appName === 'Yapper'}
-								style="width: {pct}%"
+								style="transform: scaleX({pct / 100})"
 							></div>
 						</div>
 					</div>
@@ -288,14 +288,14 @@
 	.page-title {
 		font-size: 22px;
 		font-weight: 800;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		margin: 0;
 	}
 
 	.period-tabs {
 		display: flex;
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(255, 255, 255, 0.08);
+		background: var(--color-bg-elevated);
+		border: 1px solid var(--color-border);
 		border-radius: 8px;
 		overflow: hidden;
 	}
@@ -304,7 +304,7 @@
 		padding: 7px 16px;
 		background: none;
 		border: none;
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 		font-size: 13px;
 		font-weight: 600;
 		cursor: pointer;
@@ -313,19 +313,19 @@
 
 	.period-tab.active {
 		background: rgba(124, 58, 237, 0.2);
-		color: #a78bfa;
+		color: var(--color-brand-text);
 	}
 
 	.loading {
 		font-size: 14px;
-		color: #6b7280;
+		color: var(--color-text-muted);
 		text-align: center;
 		padding: 32px;
 	}
 
 	/* Summary card */
 	.summary-card {
-		background: rgba(255, 255, 255, 0.04);
+		background: var(--color-bg-elevated);
 		border: 1px solid rgba(255, 255, 255, 0.07);
 		border-radius: 14px;
 		padding: 20px;
@@ -344,7 +344,7 @@
 	.summary-time {
 		font-size: 28px;
 		font-weight: 800;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 	}
 
 	.alert-badge {
@@ -356,44 +356,47 @@
 
 	.alert-badge.warning {
 		background: rgba(245, 158, 11, 0.15);
-		color: #f59e0b;
+		color: var(--color-warning-text);
 	}
 
 	.alert-badge.danger {
 		background: rgba(239, 68, 68, 0.15);
-		color: #ef4444;
+		color: var(--color-error-text);
 	}
 
 	.progress-track {
 		height: 12px;
-		background: rgba(255, 255, 255, 0.07);
+		background: var(--color-border);
 		border-radius: 6px;
 		overflow: hidden;
 	}
 
 	.progress-fill {
+		width: 100%;
 		height: 100%;
-		background: #7c3aed;
+		background: var(--color-brand);
 		border-radius: 6px;
-		transition: width 600ms ease;
+		transform-origin: left;
+		/* Animate transform, not width, to keep the meter off the layout path. */
+		transition: transform 600ms ease;
 	}
 
 	.progress-fill.warning {
-		background: #f59e0b;
+		background: var(--color-warning);
 	}
 
 	.progress-fill.danger {
-		background: #ef4444;
+		background: var(--color-error);
 	}
 
 	.summary-sub {
 		font-size: 12px;
-		color: #6b7280;
+		color: var(--color-text-muted);
 	}
 
 	/* Section cards */
 	.section-card {
-		background: rgba(255, 255, 255, 0.04);
+		background: var(--color-bg-elevated);
 		border: 1px solid rgba(255, 255, 255, 0.07);
 		border-radius: 14px;
 		padding: 20px;
@@ -405,7 +408,7 @@
 	.section-heading {
 		font-size: 13px;
 		font-weight: 700;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		margin: 0;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
@@ -431,32 +434,35 @@
 
 	.app-name {
 		font-size: 14px;
-		color: #d1d5db;
+		color: var(--color-text-secondary);
 		white-space: nowrap;
 	}
 
 	.app-time {
 		font-size: 13px;
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 		text-align: right;
 	}
 
 	.app-bar-track {
 		height: 6px;
-		background: rgba(255, 255, 255, 0.07);
+		background: var(--color-border);
 		border-radius: 3px;
 		overflow: hidden;
 	}
 
 	.app-bar-fill {
+		width: 100%;
 		height: 100%;
-		background: #4b5563;
+		background: var(--color-text-muted);
 		border-radius: 3px;
-		transition: width 400ms;
+		transform-origin: left;
+		/* Animate transform, not width, to keep the bar off the layout path. */
+		transition: transform 400ms;
 	}
 
 	.app-bar-fill.yapper-bar {
-		background: #7c3aed;
+		background: var(--color-brand);
 	}
 
 	/* Chart */
@@ -481,7 +487,7 @@
 		align-items: center;
 		gap: 6px;
 		font-size: 12px;
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 	}
 
 	.legend-dot {
@@ -507,7 +513,7 @@
 
 	.limit-label {
 		font-size: 14px;
-		color: #d1d5db;
+		color: var(--color-text-secondary);
 	}
 
 	.slider {
@@ -520,7 +526,7 @@
 		display: flex;
 		justify-content: space-between;
 		font-size: 11px;
-		color: #6b7280;
+		color: var(--color-text-muted);
 	}
 
 	.bedtime-row {
@@ -532,12 +538,12 @@
 
 	.bedtime-label {
 		font-size: 14px;
-		color: #d1d5db;
+		color: var(--color-text-secondary);
 	}
 
 	.bedtime-value {
 		font-size: 14px;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		font-weight: 600;
 	}
 
@@ -564,10 +570,10 @@
 
 	.time-input {
 		padding: 6px 10px;
-		background: rgba(255, 255, 255, 0.05);
-		border: 1px solid rgba(255, 255, 255, 0.1);
+		background: var(--color-bg-elevated);
+		border: 1px solid var(--color-border);
 		border-radius: 6px;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		font-size: 14px;
 		font-family: inherit;
 		outline: none;

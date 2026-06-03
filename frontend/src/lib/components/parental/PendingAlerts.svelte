@@ -92,7 +92,7 @@
 	.section-title {
 		font-size: 14px;
 		font-weight: 700;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		margin: 0;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
@@ -116,7 +116,6 @@
 	.alert-card {
 		background: rgba(245, 158, 11, 0.06);
 		border: 1px solid rgba(245, 158, 11, 0.25);
-		border-left: 3px solid #f59e0b;
 		border-radius: 12px;
 		padding: 14px;
 		display: flex;
@@ -141,14 +140,14 @@
 
 	.alert-desc {
 		font-size: 13px;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		margin: 0 0 4px;
 		line-height: 1.4;
 	}
 
 	.alert-meta {
 		font-size: 11px;
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 	}
 
 	.alert-actions {
@@ -160,7 +159,7 @@
 		flex: 1;
 		padding: 8px;
 		background: rgba(34, 197, 94, 0.15);
-		color: #22c55e;
+		color: var(--color-success-text);
 		border: 1px solid rgba(34, 197, 94, 0.3);
 		border-radius: 8px;
 		font-size: 13px;
@@ -177,7 +176,7 @@
 		flex: 1;
 		padding: 8px;
 		background: rgba(107, 114, 128, 0.1);
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 		border: 1px solid rgba(107, 114, 128, 0.2);
 		border-radius: 8px;
 		font-size: 13px;
@@ -188,7 +187,7 @@
 
 	.btn-decline:hover {
 		background: rgba(239, 68, 68, 0.1);
-		color: #ef4444;
+		color: var(--color-error-text);
 		border-color: rgba(239, 68, 68, 0.3);
 	}
 
@@ -200,7 +199,7 @@
 		background: rgba(34, 197, 94, 0.06);
 		border: 1px solid rgba(34, 197, 94, 0.15);
 		border-radius: 12px;
-		color: #22c55e;
+		color: var(--color-success-text);
 		font-size: 13px;
 	}
 

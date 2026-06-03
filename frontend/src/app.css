@@ -154,3 +154,18 @@ img {
 	outline: 2px solid var(--color-brand);
 	outline-offset: 2px;
 }
+
+/* ─── Reduced motion ─────────────────────────────────────────────────────────── */
+/* PRODUCT.md commitment: every animation has a non-motion alternative. This is the
+   global floor — it neutralizes continuous/decorative motion (spinning art, pulsing
+   rings, eq bars, marquees) and collapses transitions to a near-instant crossfade so
+   nothing animates layout. Components may still add tailored `reduce` fallbacks, but
+   no surface ships motion without an opt-out. */
+@media (prefers-reduced-motion: reduce) {
+	*, *::before, *::after {
+		animation-duration: 0.001ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.001ms !important;
+		scroll-behavior: auto !important;
+	}
+}
