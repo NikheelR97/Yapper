@@ -84,7 +84,7 @@
 	.profile-page {
 		flex: 1;
 		overflow-y: auto;
-		background: var(--color-bg-base, #0a0a0f);
+		background: var(--color-bg-base, #0F0F0F);
 		min-height: 0;
 	}
 
@@ -107,7 +107,7 @@
 		justify-content: center;
 		gap: 12px;
 		padding: 80px 24px;
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 		text-align: center;
 	}
 
@@ -118,7 +118,7 @@
 	.error-state h2 {
 		font-size: 20px;
 		font-weight: 700;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		margin: 0;
 	}
 

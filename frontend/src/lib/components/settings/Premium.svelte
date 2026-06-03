@@ -236,7 +236,7 @@
 	.section-title {
 		font-size: 20px;
 		font-weight: 800;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		margin: 0;
 	}
 
@@ -265,13 +265,13 @@
 
 	.plan-desc {
 		font-size: 14px;
-		color: #d1d5db;
+		color: var(--color-text-secondary);
 		margin: 0;
 	}
 
 	.plan-since {
 		font-size: 12px;
-		color: #6b7280;
+		color: var(--color-text-muted);
 		margin: 4px 0 0;
 	}
 
@@ -290,19 +290,19 @@
 	.hero-icon {
 		font-size: 20px;
 		font-weight: 800;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 	}
 
 	.hero-title {
 		font-size: 22px;
 		font-weight: 800;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		margin: 0;
 	}
 
 	.hero-desc {
 		font-size: 14px;
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 		margin: 0;
 		max-width: 380px;
 	}
@@ -333,7 +333,7 @@
 	.promo-toggle {
 		background: none;
 		border: none;
-		color: #a78bfa;
+		color: var(--color-brand-text);
 		font-size: 13px;
 		cursor: pointer;
 		padding: 0;
@@ -351,17 +351,17 @@
 	.promo-input {
 		flex: 1;
 		min-width: 160px;
-		background: rgba(255, 255, 255, 0.06);
-		border: 1px solid rgba(255, 255, 255, 0.12);
+		background: var(--color-bg-elevated);
+		border: 1px solid var(--color-border);
 		border-radius: 8px;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		font-size: 14px;
 		padding: 8px 12px;
 		outline: none;
 	}
 
 	.promo-input:focus {
-		border-color: #7c3aed;
+		border-color: var(--color-brand);
 	}
 
 	.btn-promo {
@@ -384,7 +384,7 @@
 	.cancel-link {
 		background: none;
 		border: none;
-		color: #6b7280;
+		color: var(--color-text-muted);
 		font-size: 13px;
 		cursor: pointer;
 		padding: 0;
@@ -393,7 +393,7 @@
 	}
 
 	.cancel-link:hover {
-		color: #ef4444;
+		color: var(--color-error-text);
 	}
 
 	.cancel-confirm {
@@ -408,7 +408,7 @@
 
 	.cancel-confirm p {
 		font-size: 14px;
-		color: #d1d5db;
+		color: var(--color-text-secondary);
 		margin: 0;
 	}
 
@@ -436,9 +436,9 @@
 
 	.btn-ghost {
 		padding: 8px 16px;
-		background: rgba(255, 255, 255, 0.06);
-		color: #d1d5db;
-		border: 1px solid rgba(255, 255, 255, 0.1);
+		background: var(--color-bg-elevated);
+		color: var(--color-text-secondary);
+		border: 1px solid var(--color-border);
 		border-radius: 8px;
 		font-size: 14px;
 		cursor: pointer;
@@ -446,7 +446,7 @@
 	}
 
 	.btn-ghost:hover {
-		background: rgba(255, 255, 255, 0.1);
+		background: var(--color-bg-elevated);
 	}
 
 	.success-banner {
@@ -455,18 +455,18 @@
 		border: 1px solid rgba(34, 197, 94, 0.25);
 		border-radius: 10px;
 		font-size: 14px;
-		color: #86efac;
+		color: var(--color-success-text);
 	}
 
 	.error-text {
 		font-size: 13px;
-		color: #fca5a5;
+		color: var(--color-error-text);
 		margin: 0;
 	}
 
 	.comparison-table {
-		background: rgba(255, 255, 255, 0.03);
-		border: 1px solid rgba(255, 255, 255, 0.07);
+		background: var(--color-bg-elevated);
+		border: 1px solid var(--color-border);
 		border-radius: 14px;
 		overflow: hidden;
 	}
@@ -480,7 +480,7 @@
 
 	.table-header {
 		padding: 12px 20px;
-		background: rgba(255, 255, 255, 0.03);
+		background: var(--color-bg-elevated);
 		border-bottom: 1px solid rgba(255, 255, 255, 0.07);
 	}
 
@@ -495,12 +495,12 @@
 	}
 
 	.table-row:hover {
-		background: rgba(255, 255, 255, 0.02);
+		background: var(--color-bg-elevated);
 	}
 
 	.feature-col {
 		font-size: 14px;
-		color: #d1d5db;
+		color: var(--color-text-secondary);
 	}
 
 	.plan-col {
@@ -515,31 +515,31 @@
 	}
 
 	.plan-name.free {
-		color: #6b7280;
+		color: var(--color-text-secondary);
 	}
 
 	.plan-name.pro {
-		color: #a78bfa;
+		color: var(--color-brand-text);
 	}
 
 	.x-mark {
-		color: #4b5563;
+		color: var(--color-text-secondary);
 		font-size: 14px;
 	}
 
 	.check-mark {
-		color: #22c55e;
+		color: var(--color-success-text);
 		font-size: 14px;
 		font-weight: 700;
 	}
 
 	.feature-val {
 		font-size: 13px;
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 	}
 
 	.feature-val.pro-val {
-		color: #a78bfa;
+		color: var(--color-brand-text);
 		font-weight: 600;
 	}
 
@@ -551,6 +551,6 @@
 
 	.cta-note {
 		font-size: 13px;
-		color: #6b7280;
+		color: var(--color-text-secondary);
 	}
 </style>

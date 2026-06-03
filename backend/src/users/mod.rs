@@ -173,6 +173,7 @@ pub fn router() -> Router<AppState> {
 pub fn account_router() -> Router<AppState> {
     Router::new()
         .route("/data-export", get(gdpr_export))
+        .route("/disable", post(disable_account))
         .route("/", delete(delete_account))
 }
 
@@ -541,6 +542,46 @@ async fn purge_account_r2_objects(user_id: Uuid, media_object_keys: &[String]) {
 /// DELETE /api/v2/account â€” soft-delete the user's account (GDPR Art. 17).
 ///
 /// In a single transaction:
+/// POST /api/v2/account/disable — reversibly deactivate the authenticated account.
+///
+/// Unlike `delete_account`, this preserves all data. It sets `disabled_at` and
+/// revokes every session so the user is signed out on all devices. The account
+/// reactivates automatically (clearing `disabled_at`) on the next successful
+/// login — see `auth::v2::login`.
+async fn disable_account(
+    auth: AuthUser,
+    State(state): State<AppState>,
+) -> AppResult<impl IntoResponse> {
+    let mut tx = state.db.pool().begin().await?;
+
+    let result = sqlx::query(
+        "UPDATE users SET disabled_at = NOW() \
+         WHERE id = $1 AND deleted_at IS NULL AND disabled_at IS NULL",
+    )
+    .bind(auth.user_id)
+    .execute(&mut *tx)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound(
+            "Account not found or already disabled".into(),
+        ));
+    }
+
+    // Sign the user out everywhere; access tokens are short-lived and refresh
+    // will fail without a session row.
+    sqlx::query("DELETE FROM sessions WHERE user_id = $1")
+        .bind(auth.user_id)
+        .execute(&mut *tx)
+        .await?;
+
+    tx.commit().await?;
+
+    tracing::info!(user_id = %auth.user_id, "Account disabled (reversible)");
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
 /// 1. Anonymises PII (display_name, avatar, email, linked identities).
 /// 2. Purges all operational rows: devices, sessions, keys, OPKs, push tokens,
 ///    support tickets, parental artefacts.

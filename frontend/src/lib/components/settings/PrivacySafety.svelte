@@ -243,13 +243,13 @@
 	.section-title {
 		font-size: 20px;
 		font-weight: 800;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		margin: 0;
 	}
 
 	.setting-block {
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(255, 255, 255, 0.07);
+		background: var(--color-bg-elevated);
+		border: 1px solid var(--color-border);
 		border-radius: 12px;
 		padding: 18px;
 	}
@@ -266,7 +266,7 @@
 	.block-title {
 		font-size: 13px;
 		font-weight: 700;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		margin: 0;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
@@ -274,7 +274,7 @@
 
 	.block-desc {
 		font-size: 13px;
-		color: #6b7280;
+		color: var(--color-text-secondary);
 		margin: 4px 0 0;
 	}
 
@@ -292,7 +292,7 @@
 	}
 
 	.radio-row input[type="radio"] {
-		accent-color: #7c3aed;
+		accent-color: var(--color-brand);
 		width: 16px;
 		height: 16px;
 		cursor: pointer;
@@ -300,7 +300,7 @@
 
 	.radio-label {
 		font-size: 14px;
-		color: #d1d5db;
+		color: var(--color-text-secondary);
 	}
 
 	.toggle-row {
@@ -327,7 +327,7 @@
 	.toggle-track {
 		position: absolute;
 		inset: 0;
-		background: #374151;
+		background: var(--color-border);
 		border-radius: 12px;
 		cursor: pointer;
 		transition: background 200ms;
@@ -360,7 +360,7 @@
 	}
 
 	.check {
-		color: #22c55e;
+		color: var(--color-success-text);
 		font-size: 16px;
 		font-weight: 700;
 		flex-shrink: 0;
@@ -369,12 +369,12 @@
 	.storage-name {
 		font-size: 14px;
 		font-weight: 600;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 	}
 
 	.storage-desc {
 		font-size: 12px;
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 		margin-top: 2px;
 	}
 
@@ -402,9 +402,9 @@
 
 	.export-btn {
 		padding: 10px 20px;
-		background: rgba(255, 255, 255, 0.08);
-		color: #f9fafb;
-		border: 1px solid rgba(255, 255, 255, 0.12);
+		background: var(--color-bg-elevated);
+		color: var(--color-text-primary);
+		border: 1px solid var(--color-border);
 		border-radius: 8px;
 		font-size: 14px;
 		font-weight: 600;
@@ -413,7 +413,7 @@
 	}
 
 	.export-btn:hover:not(:disabled) {
-		background: rgba(255, 255, 255, 0.12);
+		background: var(--color-bg-elevated);
 	}
 
 	.export-btn:disabled {
@@ -427,7 +427,7 @@
 	}
 
 	.danger-block .block-title {
-		color: #ef4444;
+		color: var(--color-error-text);
 	}
 
 	.confirm-row {
@@ -439,7 +439,7 @@
 
 	.confirm-text {
 		font-size: 13px;
-		color: #fca5a5;
+		color: var(--color-error-text);
 		font-weight: 600;
 	}
 
@@ -466,9 +466,9 @@
 
 	.cancel-btn {
 		padding: 10px 20px;
-		background: rgba(255, 255, 255, 0.08);
-		color: #d1d5db;
-		border: 1px solid rgba(255, 255, 255, 0.1);
+		background: var(--color-bg-elevated);
+		color: var(--color-text-secondary);
+		border: 1px solid var(--color-border);
 		border-radius: 8px;
 		font-size: 14px;
 		font-weight: 600;
@@ -477,6 +477,6 @@
 	}
 
 	.cancel-btn:hover {
-		background: rgba(255, 255, 255, 0.12);
+		background: var(--color-bg-elevated);
 	}
 </style>

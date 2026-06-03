@@ -118,7 +118,12 @@ test.describe('Authenticated shell', () => {
 			timeout: 10_000,
 		});
 
-		await userPage.getByRole('link', { name: 'Explore' }).click();
+		// Two "Explore" links now exist (top nav + sidebar quick-nav). Use the sidebar
+		// quick-nav, which is the reliably-clickable one (same nav as the Settings link above).
+		await userPage
+			.getByRole('navigation', { name: 'Quick navigation' })
+			.getByRole('link', { name: 'Explore' })
+			.click();
 		await expect(userPage).toHaveURL(/\/explore/, { timeout: 20_000 });
 		await expect(userPage.getByRole('searchbox', { name: 'Search' })).toBeVisible({
 			timeout: 30_000,

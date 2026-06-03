@@ -68,6 +68,9 @@ test.describe('Invite expiry @security @auth', () => {
 		log('NETWORK', 'NAVIGATE', 'Navigating to server page to access join form');
 		await page.goto('/servers/srv-1/channels');
 
+		// The join-by-invite form is collapsed behind a <details> — expand it first.
+		await page.locator('summary.join-summary').click();
+
 		// Wait for the sidebar with the join form to be visible.
 		const joinInput = page.locator('input[aria-label="Enter invite code"]');
 		await expect(joinInput).toBeVisible({ timeout: 20_000 });
@@ -102,6 +105,9 @@ test.describe('Invite expiry @security @auth', () => {
 		log('INVITE', 'SETUP', 'Testing that empty invite code cannot be submitted');
 
 		await page.goto('/servers/srv-1/channels');
+
+		// The join-by-invite form is collapsed behind a <details> — expand it first.
+		await page.locator('summary.join-summary').click();
 
 		const joinInput = page.locator('input[aria-label="Enter invite code"]');
 		await expect(joinInput).toBeVisible({ timeout: 20_000 });

@@ -65,14 +65,20 @@
 		height: 5px;
 		border-radius: 50%;
 		background: var(--color-text-muted);
-		animation: bounce 1.2s ease-in-out infinite;
+		animation: typing-bob 1.2s ease-in-out infinite;
 	}
 
 	.dots span:nth-child(2) { animation-delay: 0.2s; }
 	.dots span:nth-child(3) { animation-delay: 0.4s; }
 
-	@keyframes bounce {
+	@keyframes typing-bob {
 		0%, 60%, 100% { transform: translateY(0); }
 		30%           { transform: translateY(-4px); }
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.dots span {
+			animation: none;
+		}
 	}
 </style>

@@ -1,6 +1,6 @@
 //! Integration tests for account deletion and deleted-account retention cleanup.
 
-use super::{register_test_session, spawn_test_server_with_pool, TestClient};
+use super::{login_test_session, register_test_session, spawn_test_server_with_pool, TestClient};
 use axum_test::TestServer;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
@@ -18,6 +18,97 @@ async fn delete_account(client: &TestClient<'_>) {
         204,
         "DELETE /api/v2/account failed: {}",
         resp.text()
+    );
+}
+
+async fn disable_account(client: &TestClient<'_>) {
+    let resp = client.post("/api/v2/account/disable").await;
+
+    assert_eq!(
+        resp.status_code().as_u16(),
+        204,
+        "POST /api/v2/account/disable failed: {}",
+        resp.text()
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn account_disable_sets_flag_and_revokes_sessions(pool: PgPool) {
+    let Some((state, server)) = build_account_test_server(pool).await else {
+        return;
+    };
+    let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
+    let session = register_test_session(&server, &suffix).await;
+    let client = TestClient::from_session(&server, &session);
+    let user_id = session.user_id;
+
+    disable_account(&client).await;
+
+    let row = sqlx::query("SELECT disabled_at, deleted_at FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_one(state.db.pool())
+        .await
+        .expect("load disabled user row");
+
+    assert!(
+        row.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("disabled_at")
+            .expect("disabled_at")
+            .is_some(),
+        "disabled_at should be set"
+    );
+    assert!(
+        row.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>("deleted_at")
+            .expect("deleted_at")
+            .is_none(),
+        "disable must not delete the account"
+    );
+
+    let session_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM sessions WHERE user_id = $1")
+        .bind(user_id)
+        .fetch_one(state.db.pool())
+        .await
+        .expect("session count");
+    assert_eq!(session_count, 0, "sessions should be revoked on disable");
+
+    // Re-disabling a disabled account is a no-op conflict (no matching row).
+    let resp = client.post("/api/v2/account/disable").await;
+    assert_eq!(
+        resp.status_code().as_u16(),
+        404,
+        "second disable should report the account is already disabled"
+    );
+}
+
+#[sqlx::test(migrations = "./migrations")]
+async fn disabled_account_reactivates_on_login(pool: PgPool) {
+    let Some((state, server)) = build_account_test_server(pool).await else {
+        return;
+    };
+    let suffix = Uuid::new_v4().to_string().replace('-', "")[..8].to_string();
+    let session = register_test_session(&server, &suffix).await;
+    let client = TestClient::from_session(&server, &session);
+    let user_id = session.user_id;
+
+    disable_account(&client).await;
+
+    let email = format!("test_{suffix}@integration.test");
+    let password = format!("TestPass123!{suffix}");
+    let reactivated = login_test_session(&server, &email, &password, &suffix).await;
+    assert_eq!(
+        reactivated.user_id, user_id,
+        "login should reuse the account"
+    );
+
+    let disabled_at = sqlx::query_scalar::<_, Option<chrono::DateTime<chrono::Utc>>>(
+        "SELECT disabled_at FROM users WHERE id = $1",
+    )
+    .bind(user_id)
+    .fetch_one(state.db.pool())
+    .await
+    .expect("load reactivated user row");
+    assert!(
+        disabled_at.is_none(),
+        "successful login should clear disabled_at"
     );
 }
 

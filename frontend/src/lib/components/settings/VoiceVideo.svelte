@@ -116,13 +116,13 @@
 	.section-title {
 		font-size: 20px;
 		font-weight: 800;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		margin: 0;
 	}
 
 	.setting-block {
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(255, 255, 255, 0.07);
+		background: var(--color-bg-elevated);
+		border: 1px solid var(--color-border);
 		border-radius: 12px;
 		padding: 18px;
 		display: flex;
@@ -133,7 +133,7 @@
 	.block-title {
 		font-size: 13px;
 		font-weight: 700;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		margin: 0;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
@@ -141,10 +141,10 @@
 
 	.device-select {
 		padding: 10px 14px;
-		background: rgba(255, 255, 255, 0.05);
-		border: 1px solid rgba(255, 255, 255, 0.1);
+		background: var(--color-bg-elevated);
+		border: 1px solid var(--color-border);
 		border-radius: 8px;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		font-size: 14px;
 		font-family: inherit;
 		cursor: pointer;
@@ -152,12 +152,12 @@
 	}
 
 	.device-select option {
-		background: #1c1d26;
+		background: var(--color-bg-surface);
 	}
 
 	.no-device {
 		font-size: 13px;
-		color: #6b7280;
+		color: var(--color-text-secondary);
 		margin: 0;
 	}
 
@@ -169,29 +169,29 @@
 
 	.slider-label {
 		font-size: 13px;
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 		white-space: nowrap;
 	}
 
 	.slider {
 		flex: 1;
-		accent-color: #7c3aed;
+		accent-color: var(--color-brand);
 		cursor: pointer;
 	}
 
 	.slider-value {
 		font-size: 13px;
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 		width: 36px;
 		text-align: right;
 	}
 
 	.test-btn {
 		padding: 9px 18px;
-		background: rgba(255, 255, 255, 0.06);
-		border: 1px solid rgba(255, 255, 255, 0.1);
+		background: var(--color-bg-elevated);
+		border: 1px solid var(--color-border);
 		border-radius: 8px;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		font-size: 13px;
 		font-weight: 600;
 		cursor: pointer;
@@ -200,7 +200,7 @@
 	}
 
 	.test-btn:hover:not(:disabled) {
-		background: rgba(255, 255, 255, 0.1);
+		background: var(--color-bg-elevated);
 	}
 
 	.test-btn:disabled {
@@ -218,13 +218,13 @@
 	.toggle-label {
 		font-size: 14px;
 		font-weight: 600;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		display: block;
 	}
 
 	.toggle-desc {
 		font-size: 12px;
-		color: #6b7280;
+		color: var(--color-text-secondary);
 		margin: 3px 0 0;
 	}
 
@@ -245,7 +245,7 @@
 	.toggle-track {
 		position: absolute;
 		inset: 0;
-		background: #374151;
+		background: var(--color-border);
 		border-radius: 12px;
 		cursor: pointer;
 		transition: background 200ms;

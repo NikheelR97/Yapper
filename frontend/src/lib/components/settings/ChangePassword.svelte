@@ -123,7 +123,7 @@
     .section-title {
         font-size: 20px;
         font-weight: 800;
-        color: #f9fafb;
+        color: var(--color-text-primary);
         margin: 0;
     }
 
@@ -136,7 +136,7 @@
         border: 1px solid rgba(59, 130, 246, 0.2);
         border-radius: 10px;
         font-size: 13px;
-        color: #93c5fd;
+        color: var(--color-info-text);
     }
 
     .password-form {
@@ -154,17 +154,17 @@
     .field-label {
         font-size: 12px;
         font-weight: 700;
-        color: #9ca3af;
+        color: var(--color-text-secondary);
         text-transform: uppercase;
         letter-spacing: 0.05em;
     }
 
     .field-input {
         padding: 10px 14px;
-        background: rgba(255, 255, 255, 0.05);
-        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: var(--color-bg-elevated);
+        border: 1px solid var(--color-border);
         border-radius: 8px;
-        color: #f9fafb;
+        color: var(--color-text-primary);
         font-size: 14px;
         font-family: inherit;
         outline: none;
@@ -172,16 +172,16 @@
     }
 
     .field-input:focus {
-        border-color: #7c3aed;
+        border-color: var(--color-brand);
     }
 
     .field-input.error {
-        border-color: #ef4444;
+        border-color: var(--color-error);
     }
 
     .field-error {
         font-size: 12px;
-        color: #fca5a5;
+        color: var(--color-error-text);
     }
 
     .save-btn {

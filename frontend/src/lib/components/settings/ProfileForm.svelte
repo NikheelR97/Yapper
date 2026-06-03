@@ -335,8 +335,8 @@
 	.preview-card {
 		border-radius: 16px;
 		overflow: hidden;
-		border: 1px solid rgba(255, 255, 255, 0.08);
-		background: #16171e;
+		border: 1px solid var(--color-border-subtle);
+		background: var(--color-bg-surface);
 	}
 
 	.preview-banner {
@@ -356,7 +356,7 @@
 		width: 72px;
 		height: 72px;
 		border-radius: 50%;
-		border: 3px solid #16171e;
+		border: 3px solid var(--color-bg-surface);
 		overflow: hidden;
 		margin: -36px 0 0 20px;
 		position: relative;
@@ -386,18 +386,18 @@
 	.preview-name {
 		font-size: 18px;
 		font-weight: 800;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 	}
 
 	.preview-username {
 		font-size: 13px;
-		color: #6b7280;
+		color: var(--color-text-muted);
 		margin-top: 2px;
 	}
 
 	.preview-bio {
 		font-size: 13px;
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 		margin-top: 8px;
 		font-style: italic;
 	}
@@ -416,9 +416,9 @@
 		justify-content: center;
 		padding: 10px 14px;
 		border-radius: 8px;
-		border: 1px solid rgba(255, 255, 255, 0.12);
-		background: rgba(255, 255, 255, 0.04);
-		color: #d1d5db;
+		border: 1px solid var(--color-border);
+		background: var(--color-bg-elevated);
+		color: var(--color-text-secondary);
 		font-size: 13px;
 		font-weight: 600;
 		cursor: pointer;
@@ -426,7 +426,7 @@
 	}
 
 	.upload-btn-inline:hover {
-		background: rgba(255, 255, 255, 0.08);
+		background: color-mix(in srgb, var(--color-text-primary) 8%, transparent);
 	}
 
 	.upload-btn-inline.disabled {
@@ -450,17 +450,17 @@
 	.field-label {
 		font-size: 12px;
 		font-weight: 700;
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 	}
 
 	.field-input {
 		padding: 10px 14px;
-		background: rgba(255, 255, 255, 0.05);
-		border: 1px solid rgba(255, 255, 255, 0.1);
+		background: var(--color-bg-elevated);
+		border: 1px solid var(--color-border);
 		border-radius: 8px;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		font-size: 14px;
 		font-family: inherit;
 		outline: none;
@@ -468,7 +468,7 @@
 	}
 
 	.field-input:focus {
-		border-color: #7c3aed;
+		border-color: var(--color-brand);
 	}
 
 	.field-input.locked {
@@ -490,15 +490,15 @@
 
 	.field-hint {
 		font-size: 12px;
-		color: #6b7280;
+		color: var(--color-text-secondary);
 	}
 
 	.field-textarea {
 		padding: 10px 14px;
-		background: rgba(255, 255, 255, 0.05);
-		border: 1px solid rgba(255, 255, 255, 0.1);
+		background: var(--color-bg-elevated);
+		border: 1px solid var(--color-border);
 		border-radius: 8px;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		font-size: 14px;
 		font-family: inherit;
 		outline: none;
@@ -508,17 +508,17 @@
 	}
 
 	.field-textarea:focus {
-		border-color: #7c3aed;
+		border-color: var(--color-brand);
 	}
 
 	.char-counter {
 		font-size: 12px;
-		color: #6b7280;
+		color: var(--color-text-muted);
 		text-align: right;
 	}
 
 	.char-counter.near-limit {
-		color: #f59e0b;
+		color: var(--color-warning);
 	}
 
 	/* Theme */
@@ -544,8 +544,8 @@
 	}
 
 	.swatch.active {
-		border-color: white;
-		box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3);
+		border-color: var(--color-text-primary);
+		box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-text-primary) 30%, transparent);
 	}
 
 	.custom-swatch {

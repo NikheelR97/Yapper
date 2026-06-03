@@ -26,7 +26,13 @@
 	--color-success: #22C55E;
 	--color-warning: #F59E0B;
 	--color-error: #EF4444;
+	--color-error-text: #FCA5A5; /* softened red for destructive text/labels on dark surfaces */
 	--color-info: #3B82F6;
+	/* Status text colors — tuned for legibility on each theme's tinted badge backgrounds */
+	--color-info-text: #93C5FD;
+	--color-success-text: #86EFAC;
+	--color-warning-text: #FDE047;
+	--color-brand-text: #A78BFA;
 
 	/* Typography */
 	--font-sans: 'Inter', 'Segoe UI', system-ui, sans-serif;
@@ -46,14 +52,25 @@
 
 /* Light theme override */
 [data-theme='light'] {
-	--color-bg-base: #FFFFFF;
-	--color-bg-surface: #F4F4F5;
-	--color-bg-elevated: #E4E4E7;
+	/* Depth comes from tonal layers, not just borders: cards (surface=white) and
+	   the nav sit raised above a soft-zinc page canvas (base), with inputs/chips
+	   (elevated) a faint step inset from the white cards. Every text-bearing layer
+	   (surface/elevated) is at least as light as before, so contrast can't regress. */
+	--color-bg-base: #F1F1F4;
+	--color-bg-surface: #FFFFFF;
+	--color-bg-elevated: #E8E8EC;
+	--color-bg-nav: #F8F8FA;
+	--color-bg-deeper: #EDEDF0;
 	--color-text-primary: #09090B;
 	--color-text-secondary: #52525B;
-	--color-text-muted: #A1A1AA;
+	--color-text-muted: #6B7280; /* darker than the zinc default so muted body text clears AA on light surfaces */
 	--color-border: #D4D4D8;
 	--color-border-subtle: #E4E4E7;
+	--color-error-text: #B42318; /* red-700: clears ≥4.5:1 on light surfaces AND on the red-tinted destructive buttons */
+	--color-info-text: #1D4ED8;
+	--color-success-text: #166534;
+	--color-warning-text: #854D0E; /* deep amber: clears ≥4.5:1 on amber-tinted pills */
+	--color-brand-text: #5B21B6; /* violet-700 (brand-dark): clears ≥4.5:1 on violet tints incl. the 0.2 badge */
 }
 
 /* ─── Tauri / Desktop vibrancy overrides ─────────────────────────────────────── */

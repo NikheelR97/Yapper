@@ -3,7 +3,7 @@ const steps = [
   {
     num: '01',
     title: 'Create your account',
-    body: 'Sign up with email or continue with Discord or Google. Your identity keys are generated on your device — we never see them.',
+    body: 'Sign up with email or continue with Discord or Google. Your identity keys are generated on your device; we never see them.',
     icon: `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`,
   },
   {
@@ -15,7 +15,7 @@ const steps = [
   {
     num: '03',
     title: 'Start yapping',
-    body: 'Text, voice, video, canvas — all E2EE, all on one screen. Available on web, iOS, Android, and desktop from day one.',
+    body: 'Text, voice, video, canvas: all E2EE, all on one screen. Available now on the web and desktop, with iOS and Android coming soon.',
     icon: `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`,
   },
 ];
@@ -24,8 +24,7 @@ const steps = [
 <section class="section how" id="how-it-works">
   <div class="container">
     <div class="section-header">
-      <div class="badge">How it works</div>
-      <h2 class="section-title">Up and running<br /><span class="gradient-text">in 60 seconds.</span></h2>
+      <h2 class="section-title">Three steps to your first<br /><span class="gradient-text">encrypted message.</span></h2>
     </div>
 
     <div class="steps">
@@ -113,7 +112,8 @@ const steps = [
     max-width: 300px;
   }
 
-  /* Horizontal connector line between steps */
+  /* Horizontal connector spanning the 2rem grid gap, centered on the
+     72px step icon (top: 36px). Only rendered between steps. */
   .connector {
     display: none;
   }
@@ -123,16 +123,10 @@ const steps = [
       display: block;
       position: absolute;
       top: 36px;
-      left: calc(100% + 1rem);
-      width: calc(2rem + 100% - 100%);
+      left: 100%;
+      width: 2rem;
       height: 1px;
       background: linear-gradient(90deg, rgba(167,139,250,0.3), rgba(167,139,250,0.05));
-    }
-    .step:not(:last-child) .connector {
-      right: -1rem;
-      left: auto;
-      width: 2rem;
-      left: 100%;
     }
   }
 </style>

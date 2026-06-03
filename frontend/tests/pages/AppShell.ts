@@ -19,8 +19,9 @@ export class AppShell {
 		this.keyboardShortcutsModal = page.locator(
 			'[role="dialog"]',
 		).filter({ hasText: /Keyboard Shortcut/i });
-		this.exploreLink = page.getByRole('link', { name: 'Explore' });
-		this.dmLink = page.getByRole('link', { name: /Direct Messages|DM/i });
+		const quickNav = page.getByRole('navigation', { name: 'Quick navigation' });
+		this.exploreLink = quickNav.getByRole('link', { name: 'Explore' });
+		this.dmLink = quickNav.getByRole('link', { name: 'Direct Messages' });
 		this.settingsLink = page.getByRole('link', { name: 'Settings' });
 		this.serversNav = page.locator('.server-strip, [data-testid="server-strip"]');
 	}

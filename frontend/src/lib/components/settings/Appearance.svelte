@@ -73,11 +73,11 @@
 			{#each themeOptions as opt}
 				<label class="theme-card" class:active={theme === opt.value}>
 					<input type="radio" name="theme" value={opt.value} bind:group={theme} class="sr-only" />
-					<div class="theme-preview" style="background: {opt.preview}; border: 1px solid rgba(255,255,255,0.1)">
+					<div class="theme-preview" style="background: {opt.preview}; border: 1px solid var(--color-border)">
 						<div class="theme-preview-inner">
-							<div class="mock-bar" style="background: rgba(255,255,255,0.1)"></div>
+							<div class="mock-bar" style="background: var(--color-bg-elevated)"></div>
 							<div class="mock-msg" style="background: rgba(124,58,237,0.4)"></div>
-							<div class="mock-msg short" style="background: rgba(255,255,255,0.07)"></div>
+							<div class="mock-msg short" style="background: var(--color-bg-elevated)"></div>
 						</div>
 					</div>
 					<div class="theme-info">
@@ -150,13 +150,13 @@
 	.section-title {
 		font-size: 20px;
 		font-weight: 800;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		margin: 0;
 	}
 
 	.setting-block {
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(255, 255, 255, 0.07);
+		background: var(--color-bg-elevated);
+		border: 1px solid var(--color-border);
 		border-radius: 12px;
 		padding: 18px;
 		display: flex;
@@ -167,7 +167,7 @@
 	.block-title {
 		font-size: 13px;
 		font-weight: 700;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		margin: 0;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
@@ -175,7 +175,7 @@
 
 	.block-desc {
 		font-size: 13px;
-		color: #6b7280;
+		color: var(--color-text-secondary);
 		margin: 4px 0 0;
 	}
 
@@ -188,14 +188,14 @@
 
 	.theme-card {
 		cursor: pointer;
-		border: 2px solid rgba(255, 255, 255, 0.08);
+		border: 2px solid var(--color-border);
 		border-radius: 10px;
 		overflow: hidden;
 		transition: border-color 150ms;
 	}
 
 	.theme-card.active {
-		border-color: #7c3aed;
+		border-color: var(--color-brand);
 	}
 
 	.theme-preview {
@@ -237,12 +237,12 @@
 	.theme-name {
 		font-size: 13px;
 		font-weight: 700;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 	}
 
 	.theme-desc {
 		font-size: 11px;
-		color: #6b7280;
+		color: var(--color-text-secondary);
 	}
 
 	.sr-only {
@@ -265,7 +265,7 @@
 	}
 
 	.slider-label {
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 		font-weight: 600;
 	}
 
@@ -279,13 +279,13 @@
 
 	.slider {
 		flex: 1;
-		accent-color: #7c3aed;
+		accent-color: var(--color-brand);
 		cursor: pointer;
 	}
 
 	.slider-value {
 		font-size: 13px;
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 		width: 32px;
 		text-align: right;
 	}
@@ -305,7 +305,7 @@
 	}
 
 	.radio-row input[type='radio'] {
-		accent-color: #7c3aed;
+		accent-color: var(--color-brand);
 		width: 16px;
 		height: 16px;
 		cursor: pointer;
@@ -315,12 +315,12 @@
 	.radio-label {
 		font-size: 14px;
 		font-weight: 600;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 	}
 
 	.radio-desc {
 		font-size: 14px;
-		color: #6b7280;
+		color: var(--color-text-secondary);
 	}
 
 	/* Toggle */
@@ -348,7 +348,7 @@
 	.toggle-track {
 		position: absolute;
 		inset: 0;
-		background: #374151;
+		background: var(--color-border);
 		border-radius: 12px;
 		cursor: pointer;
 		transition: background 200ms;

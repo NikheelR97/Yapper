@@ -1233,8 +1233,9 @@
     left: 0;
     right: 0;
     z-index: 100;
-    background: #b45309;
-    color: #fff;
+    background: var(--color-warning);
+    color: #0a0a0f;
+    font-weight: 600;
     text-align: center;
     padding: 4px;
     font-size: 12px;
@@ -1272,7 +1273,7 @@
 
   .secure-store-actions button {
     border: 0;
-    border-radius: 999px;
+    border-radius: var(--radius-full);
     padding: 0.75rem 1.25rem;
     font: inherit;
     cursor: pointer;
@@ -1281,7 +1282,7 @@
   }
 
   .secure-store-actions button.secondary {
-    background: var(--color-bg-muted);
+    background: var(--color-bg-elevated);
     color: var(--color-text-primary);
   }
 </style>

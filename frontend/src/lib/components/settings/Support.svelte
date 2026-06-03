@@ -237,20 +237,20 @@
 	.section-title {
 		font-size: 20px;
 		font-weight: 800;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		margin: 0;
 	}
 
 	.section-desc {
 		font-size: 14px;
-		color: #6b7280;
+		color: var(--color-text-secondary);
 		margin: -16px 0 0;
 		line-height: 1.6;
 	}
 
 	.setting-block {
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(255, 255, 255, 0.07);
+		background: var(--color-bg-elevated);
+		border: 1px solid var(--color-border);
 		border-radius: 12px;
 		padding: 18px;
 		display: flex;
@@ -261,7 +261,7 @@
 	.block-title {
 		font-size: 13px;
 		font-weight: 700;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		margin: 0;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
@@ -269,7 +269,7 @@
 
 	.block-desc {
 		font-size: 13px;
-		color: #6b7280;
+		color: var(--color-text-secondary);
 		margin: -8px 0 0;
 	}
 
@@ -281,11 +281,11 @@
 
 	.char-count {
 		font-size: 12px;
-		color: #6b7280;
+		color: var(--color-text-muted);
 	}
 
 	.char-count.warn {
-		color: #f59e0b;
+		color: var(--color-warning-text);
 	}
 
 	/* Type selector */
@@ -301,8 +301,8 @@
 		align-items: flex-start;
 		gap: 6px;
 		padding: 14px;
-		background: rgba(255, 255, 255, 0.03);
-		border: 1px solid rgba(255, 255, 255, 0.07);
+		background: var(--color-bg-elevated);
+		border: 1px solid var(--color-border);
 		border-radius: 10px;
 		cursor: pointer;
 		text-align: left;
@@ -310,7 +310,7 @@
 	}
 
 	.type-card:hover {
-		background: rgba(255, 255, 255, 0.06);
+		background: var(--color-bg-elevated);
 	}
 
 	.type-card.selected {
@@ -325,16 +325,16 @@
 	.type-label {
 		font-size: 13px;
 		font-weight: 700;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 	}
 
 	.type-card.selected .type-label {
-		color: #a78bfa;
+		color: var(--color-brand-text);
 	}
 
 	.type-desc {
 		font-size: 11px;
-		color: #6b7280;
+		color: var(--color-text-secondary);
 		line-height: 1.4;
 	}
 
@@ -348,9 +348,9 @@
 	.priority-chip {
 		padding: 6px 16px;
 		border-radius: 20px;
-		border: 1px solid rgba(255, 255, 255, 0.1);
-		background: rgba(255, 255, 255, 0.04);
-		color: #9ca3af;
+		border: 1px solid var(--color-border);
+		background: var(--color-bg-elevated);
+		color: var(--color-text-secondary);
 		font-size: 13px;
 		font-weight: 600;
 		cursor: pointer;
@@ -358,19 +358,23 @@
 	}
 
 	.priority-chip.selected {
-		background: color-mix(in srgb, var(--chip-color) 15%, transparent);
-		border-color: color-mix(in srgb, var(--chip-color) 50%, transparent);
-		color: var(--chip-color);
+		background: color-mix(in srgb, var(--chip-color) 18%, transparent);
+		border-color: var(--chip-color);
+		/* Keep the label in the chip's hue but mix toward the theme ink so it
+		   brightens on dark and darkens on light, clearing AA on either tint
+		   (raw --chip-color is too light on the pale light-theme fill). */
+		color: color-mix(in srgb, var(--chip-color) 50%, var(--color-text-primary));
+		font-weight: 700;
 	}
 
 	/* Inputs */
 	.text-input {
 		width: 100%;
 		padding: 10px 14px;
-		background: rgba(255, 255, 255, 0.05);
-		border: 1px solid rgba(255, 255, 255, 0.1);
+		background: var(--color-bg-elevated);
+		border: 1px solid var(--color-border);
 		border-radius: 8px;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		font-size: 14px;
 		font-family: inherit;
 		outline: none;
@@ -379,20 +383,20 @@
 	}
 
 	.text-input:focus {
-		border-color: #7c3aed;
+		border-color: var(--color-brand);
 	}
 
 	.text-input::placeholder {
-		color: #4b5563;
+		color: var(--color-text-muted);
 	}
 
 	.text-area {
 		width: 100%;
 		padding: 10px 14px;
-		background: rgba(255, 255, 255, 0.05);
-		border: 1px solid rgba(255, 255, 255, 0.1);
+		background: var(--color-bg-elevated);
+		border: 1px solid var(--color-border);
 		border-radius: 8px;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		font-size: 14px;
 		font-family: inherit;
 		outline: none;
@@ -404,11 +408,11 @@
 	}
 
 	.text-area:focus {
-		border-color: #7c3aed;
+		border-color: var(--color-brand);
 	}
 
 	.text-area::placeholder {
-		color: #4b5563;
+		color: var(--color-text-muted);
 	}
 
 	/* Submit */
@@ -446,7 +450,7 @@
 	.history-title {
 		font-size: 13px;
 		font-weight: 700;
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 		margin: 0;
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
@@ -454,7 +458,7 @@
 
 	.tickets-empty {
 		font-size: 13px;
-		color: #4b5563;
+		color: var(--color-text-secondary);
 		padding: 12px 0;
 	}
 
@@ -470,8 +474,8 @@
 		justify-content: space-between;
 		gap: 12px;
 		padding: 12px 14px;
-		background: rgba(255, 255, 255, 0.03);
-		border: 1px solid rgba(255, 255, 255, 0.06);
+		background: var(--color-bg-elevated);
+		border: 1px solid var(--color-border);
 		border-radius: 10px;
 	}
 
@@ -494,17 +498,17 @@
 
 	.ticket-type-bug {
 		background: rgba(239, 68, 68, 0.15);
-		color: #fca5a5;
+		color: var(--color-error-text);
 	}
 
 	.ticket-type-idea {
 		background: rgba(234, 179, 8, 0.15);
-		color: #fde047;
+		color: var(--color-warning-text);
 	}
 
 	.ticket-type-improvement {
 		background: rgba(124, 58, 237, 0.15);
-		color: #a78bfa;
+		color: var(--color-brand-text);
 	}
 
 	.ticket-info {
@@ -517,7 +521,7 @@
 	.ticket-subject {
 		font-size: 13px;
 		font-weight: 600;
-		color: #e5e7eb;
+		color: var(--color-text-secondary);
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -525,7 +529,7 @@
 
 	.ticket-meta {
 		font-size: 11px;
-		color: #6b7280;
+		color: var(--color-text-muted);
 		text-transform: capitalize;
 	}
 
@@ -539,22 +543,22 @@
 
 	.ticket-status-open {
 		background: rgba(59, 130, 246, 0.12);
-		color: #93c5fd;
+		color: var(--color-info-text);
 	}
 
 	.ticket-status-in_progress {
 		background: rgba(234, 179, 8, 0.12);
-		color: #fde047;
+		color: var(--color-warning-text);
 	}
 
 	.ticket-status-resolved {
 		background: rgba(34, 197, 94, 0.12);
-		color: #86efac;
+		color: var(--color-success-text);
 	}
 
 	.ticket-status-closed {
-		background: rgba(255, 255, 255, 0.06);
-		color: #6b7280;
+		background: var(--color-bg-elevated);
+		color: var(--color-text-muted);
 	}
 
 	@media (max-width: 600px) {

@@ -31,30 +31,18 @@
 <nav class="topnav" aria-label="Main navigation">
     <!-- Logo -->
     <a class="logo" href="/explore" aria-label="Yapper home">
-        <span class="logo-icon" aria-hidden="true">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-                <circle
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    stroke-width="2"
-                />
-                <circle cx="12" cy="12" r="4" fill="currentColor" />
-            </svg>
-        </span>
+        <span class="logo-sphere" aria-hidden="true"></span>
         <span class="logo-text">Yapper</span>
     </a>
 
     <!-- Nav links -->
-    <div class="nav-links" role="tablist">
+    <div class="nav-links">
         {#each navItems as item}
             <a
                 class="nav-link"
                 class:active={isActive(item.match)}
                 href={item.href}
-                role="tab"
-                aria-selected={isActive(item.match)}
+                aria-current={isActive(item.match) ? "page" : undefined}
             >
                 {item.label}
             </a>
@@ -86,11 +74,12 @@
             </svg>
         </button>
 
-        <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-        <div
+        <button
+            type="button"
             class="user-avatar-btn"
             on:click={handleAvatarClick}
             title={user?.username ?? "Profile"}
+            aria-label={user ? `Open ${user.username}'s profile` : "Open profile"}
         >
             {#if user}
                 <UserAvatar
@@ -102,7 +91,7 @@
             {:else}
                 <div class="avatar-fallback">?</div>
             {/if}
-        </div>
+        </button>
     </div>
 </nav>
 
@@ -113,7 +102,7 @@
         height: 48px;
         padding: 0 0.75rem;
         background: var(--color-bg-nav, #0d0d14);
-        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        border-bottom: 1px solid var(--color-border-subtle);
         flex-shrink: 0;
         gap: 0.5rem;
         z-index: 50;
@@ -133,9 +122,20 @@
         text-decoration: none;
     }
 
-    .logo-icon {
-        color: var(--color-brand);
-        display: flex;
+    .logo-sphere {
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        flex-shrink: 0;
+        background: radial-gradient(
+            circle at 35% 35%,
+            #c4b5fd 0%,
+            #7c3aed 45%,
+            #2e1065 100%
+        );
+        box-shadow:
+            0 0 10px rgba(124, 58, 237, 0.45),
+            inset 0 -3px 6px rgba(46, 16, 101, 0.55);
     }
     .logo-text {
         font-weight: 700;
@@ -165,7 +165,7 @@
         position: relative;
     }
     .nav-link:hover {
-        background: rgba(255, 255, 255, 0.05);
+        background: color-mix(in srgb, var(--color-text-primary) 7%, transparent);
         color: var(--color-text-primary);
         text-decoration: none;
     }
@@ -209,14 +209,22 @@
     }
     .icon-btn:hover {
         color: var(--color-text-primary);
-        background: rgba(255, 255, 255, 0.06);
+        background: color-mix(in srgb, var(--color-text-primary) 8%, transparent);
     }
 
     .user-avatar-btn {
         cursor: pointer;
+        border: 0;
+        padding: 0;
+        background: transparent;
         border-radius: 50%;
         overflow: hidden;
         flex-shrink: 0;
+        display: flex;
+    }
+    .user-avatar-btn:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.4);
     }
 
     .avatar-fallback {

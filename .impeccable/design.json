@@ -1,0 +1,150 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-06-02T00:00:00.000Z",
+  "title": "Design System: Yapper",
+  "extensions": {
+    "colorMeta": {
+      "brand-600": {
+        "role": "primary",
+        "displayName": "Electric Violet",
+        "canonical": "#7c3aed",
+        "tonalRamp": ["#2e1065", "#4c1d95", "#5b21b6", "#6d28d9", "#7c3aed", "#8b5cf6", "#a78bfa", "#c4b5fd"]
+      },
+      "brand-400": {
+        "role": "primary",
+        "displayName": "Violet Light",
+        "canonical": "#a78bfa",
+        "tonalRamp": ["#2e1065", "#4c1d95", "#5b21b6", "#6d28d9", "#7c3aed", "#8b5cf6", "#a78bfa", "#c4b5fd"]
+      },
+      "bg-base": {
+        "role": "neutral",
+        "displayName": "Void",
+        "canonical": "#0f0f0f",
+        "tonalRamp": ["#0d0d14", "#0f0f0f", "#1a1a1a", "#222222", "#2a2a2a", "#3a3a3a", "#52525b", "#a1a1aa"]
+      },
+      "text-primary": {
+        "role": "neutral",
+        "displayName": "Ink White",
+        "canonical": "#fafafa",
+        "tonalRamp": ["#09090b", "#18181b", "#27272a", "#3f3f46", "#52525b", "#a1a1aa", "#d4d4d8", "#fafafa"]
+      },
+      "success": { "role": "secondary", "displayName": "Online Green", "canonical": "#22c55e", "tonalRamp": ["#052e16", "#14532d", "#166534", "#15803d", "#16a34a", "#22c55e", "#4ade80", "#86efac"] },
+      "warning": { "role": "secondary", "displayName": "Away Amber", "canonical": "#f59e0b", "tonalRamp": ["#451a03", "#78350f", "#92400e", "#b45309", "#d97706", "#f59e0b", "#fbbf24", "#fcd34d"] },
+      "error": { "role": "secondary", "displayName": "Danger Red", "canonical": "#ef4444", "tonalRamp": ["#450a0a", "#7f1d1d", "#991b1b", "#b91c1c", "#dc2626", "#ef4444", "#f87171", "#fca5a5"] },
+      "safety-bg": { "role": "tertiary", "displayName": "Safety Green-Black", "canonical": "#1a2e1a", "tonalRamp": ["#0c170c", "#142214", "#1a2e1a", "#234023", "#2d4a2d", "#3a5c3a", "#4d744d", "#6b8f6b"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Top app/page headings (800/36px)." },
+      "headline": { "displayName": "Headline", "purpose": "Page-section titles (800/28px)." },
+      "title": { "displayName": "Title", "purpose": "Card titles and section headers (600/18px)." },
+      "body": { "displayName": "Body", "purpose": "Messages and body copy (400/15px). The workhorse." },
+      "label": { "displayName": "Micro Label", "purpose": "Uppercase badges, timestamps, LIVE/NEW pills (700/11px). ≤4-word labels only." },
+      "mono": { "displayName": "Crypto Mono", "purpose": "Cryptographic material only — safety numbers, fingerprints, invite codes." }
+    },
+    "shadows": [
+      { "name": "card", "value": "0 1px 3px rgba(0,0,0,0.4)", "purpose": "Resting cards and dropdowns." },
+      { "name": "floating", "value": "0 4px 12px rgba(0,0,0,0.5)", "purpose": "Popovers and menus." },
+      { "name": "modal", "value": "0 8px 24px rgba(0,0,0,0.6)", "purpose": "Dialogs and bottom sheets." },
+      { "name": "brand-glow", "value": "0 0 24px rgba(124,58,237,0.4)", "purpose": "The Sphere, hero CTAs, focused premium surfaces. Rationed." }
+    ],
+    "motion": [
+      { "name": "duration-fast", "value": "100ms", "purpose": "Press feedback, transform on :active." },
+      { "name": "duration-base", "value": "200ms", "purpose": "Default state transitions." },
+      { "name": "duration-slow", "value": "350ms", "purpose": "Sidebar slide, larger surface motion." },
+      { "name": "ease-out", "value": "cubic-bezier(0.0, 0, 0.2, 1)", "purpose": "Default easing for entering/state transitions." },
+      { "name": "ease-spring", "value": "cubic-bezier(0.34, 1.56, 0.64, 1)", "purpose": "Bouncy lift for buttons and modal open." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "xl", "value": "1280px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The signature pill CTA. Used for the single primary action on any surface.",
+      "html": "<button class=\"ds-btn-primary\">Start yapping</button>",
+      "css": ".ds-btn-primary { background: var(--color-brand, #7c3aed); color: #fff; font-weight: 700; font-size: 15px; padding: 10px 24px; border: none; border-radius: 9999px; cursor: pointer; transition: background 150ms cubic-bezier(0,0,0.2,1), transform 100ms cubic-bezier(0.34,1.56,0.64,1); } .ds-btn-primary:hover { background: #6d28d9; transform: translateY(-1px); } .ds-btn-primary:active { transform: translateY(0); } .ds-btn-primary:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(124,58,237,0.4); }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Outlined pill for secondary actions; never competes with the primary.",
+      "html": "<button class=\"ds-btn-secondary\">Maybe later</button>",
+      "css": ".ds-btn-secondary { background: transparent; color: #fafafa; font-weight: 600; font-size: 15px; padding: 10px 24px; border: 1px solid rgba(255,255,255,0.15); border-radius: 9999px; cursor: pointer; transition: background 150ms cubic-bezier(0,0,0.2,1); } .ds-btn-secondary:hover { background: #222222; } .ds-btn-secondary:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(124,58,237,0.4); }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Default field. Dark elevated fill, hairline border, violet focus ring.",
+      "html": "<input class=\"ds-input\" type=\"text\" placeholder=\"Search servers and people\" />",
+      "css": ".ds-input { background: #222222; color: #fafafa; font-size: 15px; padding: 12px 16px; width: 100%; border: 1px solid #2a2a2a; border-radius: 10px; transition: border-color 150ms cubic-bezier(0,0,0.2,1), box-shadow 150ms cubic-bezier(0,0,0.2,1); } .ds-input::placeholder { color: #a1a1aa; } .ds-input:focus { outline: none; border-color: #7c3aed; box-shadow: 0 0 0 3px rgba(124,58,237,0.15); }"
+    },
+    {
+      "name": "Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Filter/tag pill that lights up violet on hover rather than changing shape.",
+      "html": "<button class=\"ds-chip\">Gaming</button>",
+      "css": ".ds-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; background: #222222; color: #a1a1aa; font-size: 13px; border: 1px solid #2a2a2a; border-radius: 9999px; white-space: nowrap; cursor: pointer; transition: color 150ms ease, border-color 150ms ease, background 150ms ease; } .ds-chip:hover { background: rgba(255,255,255,0.07); border-color: rgba(124,58,237,0.5); color: #a78bfa; }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Resting surface one step above the room, hairline border, dark drop shadow.",
+      "html": "<div class=\"ds-card\"><h3 class=\"ds-card-title\">Late Night Yaps</h3><p class=\"ds-card-body\">2,481 members · 312 online</p></div>",
+      "css": ".ds-card { background: #1a1a1a; color: #fafafa; border: 1px solid #2a2a2a; border-radius: 16px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.4); transition: border-color 150ms ease; } .ds-card:hover { border-color: rgba(255,255,255,0.15); } .ds-card-title { font-size: 18px; font-weight: 600; margin: 0 0 4px; } .ds-card-body { font-size: 13px; color: #a1a1aa; margin: 0; }"
+    },
+    {
+      "name": "The Sphere",
+      "kind": "custom",
+      "refersTo": "sphere",
+      "description": "Yapper's brand mark — the violet 3D sphere, source of the room's glow. App icon, onboarding hero, marketing hero.",
+      "html": "<div class=\"ds-sphere\"></div>",
+      "css": ".ds-sphere { width: 96px; height: 96px; border-radius: 50%; position: relative; background: radial-gradient(circle at 35% 35%, #c4b5fd 0%, #7c3aed 45%, #2e1065 100%); box-shadow: 0 0 40px rgba(124,58,237,0.4), inset 0 -20px 40px rgba(46,16,101,0.5); } .ds-sphere::before { content: ''; position: absolute; top: 15%; left: 20%; width: 35%; height: 35%; border-radius: 50%; background: radial-gradient(circle, rgba(255,255,255,0.25) 0%, transparent 100%); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Lit Room After Dark",
+    "overview": "Yapper is a dark room that glows with life. The darkness is the felt expression of privacy — a calm, unlit space where nothing is on display by default. Into that quiet dark comes the glow: the violet Sphere, presence dots, typing indicators, live badges, and the warm light of an active conversation. The dark is the privacy; the people are the light. Personality is playful, private, and modern; energy lives in motion and the brand violet, never in clutter. Surfaces stack in near-black tonal layers so dense conversations stay legible for hours, while a rationed violet glow marks the few things that deserve attention. On desktop, Tauri vibrancy turns backgrounds translucent so the room feels physically real.",
+    "keyCharacteristics": [
+      "Near-black tonal layering carries depth; violet glow is rationed, never ambient.",
+      "One brand hue (violet #7C3AED) does all the identity work.",
+      "Fully-rounded, springy, tactile controls — lively, never stiff.",
+      "Inter for everything, weight contrast for hierarchy; JetBrains Mono for code/keys.",
+      "Real-time signals (presence, typing, live) are first-class visual citizens."
+    ],
+    "rules": [
+      { "name": "The One Glow Rule", "body": "Violet is the only brand color and earns its presence by scarcity — primary CTAs, the active element, and live/real-time signals. If a screen has more than a few violet elements competing, the glow has become wallpaper.", "section": "colors" },
+      { "name": "The Light-Theme Parity Rule", "body": "A [data-theme='light'] mode exists. Any new surface must define both themes; a component that only works in the dark room is unfinished.", "section": "colors" },
+      { "name": "The Mono-Means-Crypto Rule", "body": "JetBrains Mono signals cryptographic material — safety numbers, device fingerprints, invite codes. Don't use it decoratively; its rarity makes it legible as a signal.", "section": "typography" },
+      { "name": "The No-Shout Rule", "body": "No all-caps body copy, ever. Uppercase stops at the 11px micro-label tier. Headline tracking never goes below -0.02em.", "section": "typography" },
+      { "name": "The Glow-Is-Earned Rule", "body": "Violet glow is not ambient. It marks the Sphere, the single primary action, or an actively live element. A screen where everything glows reads as the crypto aesthetic we reject.", "section": "elevation" },
+      { "name": "The Glass-Is-Surface-Glow Rule", "body": "Backdrop-blur glass belongs to floating panels and Tauri vibrancy where real depth exists behind it. Don't scatter glass cards over flat backgrounds for decoration.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do build depth from tonal near-black layers (#0F0F0F → #1A1A1A → #222222) first; reach for shadow and glow only after.",
+      "Do keep violet rare and intentional — primary action, active state, and live/real-time signals.",
+      "Do use fully-rounded pill buttons and springy hover lifts; controls should feel tactile and alive.",
+      "Do define both dark (default) and [data-theme='light'] for every new surface, and respect Tauri vibrancy translucency.",
+      "Do reserve JetBrains Mono for actual cryptographic material (safety numbers, fingerprints, invite codes).",
+      "Do verify body text hits ≥4.5:1 on its surface step, and honor prefers-reduced-motion with a crossfade/instant alternative for every animation."
+    ],
+    "donts": [
+      "Don't make it a generic Discord clone — no Discord blurple, no copied chrome.",
+      "Don't drift into a crypto/web3 aesthetic — no neon-on-black, no lock icons or circuit-board gradients performing security.",
+      "Don't make it childish — no mascots or primary-color playground styling on parental/safety surfaces.",
+      "Don't let violet glow become ambient wallpaper on every card; if everything glows, nothing does.",
+      "Don't use all-caps for anything longer than a 4-word label, and never tighten heading tracking past -0.02em.",
+      "Don't scatter glassmorphism over flat backgrounds for decoration; glass is for floating panels and real OS vibrancy only.",
+      "Don't use text-muted (#52525B) for body copy — it's for timestamps and inactive states; it fails contrast as body text."
+    ]
+  }
+}

@@ -12,6 +12,7 @@
     import type { Channel } from "$stores/servers.js";
     import { conversationsStore } from "$stores/conversations.js";
     import UserAvatar from "$lib/components/UserAvatar.svelte";
+    import Skeleton from "$lib/components/Skeleton.svelte";
     import { onMount, tick } from "svelte";
 
     $: path = $page.url.pathname;
@@ -211,7 +212,7 @@
                     >{$serversStore.servers.find((s) => s.id === serverId)
                         ?.name ?? "…"}</span
                 >
-                <div class="header-actions" style="display: flex; gap: 4px;">
+                <div class="header-actions">
                     {#if $serversStore.servers.find((s) => s.id === serverId)}
                         <button
                             class="icon-sm"
@@ -279,9 +280,25 @@
             {/if}
 
             {#if loadingChannels}
-                <div class="panel-empty">Loading…</div>
+                <div class="channel-skeletons" aria-hidden="true">
+                    {#each Array(5) as _, i}
+                        <div class="channel-skeleton-row">
+                            <Skeleton width="0.75rem" height="0.75rem" />
+                            <Skeleton width={i % 2 === 0 ? "70%" : "50%"} height="0.75rem" />
+                        </div>
+                    {/each}
+                </div>
             {:else if channels.length === 0}
-                <div class="panel-empty">No channels yet.</div>
+                <div class="panel-empty empty-channels">
+                    <p>No channels here yet.</p>
+                    <button
+                        type="button"
+                        class="empty-cta"
+                        on:click={() => goto(`/servers/${serverId}/settings`)}
+                    >
+                        Create a channel
+                    </button>
+                </div>
             {:else}
                 <ul class="channel-list" role="list">
                     {#each channels as ch (ch.id)}
@@ -306,7 +323,8 @@
             {/if}
 
             <!-- Join by invite -->
-            <div class="join-section">
+            <details class="join-section">
+                <summary class="join-summary">Join with an invite code</summary>
                 <form
                     on:submit|preventDefault={handleJoinByInvite}
                     class="join-form"
@@ -327,7 +345,7 @@
                 {#if joinError}
                     <p class="join-error">{joinError}</p>
                 {/if}
-            </div>
+            </details>
         </div>
     {:else if mode === "dm"}
         <!-- ═══ DM MODE ═══ -->
@@ -338,7 +356,14 @@
             </header>
 
             {#if $conversationsStore.loading}
-                <div class="panel-empty">Loading…</div>
+                <div class="conv-skeletons" aria-hidden="true">
+                    {#each Array(6) as _, i}
+                        <div class="conv-skeleton-row">
+                            <Skeleton width="32px" height="32px" circle />
+                            <Skeleton width={i % 2 === 0 ? "60%" : "45%"} height="0.8125rem" />
+                        </div>
+                    {/each}
+                </div>
             {:else if $conversationsStore.conversations.length === 0}
                 <div class="panel-empty empty-dm">
                     <p>No conversations yet.</p>
@@ -593,6 +618,83 @@
         color: var(--color-text-muted);
     }
 
+    .header-actions {
+        display: flex;
+        gap: 4px;
+    }
+
+    .empty-channels {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.625rem;
+    }
+    .empty-channels p {
+        margin: 0;
+    }
+    .empty-cta {
+        border: 1px solid var(--color-border);
+        background: var(--color-bg-elevated);
+        color: var(--color-text-primary);
+        font: inherit;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        padding: 0.4rem 0.875rem;
+        border-radius: var(--radius-full);
+        cursor: pointer;
+        transition:
+            background var(--transition-fast),
+            border-color var(--transition-fast);
+    }
+    .empty-cta:hover {
+        background: var(--color-brand);
+        border-color: transparent;
+        color: #fff;
+    }
+    .empty-cta:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.4);
+    }
+
+    .channel-skeletons {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        padding: 0.5rem 0.625rem;
+    }
+    .channel-skeleton-row {
+        display: flex;
+        align-items: center;
+        gap: 0.375rem;
+    }
+
+    .conv-skeletons {
+        display: flex;
+        flex-direction: column;
+        gap: 0.625rem;
+        padding: 0.625rem;
+    }
+    .conv-skeleton-row {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .join-summary {
+        list-style: none;
+        padding: 0.25rem 0;
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: var(--color-text-secondary);
+        cursor: pointer;
+    }
+    .join-summary::-webkit-details-marker {
+        display: none;
+    }
+    .join-summary:hover {
+        color: var(--color-text-primary);
+    }
+
     .icon-sm {
         background: none;
         border: none;
@@ -746,7 +848,7 @@
         border-radius: 0.25rem;
         margin: 0 0.3125rem;
         font-size: 0.8125rem;
-        color: var(--color-text-muted);
+        color: var(--color-text-secondary);
         cursor: pointer;
         text-align: left;
         white-space: nowrap;
@@ -766,7 +868,7 @@
         font-weight: 600;
     }
     .channel-hash {
-        color: var(--color-text-muted);
+        color: var(--color-text-secondary);
         font-size: 0.875rem;
         flex-shrink: 0;
     }
@@ -836,7 +938,7 @@
     }
     .hint {
         font-size: 0.75rem;
-        color: var(--color-text-muted);
+        color: var(--color-text-secondary);
         margin-top: 0.25rem;
     }
 
@@ -862,11 +964,13 @@
         transition: background 0.1s;
     }
     .conv-btn:hover {
-        background: rgba(255, 255, 255, 0.04);
+        background: color-mix(in srgb, var(--color-text-primary) 6%, transparent);
     }
     .conv-btn.active {
         background: rgba(124, 58, 237, 0.12);
-        border-left: 2px solid var(--color-brand);
+    }
+    .conv-btn.active .conv-name {
+        color: var(--color-brand-text);
     }
 
     .conv-avatar {
@@ -926,7 +1030,7 @@
             color 0.1s;
     }
     .quick-link:hover {
-        background: rgba(255, 255, 255, 0.04);
+        background: color-mix(in srgb, var(--color-text-primary) 6%, transparent);
         color: var(--color-text-primary);
         text-decoration: none;
     }
@@ -1005,9 +1109,9 @@
         margin: 0.5rem 0.75rem;
         padding: 0.5rem;
         background: rgba(124, 58, 237, 0.1);
-        border: 1px dashed rgba(124, 58, 237, 0.3);
+        border: 1px solid rgba(124, 58, 237, 0.3);
         border-radius: var(--radius-md);
-        color: var(--color-brand-light);
+        color: var(--color-brand-text);
         font-size: 0.75rem;
         font-weight: 600;
         cursor: pointer;
