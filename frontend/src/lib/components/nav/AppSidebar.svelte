@@ -970,7 +970,7 @@
         background: rgba(124, 58, 237, 0.12);
     }
     .conv-btn.active .conv-name {
-        color: var(--color-brand-light);
+        color: var(--color-brand-text);
     }
 
     .conv-avatar {
@@ -1111,7 +1111,7 @@
         background: rgba(124, 58, 237, 0.1);
         border: 1px dashed rgba(124, 58, 237, 0.3);
         border-radius: var(--radius-md);
-        color: var(--color-brand-light);
+        color: var(--color-brand-text);
         font-size: 0.75rem;
         font-weight: 600;
         cursor: pointer;

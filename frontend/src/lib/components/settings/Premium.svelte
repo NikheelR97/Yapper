@@ -515,7 +515,7 @@
 	}
 
 	.plan-name.free {
-		color: var(--color-text-muted);
+		color: var(--color-text-secondary);
 	}
 
 	.plan-name.pro {
@@ -523,7 +523,7 @@
 	}
 
 	.x-mark {
-		color: var(--color-text-muted);
+		color: var(--color-text-secondary);
 		font-size: 14px;
 	}
 

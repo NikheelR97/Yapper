@@ -62,11 +62,11 @@
 	--color-text-muted: #6B7280; /* darker than the zinc default so muted body text clears AA on light surfaces */
 	--color-border: #D4D4D8;
 	--color-border-subtle: #E4E4E7;
-	--color-error-text: #DC2626; /* darker red keeps ≥4.5:1 on the light surface */
+	--color-error-text: #B42318; /* red-700: clears ≥4.5:1 on light surfaces AND on the red-tinted destructive buttons */
 	--color-info-text: #1D4ED8;
 	--color-success-text: #166534;
-	--color-warning-text: #A16207;
-	--color-brand-text: #6D28D9;
+	--color-warning-text: #854D0E; /* deep amber: clears ≥4.5:1 on amber-tinted pills */
+	--color-brand-text: #5B21B6; /* violet-700 (brand-dark): clears ≥4.5:1 on violet tints incl. the 0.2 badge */
 }
 
 /* ─── Tauri / Desktop vibrancy overrides ─────────────────────────────────────── */

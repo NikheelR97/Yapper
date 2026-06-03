@@ -203,7 +203,7 @@
 	.connect-btn {
 		background: none;
 		border: none;
-		color: #7c3aed;
+		color: var(--color-brand-text);
 		font-size: 13px;
 		font-weight: 600;
 		cursor: pointer;

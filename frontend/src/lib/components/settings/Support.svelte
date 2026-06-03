@@ -243,7 +243,7 @@
 
 	.section-desc {
 		font-size: 14px;
-		color: var(--color-text-muted);
+		color: var(--color-text-secondary);
 		margin: -16px 0 0;
 		line-height: 1.6;
 	}
@@ -269,7 +269,7 @@
 
 	.block-desc {
 		font-size: 13px;
-		color: var(--color-text-muted);
+		color: var(--color-text-secondary);
 		margin: -8px 0 0;
 	}
 
@@ -334,7 +334,7 @@
 
 	.type-desc {
 		font-size: 11px;
-		color: var(--color-text-muted);
+		color: var(--color-text-secondary);
 		line-height: 1.4;
 	}
 
@@ -360,7 +360,9 @@
 	.priority-chip.selected {
 		background: color-mix(in srgb, var(--chip-color) 15%, transparent);
 		border-color: color-mix(in srgb, var(--chip-color) 50%, transparent);
-		color: var(--chip-color);
+		/* Selection is carried by the tinted fill + border; keep the label on a
+		   theme text token so it clears AA (raw --chip-color fails on light). */
+		color: var(--color-text-primary);
 	}
 
 	/* Inputs */

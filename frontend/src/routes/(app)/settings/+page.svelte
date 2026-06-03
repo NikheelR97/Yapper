@@ -554,7 +554,7 @@
 	}
 
 	.nav-item.active .nav-label {
-		color: var(--color-brand-light);
+		color: var(--color-brand-text);
 		font-weight: 600;
 	}
 
@@ -564,7 +564,7 @@
 		padding: 2px 7px;
 		border-radius: 20px;
 		background: rgba(124, 58, 237, 0.2);
-		color: var(--color-brand-light);
+		color: var(--color-brand-text);
 	}
 
 	/* Main content */
@@ -643,7 +643,7 @@
 		font-size: 10px;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
-		color: var(--color-brand-light);
+		color: var(--color-brand-text);
 	}
 
 	.device-meta {
@@ -706,7 +706,7 @@
 	}
 
 	.danger-title {
-		color: var(--color-error);
+		color: var(--color-error-text);
 	}
 
 	.danger-btn {
@@ -717,7 +717,7 @@
 		background: rgba(239, 68, 68, 0.06);
 		border: 1px solid rgba(239, 68, 68, 0.2);
 		border-radius: var(--radius-full);
-		color: var(--color-error);
+		color: var(--color-error-text);
 		font-size: 13px;
 		font-weight: 500;
 		cursor: pointer;
@@ -738,7 +738,7 @@
 		background: rgba(239, 68, 68, 0.1);
 		border: 1px solid rgba(239, 68, 68, 0.3);
 		border-radius: var(--radius-full);
-		color: var(--color-error);
+		color: var(--color-error-text);
 		font-size: 13px;
 		font-weight: 600;
 		cursor: pointer;
@@ -763,7 +763,7 @@
 
 	.delete-warn {
 		font-size: 12px;
-		color: var(--color-error);
+		color: var(--color-error-text);
 		margin: 0;
 	}
 
