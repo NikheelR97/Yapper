@@ -964,7 +964,7 @@
         transition: background 0.1s;
     }
     .conv-btn:hover {
-        background: rgba(255, 255, 255, 0.04);
+        background: color-mix(in srgb, var(--color-text-primary) 6%, transparent);
     }
     .conv-btn.active {
         background: rgba(124, 58, 237, 0.12);
@@ -1030,7 +1030,7 @@
             color 0.1s;
     }
     .quick-link:hover {
-        background: rgba(255, 255, 255, 0.04);
+        background: color-mix(in srgb, var(--color-text-primary) 6%, transparent);
         color: var(--color-text-primary);
         text-decoration: none;
     }

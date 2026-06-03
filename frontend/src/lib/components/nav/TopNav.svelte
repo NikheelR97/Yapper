@@ -102,7 +102,7 @@
         height: 48px;
         padding: 0 0.75rem;
         background: var(--color-bg-nav, #0d0d14);
-        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        border-bottom: 1px solid var(--color-border-subtle);
         flex-shrink: 0;
         gap: 0.5rem;
         z-index: 50;
@@ -165,7 +165,7 @@
         position: relative;
     }
     .nav-link:hover {
-        background: rgba(255, 255, 255, 0.05);
+        background: color-mix(in srgb, var(--color-text-primary) 7%, transparent);
         color: var(--color-text-primary);
         text-decoration: none;
     }
@@ -209,7 +209,7 @@
     }
     .icon-btn:hover {
         color: var(--color-text-primary);
-        background: rgba(255, 255, 255, 0.06);
+        background: color-mix(in srgb, var(--color-text-primary) 8%, transparent);
     }
 
     .user-avatar-btn {
