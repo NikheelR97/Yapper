@@ -197,13 +197,13 @@
 	.section-title {
 		font-size: 20px;
 		font-weight: 800;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		margin: 0;
 	}
 
 	.setting-block {
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(255, 255, 255, 0.07);
+		background: var(--color-bg-elevated);
+		border: 1px solid var(--color-border);
 		border-radius: 12px;
 		padding: 18px;
 		display: flex;
@@ -214,7 +214,7 @@
 	.block-title {
 		font-size: 13px;
 		font-weight: 700;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		margin: 0;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
@@ -222,7 +222,7 @@
 
 	.block-desc {
 		font-size: 13px;
-		color: #6b7280;
+		color: var(--color-text-muted);
 		margin: 4px 0 0;
 	}
 
@@ -242,13 +242,13 @@
 	.toggle-label {
 		font-size: 14px;
 		font-weight: 600;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		display: block;
 	}
 
 	.toggle-desc {
 		font-size: 12px;
-		color: #6b7280;
+		color: var(--color-text-muted);
 		margin: 3px 0 0;
 	}
 
@@ -269,7 +269,7 @@
 	.toggle-track {
 		position: absolute;
 		inset: 0;
-		background: #374151;
+		background: var(--color-border);
 		border-radius: 12px;
 		cursor: pointer;
 		transition: background 200ms;
@@ -311,16 +311,16 @@
 	.time-label {
 		font-size: 11px;
 		font-weight: 700;
-		color: #6b7280;
+		color: var(--color-text-muted);
 		text-transform: uppercase;
 	}
 
 	.time-input {
 		padding: 8px 12px;
-		background: rgba(255, 255, 255, 0.05);
-		border: 1px solid rgba(255, 255, 255, 0.1);
+		background: var(--color-bg-elevated);
+		border: 1px solid var(--color-border);
 		border-radius: 8px;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		font-size: 14px;
 		font-family: inherit;
 		outline: none;
@@ -328,11 +328,11 @@
 	}
 
 	.time-input:focus {
-		border-color: #7c3aed;
+		border-color: var(--color-brand);
 	}
 
 	.time-sep {
-		color: #6b7280;
+		color: var(--color-text-muted);
 		font-size: 16px;
 		margin-top: 20px;
 	}

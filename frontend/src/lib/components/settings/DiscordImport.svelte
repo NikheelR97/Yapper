@@ -125,13 +125,13 @@
 	.section-title {
 		font-size: 20px;
 		font-weight: 800;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		margin: 0;
 	}
 
 	.accounts-card {
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(255, 255, 255, 0.07);
+		background: var(--color-bg-elevated);
+		border: 1px solid var(--color-border);
 		border-radius: 14px;
 		overflow: hidden;
 	}
@@ -170,12 +170,12 @@
 	.provider-name {
 		font-size: 14px;
 		font-weight: 600;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 	}
 
 	.provider-username {
 		font-size: 12px;
-		color: #6b7280;
+		color: var(--color-text-muted);
 	}
 
 	.provider-right {
@@ -187,14 +187,14 @@
 
 	.connected-label {
 		font-size: 13px;
-		color: #22c55e;
+		color: var(--color-success-text);
 		font-weight: 600;
 	}
 
 	.unlink-btn {
 		background: none;
 		border: none;
-		color: #ef4444;
+		color: var(--color-error-text);
 		font-size: 13px;
 		cursor: pointer;
 		padding: 4px 8px;
@@ -212,7 +212,7 @@
 	}
 
 	.connect-btn:hover {
-		color: #a78bfa;
+		color: var(--color-brand-text);
 	}
 
 	.unlink-confirm {
@@ -220,13 +220,13 @@
 		align-items: center;
 		gap: 8px;
 		font-size: 12px;
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 	}
 
 	.confirm-btn {
 		background: rgba(239, 68, 68, 0.1);
 		border: 1px solid rgba(239, 68, 68, 0.3);
-		color: #ef4444;
+		color: var(--color-error-text);
 		font-size: 12px;
 		font-weight: 600;
 		padding: 4px 10px;
@@ -237,7 +237,7 @@
 	.cancel-btn {
 		background: none;
 		border: none;
-		color: #6b7280;
+		color: var(--color-text-muted);
 		font-size: 12px;
 		cursor: pointer;
 		padding: 4px;
@@ -247,8 +247,8 @@
 		display: flex;
 		gap: 10px;
 		padding: 14px;
-		background: rgba(255, 255, 255, 0.03);
-		border: 1px solid rgba(255, 255, 255, 0.06);
+		background: var(--color-bg-elevated);
+		border: 1px solid var(--color-border);
 		border-radius: 10px;
 	}
 
@@ -259,7 +259,7 @@
 
 	.import-note p {
 		font-size: 13px;
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 		margin: 0;
 		line-height: 1.5;
 	}

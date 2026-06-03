@@ -28,6 +28,11 @@
 	--color-error: #EF4444;
 	--color-error-text: #FCA5A5; /* softened red for destructive text/labels on dark surfaces */
 	--color-info: #3B82F6;
+	/* Status text colors — tuned for legibility on each theme's tinted badge backgrounds */
+	--color-info-text: #93C5FD;
+	--color-success-text: #86EFAC;
+	--color-warning-text: #FDE047;
+	--color-brand-text: #A78BFA;
 
 	/* Typography */
 	--font-sans: 'Inter', 'Segoe UI', system-ui, sans-serif;
@@ -54,10 +59,14 @@
 	--color-bg-deeper: #EDEDF0;
 	--color-text-primary: #09090B;
 	--color-text-secondary: #52525B;
-	--color-text-muted: #A1A1AA;
+	--color-text-muted: #6B7280; /* darker than the zinc default so muted body text clears AA on light surfaces */
 	--color-border: #D4D4D8;
 	--color-border-subtle: #E4E4E7;
 	--color-error-text: #DC2626; /* darker red keeps ≥4.5:1 on the light surface */
+	--color-info-text: #1D4ED8;
+	--color-success-text: #166534;
+	--color-warning-text: #A16207;
+	--color-brand-text: #6D28D9;
 }
 
 /* ─── Tauri / Desktop vibrancy overrides ─────────────────────────────────────── */

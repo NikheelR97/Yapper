@@ -123,13 +123,13 @@
 	.section-title {
 		font-size: 20px;
 		font-weight: 800;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		margin: 0;
 	}
 
 	.dev-card {
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(255, 255, 255, 0.07);
+		background: var(--color-bg-elevated);
+		border: 1px solid var(--color-border);
 		border-radius: 14px;
 		padding: 24px;
 		display: flex;
@@ -140,13 +140,13 @@
 	.card-title {
 		font-size: 16px;
 		font-weight: 700;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		margin: 0;
 	}
 
 	.card-desc {
 		font-size: 14px;
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 		margin: 0;
 	}
 
@@ -165,17 +165,17 @@
 	.field-label {
 		font-size: 11px;
 		font-weight: 700;
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
 	}
 
 	.field-input {
 		padding: 10px 14px;
-		background: rgba(255, 255, 255, 0.05);
-		border: 1px solid rgba(255, 255, 255, 0.1);
+		background: var(--color-bg-elevated);
+		border: 1px solid var(--color-border);
 		border-radius: 8px;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		font-size: 14px;
 		font-family: inherit;
 		outline: none;
@@ -183,7 +183,7 @@
 	}
 
 	.field-input:focus {
-		border-color: #7c3aed;
+		border-color: var(--color-brand);
 	}
 
 	.warning-pill {
@@ -195,14 +195,14 @@
 		border: 1px solid rgba(245, 158, 11, 0.25);
 		border-radius: 20px;
 		font-size: 12px;
-		color: #f59e0b;
+		color: var(--color-warning-text);
 		align-self: flex-start;
 	}
 
 	.warning-pill.danger {
 		background: rgba(239, 68, 68, 0.1);
 		border-color: rgba(239, 68, 68, 0.25);
-		color: #ef4444;
+		color: var(--color-error-text);
 	}
 
 	.import-btn {
@@ -241,13 +241,13 @@
 	.success-title {
 		font-size: 18px;
 		font-weight: 700;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		margin: 0;
 	}
 
 	.bot-name {
 		font-size: 14px;
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 		margin: 0;
 	}
 
@@ -260,7 +260,7 @@
 	.token-label {
 		font-size: 11px;
 		font-weight: 700;
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
 	}
@@ -270,8 +270,8 @@
 		align-items: center;
 		gap: 8px;
 		padding: 12px 14px;
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(255, 255, 255, 0.1);
+		background: var(--color-bg-elevated);
+		border: 1px solid var(--color-border);
 		border-left: 3px solid #f59e0b;
 		border-radius: 8px;
 	}
@@ -280,7 +280,7 @@
 		flex: 1;
 		font-family: 'Courier New', monospace;
 		font-size: 13px;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		word-break: break-all;
 	}
 
@@ -289,7 +289,7 @@
 		background: rgba(124, 58, 237, 0.15);
 		border: 1px solid rgba(124, 58, 237, 0.3);
 		border-radius: 6px;
-		color: #a78bfa;
+		color: var(--color-brand-text);
 		font-size: 13px;
 		font-weight: 600;
 		cursor: pointer;
@@ -311,7 +311,7 @@
 	.guide-title {
 		font-size: 11px;
 		font-weight: 700;
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
 	}
@@ -326,7 +326,7 @@
 	.guide-table th {
 		text-align: left;
 		padding: 6px 8px;
-		color: #6b7280;
+		color: var(--color-text-muted);
 		font-size: 11px;
 		text-transform: uppercase;
 		letter-spacing: 0.04em;
@@ -335,12 +335,12 @@
 
 	.guide-table td {
 		padding: 8px;
-		color: #d1d5db;
+		color: var(--color-text-secondary);
 		border-bottom: 1px solid rgba(255, 255, 255, 0.04);
 	}
 
 	.guide-table .arrow {
-		color: #6b7280;
+		color: var(--color-text-muted);
 		text-align: center;
 		width: 24px;
 	}

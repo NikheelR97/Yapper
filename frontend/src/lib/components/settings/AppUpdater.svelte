@@ -181,9 +181,9 @@
 		margin: 0;
 	}
 
-	.status.up-to-date { color: #22c55e; }
+	.status.up-to-date { color: var(--color-success-text); }
 	.status.success    { color: var(--color-text-primary); }
-	.status.error      { color: #fca5a5; }
+	.status.error      { color: var(--color-error-text); }
 
 	.update-ready {
 		display: flex;
@@ -196,7 +196,7 @@
 		display: inline-block;
 		width: 14px;
 		height: 14px;
-		border: 2px solid rgba(255, 255, 255, 0.4);
+		border: 2px solid var(--color-border);
 		border-top-color: white;
 		border-radius: 50%;
 		animation: spin 0.7s linear infinite;
