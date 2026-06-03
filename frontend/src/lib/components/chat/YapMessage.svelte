@@ -117,7 +117,7 @@ requests and CPU for messages that scroll past without being opened. */
 
     <div class="yap-track">
         <div class="yap-bar">
-            <div class="yap-fill" style="width: {progress()}%"></div>
+            <div class="yap-fill" style="transform: scaleX({progress() / 100})"></div>
         </div>
         <div class="yap-times">
             <span>{fmt(currentTime)}</span>
@@ -181,10 +181,13 @@ requests and CPU for messages that scroll past without being opened. */
     }
 
     .yap-fill {
+        width: 100%;
         height: 100%;
-        background: #a78bfa;
+        background: var(--color-brand-light, #a78bfa);
         border-radius: 2px;
-        transition: width 0.1s linear;
+        transform-origin: left;
+        /* Animate transform, not width, to keep playback scrubbing off the layout path. */
+        transition: transform 0.1s linear;
     }
 
     .yap-times {

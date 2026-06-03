@@ -214,7 +214,7 @@
             <div class="clip-progress-bar">
                 <div
                     class="clip-progress-fill"
-                    style="width: {uploadProgress}%"
+                    style="transform: scaleX({uploadProgress / 100})"
                 ></div>
             </div>
         {/if}
@@ -304,10 +304,13 @@
     }
 
     .clip-progress-fill {
+        width: 100%;
         height: 100%;
-        background: #a78bfa;
+        background: var(--color-brand-light, #a78bfa);
         border-radius: 2px;
-        transition: width 0.2s ease;
+        transform-origin: left;
+        /* Animate transform, not width, to keep upload progress off the layout path. */
+        transition: transform 0.2s ease;
     }
 
     .clip-error {

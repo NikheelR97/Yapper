@@ -76,7 +76,7 @@
 	.section-title {
 		font-size: 14px;
 		font-weight: 700;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		margin: 0;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
@@ -116,7 +116,7 @@
 	.line {
 		flex: 1;
 		width: 2px;
-		background: rgba(255, 255, 255, 0.07);
+		background: var(--color-border);
 		margin-top: 4px;
 	}
 
@@ -135,18 +135,18 @@
 
 	.event-desc {
 		font-size: 13px;
-		color: #d1d5db;
+		color: var(--color-text-secondary);
 		margin: 4px 0;
 		line-height: 1.4;
 	}
 
 	.event-time {
 		font-size: 11px;
-		color: #6b7280;
+		color: var(--color-text-muted);
 	}
 
 	.event-row.unread .event-content {
-		background: rgba(255, 255, 255, 0.02);
+		background: var(--color-bg-elevated);
 		border-radius: 8px;
 		padding: 8px;
 	}
@@ -154,7 +154,7 @@
 	.empty-state {
 		padding: 24px;
 		text-align: center;
-		color: #6b7280;
+		color: var(--color-text-muted);
 		font-size: 13px;
 	}
 </style>

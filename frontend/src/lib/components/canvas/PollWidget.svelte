@@ -122,7 +122,7 @@
 						<span class="opt-pct">{getPct(opt.index)}%</span>
 						<div
 							class="fill-bar"
-							style="width: {getPct(opt.index)}%"
+							style="transform: scaleX({getPct(opt.index) / 100})"
 							aria-hidden="true"
 						></div>
 					</button>
@@ -325,8 +325,11 @@
 		position: absolute;
 		inset-block: 0;
 		left: 0;
+		width: 100%;
 		background: rgba(124, 58, 237, 0.18);
-		transition: width 0.4s ease;
+		transform-origin: left;
+		/* Animate transform, not width, to keep the result bar off the layout path. */
+		transition: transform 0.4s ease;
 		pointer-events: none;
 	}
 

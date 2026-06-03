@@ -272,7 +272,6 @@
 		padding: 12px 14px;
 		background: var(--color-bg-elevated);
 		border: 1px solid var(--color-border);
-		border-left: 3px solid #f59e0b;
 		border-radius: 8px;
 	}
 

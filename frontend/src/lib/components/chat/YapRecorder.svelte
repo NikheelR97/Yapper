@@ -232,7 +232,7 @@
 			<div class="yap-progress-bar">
 				<div
 					class="yap-progress-fill"
-					style="width: {uploadProgress}%"
+					style="transform: scaleX({uploadProgress / 100})"
 				></div>
 			</div>
 		{/if}
@@ -306,10 +306,13 @@
 	}
 
 	.yap-progress-fill {
+		width: 100%;
 		height: 100%;
-		background: #a78bfa;
+		background: var(--color-brand-light, #a78bfa);
 		border-radius: 2px;
-		transition: width 0.2s ease;
+		transform-origin: left;
+		/* Animate transform, not width, to keep upload progress off the layout path. */
+		transition: transform 0.2s ease;
 	}
 
 	.yap-error {
