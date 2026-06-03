@@ -118,7 +118,10 @@ test.describe('Authenticated shell', () => {
 			timeout: 10_000,
 		});
 
-		await userPage.getByRole('link', { name: 'Explore' }).click();
+		await userPage
+			.getByRole('navigation', { name: 'Main navigation' })
+			.getByRole('link', { name: 'Explore' })
+			.click();
 		await expect(userPage).toHaveURL(/\/explore/, { timeout: 20_000 });
 		await expect(userPage.getByRole('searchbox', { name: 'Search' })).toBeVisible({
 			timeout: 30_000,

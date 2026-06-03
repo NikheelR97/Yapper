@@ -94,7 +94,10 @@ async fn disabled_account_reactivates_on_login(pool: PgPool) {
     let email = format!("test_{suffix}@integration.test");
     let password = format!("TestPass123!{suffix}");
     let reactivated = login_test_session(&server, &email, &password, &suffix).await;
-    assert_eq!(reactivated.user_id, user_id, "login should reuse the account");
+    assert_eq!(
+        reactivated.user_id, user_id,
+        "login should reuse the account"
+    );
 
     let disabled_at = sqlx::query_scalar::<_, Option<chrono::DateTime<chrono::Utc>>>(
         "SELECT disabled_at FROM users WHERE id = $1",
