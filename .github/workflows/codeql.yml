@@ -1,15 +1,17 @@
 # Advanced CodeQL setup.
 #
-# This replaces the repository's CodeQL "default setup". It exists for one
-# reason: the default setup analyzed Rust with `build-mode: none`, which
-# extracts source without compiling and therefore can't resolve trait methods
-# or generic types from the compiler. That produced the "Low Rust analysis
-# quality" diagnostic (call-target ~39% < 50% threshold, known-type ~44%).
+# This replaces the repository's CodeQL "default setup". It targets the
+# "Low Rust analysis quality" diagnostic (call-target ~39% < 50% threshold,
+# known-type ~44%).
 #
-# Here Rust uses `build-mode: autobuild` (a real `cargo build`) so the extractor
-# gets type information straight from the compiler. The backend crate builds
-# against its committed `.sqlx` offline cache (SQLX_OFFLINE=true), so no database
-# is needed.
+# IMPORTANT: CodeQL's Rust extractor only supports `build-mode: none` — there is
+# no `autobuild`/`manual` mode for Rust in this CodeQL version. So Rust is always
+# analyzed buildless. The lever we DO have is making dependency sources
+# resolvable before extraction: the buildless extractor invokes cargo to read
+# dependency metadata/sources, so installing the toolchain, fetching deps, and
+# setting SQLX_OFFLINE (so sqlx's compile-time macros expand against the
+# committed .sqlx cache) gives it more types/call-targets to resolve. This may
+# improve the metrics but cannot fully match a compiled analysis.
 #
 # NOTE: advanced setup cannot coexist with CodeQL default setup — default setup
 # must be disabled or SARIF uploads fail with a configuration error.
@@ -39,8 +41,8 @@ jobs:
       packages: read
       actions: read
       contents: read
-    # Build the backend against its committed .sqlx offline cache so CodeQL's
-    # autobuild needs no database. Harmless for the non-Rust matrix legs.
+    # Lets sqlx's compile-time macros expand against the committed .sqlx cache
+    # during extraction; harmless for the non-Rust matrix legs.
     env:
       SQLX_OFFLINE: "true"
     strategy:
@@ -51,41 +53,24 @@ jobs:
             build-mode: none
           - language: javascript-typescript
             build-mode: none
-          # Rust only supports `none` or `autobuild` (no manual mode).
-          # autobuild runs `cargo build` so CodeQL resolves types and call
-          # targets from the compiler instead of source-only extraction.
+          # Rust only supports build-mode: none (no autobuild/manual exists).
           - language: rust
-            build-mode: autobuild
+            build-mode: none
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # These steps must run BEFORE init: autobuild executes inside the init
-      # step, so the toolchain, cache, and system libraries have to exist first.
+      # Make Rust dependency sources resolvable for the buildless extractor.
+      # These run before init so the toolchain and fetched crates are present.
       - name: Install Rust toolchain
         if: matrix.language == 'rust'
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache Rust build
-        if: matrix.language == 'rust'
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            backend
-            frontend/src-tauri
-
-      # The Tauri crate links against webkit2gtk/gtk on Linux; without these
-      # libs its build fails and would abort autobuild.
-      - name: Install Tauri system dependencies
+      - name: Fetch Rust dependencies
         if: matrix.language == 'rust'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libsoup-3.0-dev
+          cargo fetch --manifest-path backend/Cargo.toml
+          cargo fetch --manifest-path frontend/src-tauri/Cargo.toml || true
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
