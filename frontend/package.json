@@ -27,7 +27,7 @@
     "@capacitor/push-notifications": "^8.1.1",
     "@noble/curves": "^2.2.0",
     "@noble/hashes": "^2.0.1",
-    "@sentry/sveltekit": "^10.53.1",
+    "@sentry/sveltekit": "^10.55.0",
     "@tauri-apps/api": "^2.11.0",
     "@tauri-apps/plugin-global-shortcut": "^2.0.0",
     "@tauri-apps/plugin-notification": "^2.0.0",
