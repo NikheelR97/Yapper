@@ -1,0 +1,91 @@
+# Advanced CodeQL setup.
+#
+# This replaces the repository's CodeQL "default setup". It exists for one
+# reason: the default setup analyzed Rust with `build-mode: none`, which
+# extracts source without compiling and therefore can't resolve trait methods
+# or generic types from the compiler. That produced the "Low Rust analysis
+# quality" diagnostic (call-target ~39% < 50% threshold, known-type ~44%).
+#
+# Here Rust is analyzed with a real `cargo build` so the extractor gets type
+# information straight from the compiler. The backend crate builds against its
+# committed `.sqlx` offline cache (SQLX_OFFLINE=true), so no database is needed.
+#
+# JavaScript/TypeScript and GitHub Actions keep build-mode: none, matching the
+# default setup they replace.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly, matching the cadence of the default setup this replaces.
+    - cron: "27 4 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      packages: read
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+            build-mode: none
+          - language: javascript-typescript
+            build-mode: none
+          - language: rust
+            build-mode: manual
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      # Real build for Rust so CodeQL resolves types and call targets from the
+      # compiler instead of from source-only extraction.
+      - name: Install Rust toolchain
+        if: matrix.language == 'rust'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        if: matrix.language == 'rust'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            backend
+            frontend/src-tauri
+
+      - name: Build Rust backend
+        if: matrix.language == 'rust'
+        working-directory: backend
+        env:
+          # Use the committed .sqlx offline cache; no database required.
+          SQLX_OFFLINE: "true"
+        run: cargo build --locked --all-targets
+
+      # The Tauri crate is thin glue; build it best-effort so a failure here
+      # (e.g. missing frontend dist) does not block the backend analysis.
+      - name: Build Tauri crate (best-effort)
+        if: matrix.language == 'rust'
+        continue-on-error: true
+        working-directory: frontend/src-tauri
+        run: cargo build --locked
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
