@@ -35,22 +35,21 @@
 
 <style>
 	.bio-card {
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(255, 255, 255, 0.07);
+		background: var(--color-bg-surface);
+		border: 1px solid var(--color-border);
 		border-radius: 16px;
 		padding: 20px;
-		backdrop-filter: blur(8px);
 	}
 
 	.bio {
 		font-size: 14px;
-		color: #d1d5db;
+		color: var(--color-text-secondary);
 		line-height: 1.6;
 		margin: 0 0 16px;
 	}
 
 	.bio.empty {
-		color: #6b7280;
+		color: var(--color-text-secondary);
 		font-style: italic;
 	}
 
@@ -64,7 +63,7 @@
 	.tag {
 		padding: 4px 12px;
 		background: rgba(124, 58, 237, 0.2);
-		color: #a78bfa;
+		color: var(--color-brand-text);
 		border: 1px solid rgba(124, 58, 237, 0.3);
 		border-radius: 20px;
 		font-size: 12px;
@@ -75,7 +74,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
-		border-top: 1px solid rgba(255, 255, 255, 0.06);
+		border-top: 1px solid var(--color-border);
 		padding-top: 16px;
 	}
 
@@ -84,7 +83,7 @@
 		align-items: center;
 		gap: 8px;
 		font-size: 13px;
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 	}
 
 	.stat-icon {

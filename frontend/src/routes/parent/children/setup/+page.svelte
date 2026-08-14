@@ -378,7 +378,10 @@
 <style>
 	.setup-page {
 		min-height: 100vh;
-		background: linear-gradient(135deg, #1a0533 0%, #2e1065 40%, #0a0a0f 100%);
+		/* One Glow Rule: a single rationed violet glow over the theme canvas —
+		   reads as a lit-room glow in dark and a soft brand tint in light. */
+		background: radial-gradient(circle at 50% -10%, rgba(124, 58, 237, 0.18), transparent 55%),
+			var(--color-bg-base);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -386,9 +389,9 @@
 	}
 
 	.setup-card {
-		background: rgba(255, 255, 255, 0.05);
-		border: 1px solid rgba(255, 255, 255, 0.1);
-		backdrop-filter: blur(20px);
+		background: var(--color-bg-surface);
+		border: 1px solid var(--color-border);
+		box-shadow: 0 8px 40px rgba(0, 0, 0, 0.12);
 		border-radius: 20px;
 		padding: 40px;
 		width: 100%;
@@ -405,16 +408,16 @@
 		height: 4px;
 		flex: 1;
 		border-radius: 2px;
-		background: rgba(255, 255, 255, 0.12);
+		background: var(--color-border);
 		transition: background 300ms;
 	}
 
 	.pill.active {
-		background: #7c3aed;
+		background: var(--color-brand);
 	}
 
 	.pill.done {
-		background: #22c55e;
+		background: var(--color-success);
 	}
 
 	.step {
@@ -448,13 +451,13 @@
 	.step-title {
 		font-size: 26px;
 		font-weight: 800;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		margin: 0;
 	}
 
 	.step-desc {
 		font-size: 14px;
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 		margin: -12px 0 0;
 	}
 
@@ -467,17 +470,17 @@
 	.field-label {
 		font-size: 12px;
 		font-weight: 700;
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 	}
 
 	.field-input {
 		padding: 12px 16px;
-		background: rgba(255, 255, 255, 0.06);
-		border: 1px solid rgba(255, 255, 255, 0.12);
+		background: var(--color-bg-elevated);
+		border: 1px solid var(--color-border);
 		border-radius: 10px;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		font-size: 15px;
 		font-family: inherit;
 		outline: none;
@@ -485,7 +488,7 @@
 	}
 
 	.field-input:focus {
-		border-color: #7c3aed;
+		border-color: var(--color-brand);
 	}
 
 	.vibe-grid {
@@ -500,7 +503,7 @@
 		align-items: center;
 		gap: 6px;
 		padding: 16px 8px;
-		background: rgba(255, 255, 255, 0.05);
+		background: var(--color-bg-elevated);
 		border: 2px solid transparent;
 		border-radius: 12px;
 		cursor: pointer;
@@ -509,7 +512,7 @@
 	}
 
 	.vibe-card.selected {
-		border-color: #7c3aed;
+		border-color: var(--color-brand);
 		background: rgba(124, 58, 237, 0.1);
 	}
 
@@ -519,7 +522,7 @@
 
 	.vibe-label {
 		font-size: 12px;
-		color: #d1d5db;
+		color: var(--color-text-secondary);
 		font-weight: 500;
 	}
 
@@ -528,7 +531,7 @@
 		top: 6px;
 		right: 8px;
 		font-size: 12px;
-		color: #7c3aed;
+		color: var(--color-brand);
 		font-weight: 700;
 	}
 
@@ -547,7 +550,7 @@
 		border: 1px solid rgba(245, 158, 11, 0.3);
 		border-radius: 10px;
 		font-size: 13px;
-		color: #f59e0b;
+		color: var(--color-warning-text);
 	}
 
 	.coppa-banner strong {
@@ -557,7 +560,7 @@
 
 	.coppa-banner p {
 		margin: 0;
-		color: #d1d5db;
+		color: var(--color-text-secondary);
 	}
 
 	/* Toggles */
@@ -573,7 +576,7 @@
 		justify-content: space-between;
 		gap: 16px;
 		padding: 14px 16px;
-		background: rgba(0, 0, 0, 0.2);
+		background: var(--color-bg-base);
 		border-radius: 10px;
 	}
 
@@ -587,12 +590,12 @@
 	.toggle-label {
 		font-size: 14px;
 		font-weight: 600;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 	}
 
 	.toggle-desc {
 		font-size: 12px;
-		color: #6b7280;
+		color: var(--color-text-secondary);
 	}
 
 	.toggle-switch {
@@ -612,7 +615,7 @@
 	.toggle-track {
 		position: absolute;
 		inset: 0;
-		background: #374151;
+		background: var(--color-text-muted);
 		border-radius: 12px;
 		cursor: pointer;
 		transition: background 200ms;
@@ -631,7 +634,7 @@
 	}
 
 	.toggle-switch input:checked + .toggle-track {
-		background: #22c55e;
+		background: var(--color-success);
 	}
 
 	.toggle-switch input:checked + .toggle-track::after {
@@ -647,15 +650,15 @@
 
 	.slider {
 		width: 100%;
-		accent-color: #7c3aed;
+		accent-color: var(--color-brand);
 		cursor: pointer;
 	}
 
 	/* Side cards */
 	.tip-card,
 	.override-card {
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(255, 255, 255, 0.08);
+		background: var(--color-bg-elevated);
+		border: 1px solid var(--color-border);
 		border-radius: 12px;
 		padding: 16px;
 	}
@@ -664,14 +667,14 @@
 	.override-title {
 		font-size: 13px;
 		font-weight: 700;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		margin-bottom: 8px;
 	}
 
 	.tip-body,
 	.override-body {
 		font-size: 12px;
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 		margin: 0;
 		line-height: 1.5;
 	}
@@ -687,7 +690,7 @@
 	.btn-back {
 		background: none;
 		border: none;
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 		font-size: 14px;
 		font-weight: 600;
 		cursor: pointer;
@@ -696,13 +699,13 @@
 	}
 
 	.btn-back:hover {
-		color: #f9fafb;
+		color: var(--color-text-primary);
 	}
 
 	.btn-next {
 		padding: 12px 28px;
 		background: rgba(124, 58, 237, 0.15);
-		color: #a78bfa;
+		color: var(--color-brand-text);
 		border: 1px solid rgba(124, 58, 237, 0.3);
 		border-radius: 10px;
 		font-size: 15px;
@@ -717,7 +720,7 @@
 
 	.btn-create {
 		padding: 14px 32px;
-		background: #7c3aed;
+		background: var(--color-brand);
 		color: white;
 		border: none;
 		border-radius: 10px;

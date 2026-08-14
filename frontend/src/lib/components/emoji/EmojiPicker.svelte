@@ -301,8 +301,8 @@
 <style>
 	.emoji-picker {
 		width: 360px;
-		background: #1c1d26;
-		border: 1px solid rgba(255, 255, 255, 0.1);
+		background: var(--color-bg-surface);
+		border: 1px solid var(--color-border);
 		border-radius: 14px;
 		overflow: hidden;
 		display: flex;
@@ -316,7 +316,7 @@
 		align-items: center;
 		gap: 8px;
 		padding: 10px 12px;
-		border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+		border-bottom: 1px solid var(--color-border);
 	}
 
 	.search-icon {
@@ -328,14 +328,14 @@
 		flex: 1;
 		background: none;
 		border: none;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		font-size: 14px;
 		font-family: inherit;
 		outline: none;
 	}
 
 	.search-input::placeholder {
-		color: #6b7280;
+		color: var(--color-text-secondary);
 	}
 
 	/* Tabs */
@@ -344,7 +344,7 @@
 		overflow-x: auto;
 		padding: 6px 8px;
 		gap: 2px;
-		border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+		border-bottom: 1px solid var(--color-border);
 		scrollbar-width: none;
 	}
 
@@ -368,7 +368,7 @@
 	}
 
 	.tab:hover {
-		background: rgba(255, 255, 255, 0.06);
+		background: var(--color-bg-elevated);
 	}
 
 	.tab.active {
@@ -386,7 +386,7 @@
 	.category-label {
 		font-size: 11px;
 		font-weight: 700;
-		color: #6b7280;
+		color: var(--color-text-secondary);
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 		padding: 8px 4px 4px;
@@ -415,7 +415,7 @@
 	}
 
 	.emoji-btn:hover {
-		background: rgba(255, 255, 255, 0.08);
+		background: var(--color-bg-elevated);
 		transform: scale(1.2);
 	}
 
@@ -431,7 +431,7 @@
 
 	.empty-tab {
 		font-size: 13px;
-		color: #6b7280;
+		color: var(--color-text-secondary);
 		text-align: center;
 		padding: 24px;
 	}

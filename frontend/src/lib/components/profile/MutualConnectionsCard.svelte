@@ -39,8 +39,8 @@
 
 <style>
 	.card {
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(255, 255, 255, 0.07);
+		background: var(--color-bg-surface);
+		border: 1px solid var(--color-border);
 		border-radius: 16px;
 		padding: 20px;
 	}
@@ -48,7 +48,7 @@
 	.card-title {
 		font-size: 14px;
 		font-weight: 700;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		margin: 0 0 16px;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
@@ -75,7 +75,7 @@
 	}
 
 	.mutual-row:hover {
-		background: rgba(255, 255, 255, 0.04);
+		background: var(--color-bg-elevated);
 	}
 
 	.avatar {
@@ -113,12 +113,12 @@
 	.mutual-name {
 		font-size: 14px;
 		font-weight: 600;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 	}
 
 	.mutual-count {
 		font-size: 12px;
-		color: #6b7280;
+		color: var(--color-text-secondary);
 	}
 
 	.view-all {
@@ -126,7 +126,7 @@
 		margin-top: 12px;
 		background: none;
 		border: none;
-		color: #7c3aed;
+		color: var(--color-brand-text);
 		font-size: 13px;
 		font-weight: 600;
 		cursor: pointer;
@@ -134,12 +134,12 @@
 	}
 
 	.view-all:hover {
-		color: #a78bfa;
+		color: var(--color-brand-text);
 	}
 
 	.empty {
 		font-size: 14px;
-		color: #6b7280;
+		color: var(--color-text-secondary);
 		margin: 0;
 	}
 </style>

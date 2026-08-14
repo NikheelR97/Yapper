@@ -117,6 +117,8 @@
 		height: 220px;
 		background-size: cover;
 		background-position: center;
+		/* ponytail: brand banner backdrop — intentional, theme-independent (sits under
+		   the user's banner image; content below it is theme-responsive) */
 		background-color: #1a0533;
 	}
 
@@ -133,7 +135,7 @@
 		width: 112px;
 		height: 112px;
 		border-radius: 50%;
-		border: 4px solid var(--color-bg-base, #0a0a0f);
+		border: 4px solid var(--color-bg-base);
 		overflow: hidden;
 		flex-shrink: 0;
 	}
@@ -164,7 +166,7 @@
 
 	.btn-primary {
 		padding: 8px 20px;
-		background: var(--color-brand, #7c3aed);
+		background: var(--color-brand);
 		color: white;
 		border: none;
 		border-radius: 8px;
@@ -181,8 +183,8 @@
 	.btn-secondary {
 		padding: 8px 20px;
 		background: transparent;
-		color: #f9fafb;
-		border: 1px solid rgba(255, 255, 255, 0.2);
+		color: var(--color-text-primary);
+		border: 1px solid var(--color-border);
 		border-radius: 8px;
 		font-size: 14px;
 		font-weight: 600;
@@ -191,17 +193,17 @@
 	}
 
 	.btn-secondary:hover {
-		background: rgba(255, 255, 255, 0.05);
-		border-color: rgba(255, 255, 255, 0.4);
+		background: var(--color-bg-elevated);
+		border-color: var(--color-text-muted);
 	}
 
 	.btn-icon {
 		width: 36px;
 		height: 36px;
-		background: rgba(255, 255, 255, 0.06);
-		border: 1px solid rgba(255, 255, 255, 0.1);
+		background: var(--color-bg-elevated);
+		border: 1px solid var(--color-border);
 		border-radius: 8px;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		font-size: 18px;
 		cursor: pointer;
 		display: flex;
@@ -221,7 +223,7 @@
 	.display-name {
 		font-size: 24px;
 		font-weight: 800;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		margin: 0 0 4px;
 		display: flex;
 		align-items: center;
@@ -234,7 +236,7 @@
 
 	.username {
 		font-size: 14px;
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 		margin: 0;
 	}
 
@@ -253,11 +255,11 @@
 	.stat-value {
 		font-size: 18px;
 		font-weight: 700;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 	}
 
 	.stat-label {
 		font-size: 12px;
-		color: #6b7280;
+		color: var(--color-text-secondary);
 	}
 </style>

@@ -80,7 +80,7 @@
 	.section-title {
 		font-size: 16px;
 		font-weight: 700;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		margin: 0 0 16px;
 	}
 
@@ -111,7 +111,7 @@
 
 	/* Media card */
 	.media-card {
-		background: #1c1d26;
+		background: var(--color-bg-elevated);
 	}
 
 	.media-img {
@@ -205,7 +205,7 @@
 		align-items: center;
 		gap: 8px;
 		padding: 40px;
-		color: #6b7280;
+		color: var(--color-text-secondary);
 		font-size: 14px;
 	}
 
