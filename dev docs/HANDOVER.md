@@ -1,7 +1,7 @@
 # YAPPER — Developer Handover Document
 
 **Last updated:** 2026-05-20 (rev 7)
-**Project status:** Active development — S0-S17 complete; Canvas Expansion + E2EE Media deployed. Launch scope is **desktop (Tauri) + web PWA**; native mobile deferred to V0.2. Backend hosting is moving to **self-hosted Coolify** (see [`COOLIFY_RUNBOOK.md`](COOLIFY_RUNBOOK.md)); the paused Fly.io deploy jobs are being retired rather than re-enabled. Current plan of record: [`LAUNCH_SPRINT_PLAN.md`](LAUNCH_SPRINT_PLAN.md).
+**Project status:** Active development — S0-S17 complete; Canvas Expansion + E2EE Media deployed. Launch scope is **desktop (Tauri) + web PWA**; native mobile deferred to V0.2. CI/CD production deploy/release automation is paused during stabilization; backend hosting is moving to **self-hosted Coolify** (see [`COOLIFY_RUNBOOK.md`](COOLIFY_RUNBOOK.md)), so the paused Fly.io deploy jobs are being retired rather than re-enabled. Current plan of record: [`LAUNCH_SPRINT_PLAN.md`](LAUNCH_SPRINT_PLAN.md).
 
 ---
 
