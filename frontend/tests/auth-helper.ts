@@ -1,6 +1,6 @@
 import { execFileSync } from 'child_process';
 import { type Page } from '@playwright/test';
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 
 export interface AuthData {
 	accessToken: string;
@@ -286,12 +286,38 @@ export async function setInstallationId(page: Page, installationId: string): Pro
 	);
 }
 
+const SEED_MARKER_DIR = 'tests/auth-state/.seeds';
+
+function seedMarkerPath(cacheKey: string): string {
+	// Marker filenames must be filesystem-safe; cacheKey contains ':' and '@'.
+	return `${SEED_MARKER_DIR}/${cacheKey.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+}
+
+/**
+ * Clear seed markers so a new run re-seeds exactly once. Called from global setup,
+ * which runs a single time before any worker starts.
+ */
+export function resetSeedMarkers(): void {
+	rmSync(SEED_MARKER_DIR, { recursive: true, force: true });
+}
+
 function seedDevicesOnce(
 	cacheKey: string,
 	env: Record<string, string | undefined>,
 	errorLabel: string,
 ): void {
 	if (seededProfiles.has(cacheKey)) {
+		return;
+	}
+
+	// `seededProfiles` is per-process, but Playwright runs each worker in its own
+	// process — so an in-memory Set alone made every worker re-seed, and each seed
+	// performs a real login. That was the main source of 429s (and a per-spec
+	// `node` spawn). The marker file makes the cache durable across workers:
+	// global setup pre-seeds once, and workers then skip entirely.
+	const marker = seedMarkerPath(cacheKey);
+	if (existsSync(marker)) {
+		seededProfiles.add(cacheKey);
 		return;
 	}
 
@@ -305,6 +331,8 @@ function seedDevicesOnce(
 			stdio: 'pipe',
 		});
 		seededProfiles.add(cacheKey);
+		mkdirSync(SEED_MARKER_DIR, { recursive: true });
+		writeFileSync(marker, new Date().toISOString());
 	} catch (error) {
 		const details =
 			error && typeof error === 'object' && 'stderr' in error
