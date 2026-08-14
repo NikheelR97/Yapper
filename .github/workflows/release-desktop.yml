@@ -91,7 +91,7 @@ jobs:
           ref: refs/tags/${{ inputs.tag }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: "npm"
@@ -136,7 +136,7 @@ jobs:
           ref: refs/tags/${{ inputs.tag }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: "npm"
@@ -183,7 +183,7 @@ jobs:
           ref: refs/tags/${{ inputs.tag }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: "npm"
@@ -245,7 +245,7 @@ jobs:
             pkg-config
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: "npm"
