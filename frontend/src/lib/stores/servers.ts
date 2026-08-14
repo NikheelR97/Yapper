@@ -12,6 +12,7 @@ import {
 	encryptChannel,
 	fetchPendingKeyDists,
 	onSenderKeyReady,
+	prepareChannel,
 } from '$signal/index.js';
 import { onWsMessage, sendChannelMessage as wsSendChannel } from '$stores/ws.js';
 import { authStore, registerSessionResetter } from '$stores/auth.js';
@@ -245,6 +246,44 @@ function clearPendingChannelDecryptTimer(messageId: string): void {
 	if (!timer) return;
 	clearTimeout(timer);
 	pendingChannelDecryptTimers.delete(messageId);
+}
+
+// Cooldown so a burst of undecryptable messages can't cause a storm. Keyed by
+// channel AND sender: a missing key is per-sender, so throttling per-channel would
+// suppress recovery for a second sender whose messages fail moments after the first.
+const senderKeyRecoveryAt = new Map<string, number>();
+const SENDER_KEY_RECOVERY_COOLDOWN_MS = 30_000;
+
+/**
+ * Recover from "Unable to decrypt" on a channel message.
+ *
+ * Two distinct causes, and only the first was previously handled:
+ *   1. The sender DID distribute to us, but we missed the WS frame (offline, or
+ *      handler not yet live). `fetchPendingKeyDists` pulls it from the server.
+ *   2. The sender NEVER created a distribution for this device — e.g. our key
+ *      bundle wasn't published yet when they distributed, so they silently skipped
+ *      us. Nothing is pending to pull, and because we aren't a *new* member the
+ *      join-time `key_dist_request` broadcast never fires either, so the message
+ *      stays undecryptable forever.
+ *
+ * `prepareChannel` re-POSTs our distributions with `broadcast_request: true`, which
+ * makes the backend ask every other member to redistribute to us; their existing
+ * `handleKeyDistRequest` replies with their SenderKey, and `onSenderKeyReady` then
+ * re-decrypts the affected messages. Responses carry `broadcast: false`, so this
+ * does not reintroduce the redistribution loop the backend guards against.
+ */
+function recoverChannelSenderKeys(channelId: string, senderId: string): void {
+	const now = Date.now();
+	const cooldownKey = `${channelId}:${senderId}`;
+	const last = senderKeyRecoveryAt.get(cooldownKey) ?? 0;
+	if (now - last < SENDER_KEY_RECOVERY_COOLDOWN_MS) return;
+	senderKeyRecoveryAt.set(cooldownKey, now);
+
+	void fetchPendingKeyDists(channelId)
+		.then(() => prepareChannel(channelId))
+		.catch((err) => {
+			console.warn('[signal] SenderKey recovery failed for channel:', err);
+		});
 }
 
 function scheduleChannelDecryptFailure(messageId: string, channelId: string): void {
@@ -609,9 +648,7 @@ export function registerChannelHandler(): () => void {
 			);
 			clearPendingChannelDecryptTimer(msg.id);
 		} catch {
-			void fetchPendingKeyDists(msg.channel_id).catch((err) => {
-				console.warn('[signal] Failed to fetch pending key dists for channel:', err);
-			});
+			recoverChannelSenderKeys(msg.channel_id, msg.sender_id);
 			scheduleChannelDecryptFailure(msg.id, msg.channel_id);
 		}
 
