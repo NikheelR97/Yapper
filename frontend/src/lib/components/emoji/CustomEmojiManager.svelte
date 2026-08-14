@@ -141,19 +141,19 @@
 	.manager-title {
 		font-size: 16px;
 		font-weight: 700;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		margin: 0 0 4px;
 	}
 
 	.emoji-count {
 		font-size: 13px;
-		color: #6b7280;
+		color: var(--color-text-secondary);
 	}
 
 	.add-btn {
 		padding: 8px 16px;
 		background: rgba(124, 58, 237, 0.15);
-		color: #a78bfa;
+		color: var(--color-brand-text);
 		border: 1px solid rgba(124, 58, 237, 0.3);
 		border-radius: 8px;
 		font-size: 13px;
@@ -174,7 +174,7 @@
 		border: 1px solid rgba(245, 158, 11, 0.25);
 		border-radius: 12px;
 		font-size: 13px;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 	}
 
 	.limit-icon {
@@ -189,33 +189,33 @@
 
 	.limit-banner p {
 		margin: 0;
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 		font-size: 13px;
 	}
 
 	.upgrade-link {
 		display: inline-block;
 		margin-top: 6px;
-		color: #a78bfa;
+		color: var(--color-brand-text);
 		font-weight: 600;
 		font-size: 13px;
 		text-decoration: none;
 	}
 
 	.upgrade-link:hover {
-		color: #c4b5fd;
+		color: var(--color-brand-text);
 	}
 
 	.uploader-wrap {
-		background: rgba(255, 255, 255, 0.03);
-		border: 1px solid rgba(255, 255, 255, 0.08);
+		background: var(--color-bg-elevated);
+		border: 1px solid var(--color-border);
 		border-radius: 12px;
 		padding: 20px;
 	}
 
 	.loading {
 		font-size: 14px;
-		color: #6b7280;
+		color: var(--color-text-secondary);
 		text-align: center;
 		padding: 24px;
 	}
@@ -226,7 +226,7 @@
 		align-items: center;
 		gap: 8px;
 		padding: 32px;
-		color: #6b7280;
+		color: var(--color-text-secondary);
 		font-size: 14px;
 		text-align: center;
 	}
@@ -251,7 +251,7 @@
 	}
 
 	.emoji-row:hover {
-		background: rgba(255, 255, 255, 0.04);
+		background: var(--color-bg-elevated);
 	}
 
 	.emoji-preview {
@@ -271,18 +271,18 @@
 	.emoji-name {
 		font-size: 14px;
 		font-weight: 600;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		font-family: monospace;
 	}
 
 	.emoji-uploader {
 		font-size: 12px;
-		color: #6b7280;
+		color: var(--color-text-secondary);
 	}
 
 	.emoji-date {
 		font-size: 12px;
-		color: #6b7280;
+		color: var(--color-text-secondary);
 		flex-shrink: 0;
 	}
 

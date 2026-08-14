@@ -2040,6 +2040,11 @@ async fn fanout_to_channel_members(
     state: &AppState,
 ) {
     debug_assert!(channel_id != Uuid::nil());
+    let sender_id: Option<Uuid> = payload
+        .get("sender_id")
+        .and_then(|v| v.as_str())
+        .and_then(|s| s.parse().ok());
+
     let member_rows =
         match sqlx::query("SELECT user_id FROM server_memberships WHERE server_id = $1 LIMIT $2")
             .bind(server_id)
@@ -2064,11 +2069,33 @@ async fn fanout_to_channel_members(
         }
     };
 
+    let mut offline_members = Vec::new();
     for m in member_rows.iter().take(MAX_FANOUT_MEMBERS as usize) {
         if let Ok(uid) = m.try_get::<Uuid, _>("user_id") {
-            state
+            let delivered = state
                 .hub
-                .send_to_user(&uid, WsOutbound::PreSerialized(Arc::clone(&json)));
+                .try_send_to_user(&uid, WsOutbound::PreSerialized(Arc::clone(&json)));
+            if !delivered {
+                offline_members.push(uid);
+            }
+        }
+    }
+
+    // Push notification to offline members (best-effort, fire-and-forget)
+    if !offline_members.is_empty() {
+        let mut meta = std::collections::HashMap::new();
+        meta.insert("channel_id".into(), channel_id.to_string());
+        meta.insert("server_id".into(), server_id.to_string());
+        if let Some(sid) = sender_id {
+            meta.insert("sender_id".into(), sid.to_string());
+        }
+        for uid in offline_members {
+            let state = state.clone();
+            let meta = meta.clone();
+            tokio::spawn(async move {
+                crate::notifications::notify_user_offline_devices(uid, "channel", &meta, &state)
+                    .await;
+            });
         }
     }
 }
@@ -2379,6 +2406,36 @@ mod tests {
         let hub = Hub::new();
         let user_id = Uuid::new_v4();
         hub.send_to_user(&user_id, WsOutbound::Pong);
+    }
+
+    /// `fanout_to_channel_members` uses this exact bool to decide who gets an
+    /// offline push: no live connection => false, a connected user => true.
+    /// The queue-full case above covers a different `false` path (stale
+    /// connection); this covers the "never connected" path the fanout
+    /// offline-detection actually depends on.
+    #[test]
+    fn test_hub_try_send_to_user_offline_vs_online() {
+        let hub = Hub::new();
+        let offline_user = Uuid::new_v4();
+        assert!(
+            !hub.try_send_to_user(&offline_user, WsOutbound::Pong),
+            "user with no connections should report delivery failure"
+        );
+
+        let online_user = Uuid::new_v4();
+        let (tx, _rx) = mpsc::channel(MAX_OUTBOUND_QUEUE);
+        let (close_tx, _close_rx) = watch::channel(false);
+        assert!(hub.register(
+            online_user,
+            None,
+            true,
+            ConnectionId::new(),
+            ConnectionHandle { tx, close_tx },
+        ));
+        assert!(
+            hub.try_send_to_user(&online_user, WsOutbound::Pong),
+            "user with a live connection should report delivery success"
+        );
     }
 
     #[test]

@@ -139,7 +139,15 @@ async function loginAndWaitReady(
 	await expect(page.locator('[aria-label="Loading Yapper"]')).toHaveCount(0, {
 		timeout: 45_000,
 	});
-	await Promise.all(keyUploads);
+	// These POSTs only fire on a device's FIRST Signal bootstrap. If the device has
+	// already uploaded its keys (pre-seeded in global setup, or a previous run), they
+	// never fire — and an unbounded wait then hangs until the test timeout. Keep the
+	// wait best-effort and bounded; waitForBundles() below is the authoritative check
+	// that keys are actually available server-side.
+	await Promise.race([
+		Promise.all(keyUploads.map((upload) => upload.catch(() => null))),
+		new Promise<void>((resolve) => setTimeout(resolve, 10_000)),
+	]);
 }
 
 /**
@@ -202,7 +210,10 @@ test.describe('Channel E2EE — cross-user message decryption', () => {
 		'User B can read a channel message sent by User A (Sender Key decryption regression)',
 		async ({ browser }) => {
 			// Two concurrent browser logins + Signal key setup + message round-trip
-			test.setTimeout(300_000);
+			// 300s previously masked an unbounded key-upload wait (see loginAndWaitReady).
+			// With that bounded, these runs complete in seconds; keep headroom for two
+			// browser contexts + key exchange, but fail fast instead of hanging.
+			test.setTimeout(120_000);
 
 			// ── API setup ─────────────────────────────────────────────────────────────
 			const sessionA = await createApiSession(
@@ -292,7 +303,10 @@ test.describe('Channel E2EE — cross-user message decryption', () => {
 	test(
 		'Both users can send and receive messages in the same channel (bidirectional)',
 		async ({ browser }) => {
-			test.setTimeout(300_000);
+			// 300s previously masked an unbounded key-upload wait (see loginAndWaitReady).
+			// With that bounded, these runs complete in seconds; keep headroom for two
+			// browser contexts + key exchange, but fail fast instead of hanging.
+			test.setTimeout(120_000);
 
 			const sessionA = await createApiSession(
 				USER_A_EMAIL,

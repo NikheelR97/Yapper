@@ -148,7 +148,7 @@
 
 	.drop-zone {
 		position: relative;
-		border: 2px dashed rgba(255, 255, 255, 0.15);
+		border: 2px dashed var(--color-border);
 		border-radius: 12px;
 		padding: 32px;
 		display: flex;
@@ -161,7 +161,7 @@
 
 	.drop-zone:hover,
 	.drop-zone.drag-over {
-		border-color: #7c3aed;
+		border-color: var(--color-brand);
 		background: rgba(124, 58, 237, 0.05);
 	}
 
@@ -171,19 +171,19 @@
 
 	.drop-hint {
 		font-size: 14px;
-		color: #d1d5db;
+		color: var(--color-text-secondary);
 		margin: 0;
 		text-align: center;
 	}
 
 	.drop-sub {
 		font-size: 12px;
-		color: #6b7280;
+		color: var(--color-text-secondary);
 		margin: 0;
 	}
 
 	.file-label {
-		color: #a78bfa;
+		color: var(--color-brand-text);
 		cursor: pointer;
 		font-weight: 600;
 	}
@@ -203,7 +203,7 @@
 
 	.preview-hint {
 		font-size: 12px;
-		color: #6b7280;
+		color: var(--color-text-secondary);
 		margin: 0;
 	}
 
@@ -216,7 +216,7 @@
 	.field-label {
 		font-size: 11px;
 		font-weight: 700;
-		color: #9ca3af;
+		color: var(--color-text-secondary);
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 	}
@@ -229,17 +229,17 @@
 
 	.name-colon {
 		font-size: 16px;
-		color: #6b7280;
+		color: var(--color-text-secondary);
 		font-weight: 700;
 	}
 
 	.field-input {
 		flex: 1;
 		padding: 10px 14px;
-		background: rgba(255, 255, 255, 0.05);
-		border: 1px solid rgba(255, 255, 255, 0.1);
+		background: var(--color-bg-elevated);
+		border: 1px solid var(--color-border);
 		border-radius: 8px;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		font-size: 14px;
 		font-family: monospace;
 		outline: none;
@@ -247,12 +247,12 @@
 	}
 
 	.field-input:focus {
-		border-color: #7c3aed;
+		border-color: var(--color-brand);
 	}
 
 	.upload-btn {
 		padding: 12px 24px;
-		background: #7c3aed;
+		background: var(--color-brand);
 		color: white;
 		border: none;
 		border-radius: 10px;

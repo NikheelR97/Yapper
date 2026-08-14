@@ -26,7 +26,7 @@
 | **S11** | W23–W24 | Phase 17 + Phase 18 | Premium Prep + Launch | ~Complete — code done, external tasks (store submissions, E2E staging run) moved to S15 |
 | **S12** | W25–W26 | Security Hardening | Deep Pen-Test Remediation | ✅ Complete — all CRITICAL/HIGH/MEDIUM fixed (2026-03-11) |
 | **S13** | W27 | Support + Infra | Support Tickets + Build Pipeline | ✅ Complete (2026-03-16) — HubSpot integration, GHA Docker cache, ~90s deploys |
-| **S14** | W28–W29 | Audit Remediation | Compliance Fixes + Test Coverage + Bot System | ✅ Complete (2026-03-21) — all compliance fixes, function refactors, 217 BE + 52 FE tests |
+| **S14** | W28–W29 | Audit Remediation | Compliance Fixes + Test Coverage + Bot System | ✅ Complete (2026-03-21) — all compliance fixes, function refactors, 275 BE + 102 FE tests |
 | **S15** | W30–W31 | Launch | E2E Verification + Platform Builds + Store Submission | In Progress |
 | **S16** | W32 | Canvas Expansion | Music Queue + Enhanced Polls + Clip Reactions + Events | ✅ Complete (2026-03-22) — 23 endpoints, 13 WS events, 7 FE components, migration 000029 |
 | **B1** | Any time | Business | Startup Cloud Credits | ⏳ Not started — apply basic tracks immediately |
@@ -534,8 +534,8 @@ These prerequisite UI components were built across S7–S11 FE work and wired in
 | 2 | Implement `POST /api/v1/screentime/report`: accept batched records with validation | BE | [x] |
 | 3 | Implement `GET /api/v1/parental/children/{id}/screentime?period=week`: aggregated data + weekly chart | BE | [x] |
 | 3b | Implement `PATCH /api/v1/parental/children/{id}/screentime`: update limit/bedtime settings | BE | [x] |
-| 4 | Create `frontend/ios/App/App/ScreenTimePlugin.swift`: stub (FamilyControls pending Apple entitlement) | FE | [x] |
-| 5 | Create `frontend/android/.../ScreenTimePlugin.kt`: stub (UsageStatsManager pending) | FE | [x] |
+| 4 | Create `frontend/ios/App/App/ScreenTimePlugin.swift`: stub (FamilyControls pending Apple entitlement) | FE | [ ] |
+| 5 | Create `frontend/android/.../ScreenTimePlugin.kt`: stub (UsageStatsManager pending) | FE | [ ] |
 | 6 | Create `frontend/src/lib/plugins/screentime.ts` + `screentime.web.ts`: Capacitor plugin JS bridge with web fallback | FE | [x] |
 | 7 | Implement in-app Yapper usage tracker: visibility-based 30s tick + localStorage accumulator | FE | [x] |
 | 8 | Build `ScreenTimeDashboard.svelte`: period tabs, per-app bars, SVG chart, limit slider | FE | [x] |
@@ -559,8 +559,8 @@ These prerequisite UI components were built across S7–S11 FE work and wired in
 
 ### S8 Acceptance Criteria
 
-- [~] iOS ScreenTime plugin stub created; real FamilyControls collection pending Apple entitlement
-- [~] Android ScreenTime plugin stub created (Kotlin); real UsageStatsManager collection pending
+- [x] iOS/Android native plugins deferred to V0.2; launch scope is desktop (Tauri) + web PWA only
+- [x] ScreenTime dashboard and web fallback via in-app tracker built; native OS-level collection deferred
 - [x] Screen time dashboard UI built with period tabs, per-app breakdown, SVG weekly chart, limit slider
 - [x] Screen time BE API: report ingestion, parent read/update, daily summary refresh, backend tests
 - [x] Capacitor JS bridge + web fallback + in-app Yapper usage tracker wired into app layout
@@ -570,7 +570,7 @@ These prerequisite UI components were built across S7–S11 FE work and wired in
 - [x] Bot token authenticates and can POST message to test channel
 - [x] In-app session time tracked even without OS-level permission (web fallback via localStorage)
 
-> **S8 Complete** (BE + FE, 2026-03-05). Screen Time: BE + FE + plugin bridge done; native iOS/Android collection stubs present (real OS-level usage requires Apple FamilyControls entitlement + Android UsageStatsManager). Discord BE: `src/discord/mod.rs` (profile import, avatar R2 re-upload), `src/bots/mod.rs` (bot import, SHA-256 token hashing, list/delete). Android stubs converted from Java → Kotlin (2026-03-03). Deferred: Playwright E2E tests.
+> **S8 Complete** (BE + FE, 2026-03-05). Screen Time: BE + FE + web plugin bridge done; native iOS/Android collection deferred to V0.2 (no Capacitor platform set up). Launch scope is desktop (Tauri) + web PWA. Discord BE: `src/discord/mod.rs` (profile import, avatar R2 re-upload), `src/bots/mod.rs` (bot import, SHA-256 token hashing, list/delete). Deferred: Playwright E2E tests, native mobile platform setup.
 
 ---
 
@@ -825,7 +825,7 @@ These prerequisite UI components were built across S7–S11 FE work and wired in
 
 **Goal:** Address all remaining findings from the 2026-03-21 codebase audit. Fix compliance gaps, add test coverage for security-sensitive modules, and complete the bot messaging system.
 
-> **Status update (2026-03-21):** ✅ **COMPLETE.** All W28 + W29 tasks done. Bot plaintext storage, HubSpot webhook, FCM push notifications, emoji cache invalidation, 4 function refactors (all <60 lines), COPPA v2 guard. Test coverage: 217 backend tests (hub, messages, parental, csrf, canvas, explore, servers, users), 52 frontend tests (ws.ts, conversations.ts, signal, stores). `cargo test --lib` and `vitest run` both green.
+> **Status update (2026-03-21):** ✅ **COMPLETE.** All W28 + W29 tasks done. Bot plaintext storage, HubSpot webhook, FCM push notifications, emoji cache invalidation, 4 function refactors (all <60 lines), COPPA v2 guard. Test coverage: 275 backend tests (220 lib/unit + 51 integration; hub, messages, parental, csrf, canvas, explore, servers, users), 102 frontend tests across 24 files (ws.ts, conversations.ts, signal, stores). `cargo test` and `vitest run` both green (re-measured 2026-07-20).
 
 ### Week 28: Compliance Fixes + Bot System
 
@@ -862,9 +862,9 @@ These prerequisite UI components were built across S7–S11 FE work and wired in
 - [x] HubSpot webhook endpoint verifies signatures and updates ticket status
 - [x] FCM push notification delivery working (at least for DM + mention triggers)
 - [x] Emoji cache syncs via WS events without full page reload
-- [x] No function in `backend/src/` exceeds 60 lines body (Rule 4)
+- [ ] No function in `backend/src/` exceeds 60 lines body (Rule 4) — **NOT met.** Re-measured 2026-07-20: 67 functions exceed 60 lines (worst: `users/mod.rs::gdpr_export` 505, `delete_account` 221, `get_profile` 168, `keys/handlers.rs::restore_backup_v2` 167). Tracked as post-launch debt in `LAUNCH_SPRINT_PLAN.md`.
 - [x] `messages/mod.rs`, `parental/mod.rs`, `csrf.rs`, `hub.rs` all have test coverage
-- [x] `cargo test` and `npm run test` both pass with new tests (217 BE + 52 FE)
+- [x] `cargo test` and `npm run test` both pass with new tests (275 BE + 102 FE, re-measured 2026-07-20)
 - [ ] CI green on `main` (pending push)
 
 ---
@@ -935,7 +935,7 @@ These prerequisite UI components were built across S7–S11 FE work and wired in
 **Spec:** `dev docs/CANVAS_EXPANSION_SPEC.md`
 **Migration:** `000029_canvas_expansion.sql`
 
-> **Status (2026-03-22):** ✅ Complete — all backend + frontend implementation done. Migration ready. 0 compile errors, 52/52 FE tests passing, 217 BE tests passing. Pending: production deployment (migration + deploy).
+> **Status (2026-03-22):** ✅ Complete — all backend + frontend implementation done. Migration ready. 0 compile errors, 102 FE tests passing, 275 BE tests passing (re-measured 2026-07-20). Pending: production deployment (migration + deploy).
 
 ### Week 32: Full Implementation
 
@@ -971,7 +971,7 @@ These prerequisite UI components were built across S7–S11 FE work and wired in
 - [x] 13 new WS event types handled in frontend store
 - [x] All 7 canvas components render without errors
 - [x] `svelte-check` reports 0 errors
-- [x] `vitest` reports 52/52 tests passing
+- [x] `vitest` reports all tests passing (102 across 24 files as of 2026-07-20)
 - [ ] Production deployment verified (migration + backend + frontend)
 - [ ] Admin role flags wired to server membership
 

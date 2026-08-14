@@ -49,8 +49,8 @@
 
 <style>
 	.card {
-		background: rgba(255, 255, 255, 0.04);
-		border: 1px solid rgba(255, 255, 255, 0.07);
+		background: var(--color-bg-surface);
+		border: 1px solid var(--color-border);
 		border-radius: 16px;
 		padding: 20px;
 	}
@@ -58,7 +58,7 @@
 	.card-title {
 		font-size: 14px;
 		font-weight: 700;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		margin: 0 0 16px;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
@@ -113,7 +113,7 @@
 	.community-name {
 		font-size: 14px;
 		font-weight: 600;
-		color: #f9fafb;
+		color: var(--color-text-primary);
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -121,13 +121,13 @@
 
 	.community-members {
 		font-size: 12px;
-		color: #6b7280;
+		color: var(--color-text-secondary);
 	}
 
 	.join-btn {
 		padding: 6px 14px;
 		background: rgba(124, 58, 237, 0.15);
-		color: #a78bfa;
+		color: var(--color-brand-text);
 		border: 1px solid rgba(124, 58, 237, 0.3);
 		border-radius: 6px;
 		font-size: 13px;
@@ -143,7 +143,7 @@
 
 	.empty {
 		font-size: 14px;
-		color: #6b7280;
+		color: var(--color-text-secondary);
 		margin: 0;
 	}
 </style>

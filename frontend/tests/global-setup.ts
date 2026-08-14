@@ -1,5 +1,6 @@
 import type { FullConfig } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'fs';
+import { resetSeedMarkers, seedTrustedPrimaryDevice, seedTrustedPrimaryDeviceB } from './auth-helper';
 
 interface AuthData {
 	accessToken: string;
@@ -207,4 +208,14 @@ export default async function globalSetup(_config: FullConfig) {
 			writeFileSync('tests/auth-data.json', JSON.stringify(result.auth, null, 2));
 		}
 	}
+
+	// Device seeding used to happen lazily inside specs. Because each Playwright
+	// worker is its own process, that meant every worker re-seeded (a real login
+	// each time) — the main source of 429 rate-limit failures and a per-spec `node`
+	// spawn. Seed once here instead; workers find the markers and skip.
+	resetSeedMarkers();
+	if (process.env.E2E_EMAIL && process.env.E2E_PASSWORD) {
+		seedTrustedPrimaryDevice();
+	}
+	seedTrustedPrimaryDeviceB();
 }

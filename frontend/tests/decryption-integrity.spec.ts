@@ -101,7 +101,13 @@ async function loginAndWaitReady(
 	await expect(page.locator('[aria-label="Loading Yapper"]')).toHaveCount(0, {
 		timeout: 45_000,
 	});
-	await Promise.all(keyUploads);
+	// Key-upload POSTs only fire on a device's FIRST Signal bootstrap; once the device
+	// has uploaded (pre-seeded in global setup, or a previous run) they never fire and
+	// an unbounded wait hangs until the test timeout. Bounded + best-effort instead.
+	await Promise.race([
+		Promise.all(keyUploads.map((upload) => upload.catch(() => null))),
+		new Promise<void>((resolve) => setTimeout(resolve, 10_000)),
+	]);
 }
 
 async function createDmConversation(session: Session, peerId: string): Promise<string> {

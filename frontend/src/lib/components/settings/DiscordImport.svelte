@@ -99,7 +99,12 @@
 							</button>
 						{/if}
 					{:else}
-						<button class="connect-btn" on:click={() => connect(account.provider)}>
+						<button
+							class="connect-btn"
+							on:click={() => connect(account.provider)}
+							disabled={account.provider === 'apple'}
+							title={account.provider === 'apple' ? 'Coming soon' : undefined}
+						>
 							Connect →
 						</button>
 					{/if}

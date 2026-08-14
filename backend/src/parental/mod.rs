@@ -566,7 +566,7 @@ async fn audit(
     reference_id: Uuid,
     state: &AppState,
 ) {
-    let _ = sqlx::query(
+    if let Err(e) = sqlx::query(
         "INSERT INTO parental_action_audit (parent_user_id, child_user_id, action, reference_id)
          VALUES ($1, $2, $3, $4)",
     )
@@ -575,7 +575,17 @@ async fn audit(
     .bind(action)
     .bind(reference_id)
     .execute(state.db.pool())
-    .await;
+    .await
+    {
+        tracing::error!(
+            error = %e,
+            parent_id = %parent_id,
+            child_id = %child_id,
+            action,
+            reference_id = %reference_id,
+            "failed to write COPPA parental action audit log"
+        );
+    }
 }
 
 #[cfg(test)]

@@ -179,7 +179,7 @@ gh api repos/NikheelR97/Yapper/secret-scanning/alerts --jq '[.[] | select(.state
 
 ### 5.2 MEDIUM — Screen Time Plugins Are Stubs
 
-- **Location:** `frontend/ios/App/App/ScreenTimePlugin.swift`, `frontend/android/.../ScreenTimePlugin.kt`
+- **Location:** ~~`frontend/ios/App/App/ScreenTimePlugin.swift`, `frontend/android/.../ScreenTimePlugin.kt`~~ — **these files do not exist** (verified 2026-07-20). No Capacitor platform has ever been set up; screen-time collection is web-fallback only (localStorage). Native mobile is deferred to V0.2, so this finding is not applicable to the desktop/web launch.
 - **Description:** Both return empty arrays. No real screen time data is collected.
 - **Risk:** Parental controls feature (COPPA-related) is non-functional on mobile.
 - **Recommendation:** Apply for Apple FamilyControls entitlement. Implement Android UsageStatsManager.

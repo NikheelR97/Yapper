@@ -2488,7 +2488,7 @@ pub async fn notify_parent(
         _ => return,
     };
 
-    let _ = sqlx::query(
+    if let Err(e) = sqlx::query(
         "INSERT INTO parent_notifications (parent_user_id, child_user_id, type, reference_id)
          VALUES ($1, $2, $3, $4)",
     )
@@ -2497,7 +2497,17 @@ pub async fn notify_parent(
     .bind(notification_type)
     .bind(reference_id)
     .execute(state.db.pool())
-    .await;
+    .await
+    {
+        tracing::error!(
+            error = %e,
+            parent_id = %parent_id,
+            child_id = %child_id,
+            notification_type,
+            reference_id = %reference_id,
+            "failed to write parent_notifications row"
+        );
+    }
 
     let payload = serde_json::json!({
         "type":         notification_type,
