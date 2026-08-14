@@ -46,7 +46,7 @@
     "@sveltejs/vite-plugin-svelte": "^5.0.0",
     "@tauri-apps/cli": "^2.11.2",
     "@testing-library/svelte": "^5.0.0",
-    "@typescript-eslint/eslint-plugin": "^8.57.2",
+    "@typescript-eslint/eslint-plugin": "^8.60.1",
     "@typescript-eslint/parser": "^8.60.0",
     "allure-playwright": "^3.9.0",
     "dotenv-cli": "^11.0.0",
