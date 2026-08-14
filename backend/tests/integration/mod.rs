@@ -500,6 +500,7 @@ pub mod health;
 pub mod identity;
 pub mod keys;
 pub mod messages;
+pub mod notifications_offline_push;
 pub mod parental;
 pub mod privacy;
 pub mod screentime;
