@@ -2,7 +2,7 @@
 
 > Last updated: 2026-05-27
 >
-> **217 backend unit tests** | **191 frontend E2E tests** across **49 spec files**
+> **275 backend tests** (220 lib/unit + 51 integration; re-measured 2026-07-20) | **102 frontend unit tests** across 24 files | **191 frontend E2E tests** across **49 spec files** *(E2E count not re-verified — the suite has never been run against staging)*
 
 ---
 

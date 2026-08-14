@@ -1,7 +1,7 @@
 # YAPPER — Developer Handover Document
 
 **Last updated:** 2026-05-20 (rev 7)
-**Project status:** Active development — S0-S16 complete; stabilization in progress; Canvas Expansion + E2EE Media deployed; CI/CD production deploy/release automation is paused until the documented release gates are proven
+**Project status:** Active development — S0-S17 complete; Canvas Expansion + E2EE Media deployed. Launch scope is **desktop (Tauri) + web PWA**; native mobile deferred to V0.2. Backend hosting is moving to **self-hosted Coolify** (see [`COOLIFY_RUNBOOK.md`](COOLIFY_RUNBOOK.md)); the paused Fly.io deploy jobs are being retired rather than re-enabled. Current plan of record: [`LAUNCH_SPRINT_PLAN.md`](LAUNCH_SPRINT_PLAN.md).
 
 ---
 
@@ -412,8 +412,8 @@ d:\Development\Claude\yapper\
 │   │       ├── (app)/          ← Explore, Servers, DMs, Profile, Settings
 │   │       └── parent/         ← Parental dashboard
 │   ├── src-tauri/              ← Tauri v2 desktop shell (Rust)
-│   ├── ios/                    ← Capacitor iOS (ScreenTimePlugin.swift)
-│   ├── android/                ← Capacitor Android (ScreenTimePlugin.kt)
+│   ├── src-tauri/              ← Tauri v2 desktop shell (Rust)
+│   ├── svelte.config.js
 │   ├── svelte.config.js
 │   ├── vite.config.ts
 │   └── package.json
@@ -476,8 +476,8 @@ Mitigations for Neon cold starts (500ms–2s):
 | 8 | Explore Page | ✅ Complete | Search (pg_trgm), trending tags (5-min cache), live servers |
 | 9 | User Profiles | ✅ Complete (BE + FE) | Public profiles, follow/unfollow, Hype Moments, BioCard, top communities |
 | 10 | Parental Controls | ✅ Complete (BE + FE) | Child accounts (COPPA DOB), approval workflows, SafetyDashboard, 3-step setup wizard (wizard now collects username/email/password for full `CreateChildInput` payload) |
-| 11 | Screen Time | FE ✅ — BE Pending | `ScreenTimeDashboard.svelte` built; iOS/Android plugins + BE ingestion API pending |
-| 12 | Discord Integration | FE ✅ — BE Pending | `DiscordImport.svelte` + bot migration tool UI built; BE importer + bots/ module pending |
+| 11 | Screen Time | ✅ BE + FE (native pending) | `ScreenTimeDashboard.svelte` + BE ingestion API (`src/screentime/`) both implemented. Native iOS/Android collection does **not** exist — no Capacitor platform is set up; web fallback (localStorage) only. Deferred to V0.2. |
+| 12 | Discord Integration | ✅ Complete (BE + FE) | `DiscordImport.svelte` + bot migration UI; BE `src/discord/` (profile import, avatar R2 re-upload) and `src/bots/` (bot import, SHA-256 token hashing) implemented. |
 | 13 | Custom Emojis | ✅ Complete (BE + FE) | `EmojiPicker`, `EmojiUploader`, `CustomEmojiManager` built; BE emojis/ complete; emoji rendering in MessageList (XSS-safe `:shortcode:` → `<img>`), emoji picker in MessageInput wired end-to-end |
 | 14 | User Settings | ✅ Complete (Appearance + Notifications) — Partial | Appearance + Notifications: DB tables created, `GET/PATCH /api/v2/users/me/appearance|notifications` implemented, FE loads/saves live. Still pending: GDPR data export, profile avatar/banner upload, soft-delete |
 | 15 | Tauri Polish | FE Partial | `TitleBar.svelte` + `KeyboardShortcutsModal.svelte` done; system tray, auto-updater, deep links pending |
@@ -520,7 +520,7 @@ The following cross-cutting UI components were built and wired into `(app)/+layo
 4. **cargo-watch** — `cargo install cargo-watch`
 5. **sqlx-cli** — `cargo install sqlx-cli --no-default-features --features postgres`
 6. **Tauri CLI v2** — `npm install -g @tauri-apps/cli@2`
-7. **Capacitor CLI** — `npm install -g @capacitor/cli@latest`
+7. **Capacitor CLI** — `npm install -g @capacitor/cli@latest` *(V0.2 only — no Capacitor platform is currently set up; not needed for desktop/web work)*
 
 ### Running Locally
 ```bash
@@ -542,6 +542,52 @@ cd frontend && npm run dev
 cd frontend && npm run tauri dev
 # → Tauri window with SvelteKit inside
 ```
+
+### Windows developers: build the backend in Docker, not natively
+
+On Windows 11, native `cargo build`/`cargo test` fails with **`os error 4551 — An Application Control policy has blocked this file`**. This is **Smart App Control** blocking Rust's unsigned build-script executables. Disabling Smart App Control is a one-way, permanent OS change — don't. Build in a Linux container instead (which also matches the deploy target):
+
+```bash
+docker compose up -d          # Postgres on network yapper_default
+
+docker run --rm --network yapper_default \
+  -v "<repo>/backend:/app" \
+  -v yapper_cargo_registry:/usr/local/cargo/registry \
+  -v yapper_target:/target \
+  -w /app \
+  -e SQLX_OFFLINE=true -e CARGO_TARGET_DIR=/target \
+  -e DATABASE_URL=postgres://yapper:yapper_dev@postgres:5432/yapper \
+  -e TEST_DATABASE_URL=postgres://yapper:yapper_dev@postgres:5432/yapper \
+  -e JWT_PRIVATE_KEY_PATH=/app/secrets/jwt_private.pem \
+  rust:1 cargo test
+```
+
+Gotchas that cost real time:
+- **`#[sqlx::test]` reads `DATABASE_URL`, not `TEST_DATABASE_URL`.** Set both, or 14 unit tests fail with `DATABASE_URL must be set`.
+- Integration tests need RS256 keys or they silently skip. Generate with
+  `openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out secrets/jwt_private.pem` (+ `-pubout`).
+  **`backend/secrets/` must never be committed.**
+- Use a separate `CARGO_TARGET_DIR` (volume) so Linux artifacts don't collide with a Windows `target/`.
+- Frontend: `vitest.config.ts` sets `pool: 'forks'`. The default `threads` pool fails to initialize on this toolchain — every test file errors with `Cannot read properties of undefined (reading 'config')`.
+
+### Windows-Specific Notes
+
+**Backend build/test fails with `os error 4551`?** Smart App Control is blocking Rust's unsigned build-script executables. Build and test the backend in Docker instead:
+
+```bash
+# Run backend tests in Docker (recommended on Windows)
+docker run --rm -v D:\Development\Yapper\backend:/workspace \
+  -e SQLX_OFFLINE=true \
+  -e DATABASE_URL=postgres://yapper:yapper_dev@postgres:5432/yapper \
+  -e TEST_DATABASE_URL=postgres://yapper:yapper_dev@postgres:5432/yapper \
+  -e JWT_PRIVATE_KEY_PATH=/workspace/test-key.pem \
+  --network yapper_default \
+  rust:latest bash -c "cd /workspace && cargo test"
+```
+
+Note: `#[sqlx::test]` requires both `DATABASE_URL` (not just `TEST_DATABASE_URL`) and `JWT_PRIVATE_KEY_PATH`, or 14 tests fail with "reading 'config'".
+
+**Frontend vitest fails with "reading 'config'"?** The test pool defaults to threads, which fails to initialize on this toolchain. `vitest.config.ts` now sets `pool: 'forks'` — verify this is present.
 
 ### Required Environment Variables
 See `.env.example` for the full list. Key ones:
@@ -623,7 +669,7 @@ wrangler secret put RESEND_API_KEY  # Set secret
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| Apple FamilyControls entitlement (4+ weeks) | iOS Screen Time blocked | Apply immediately; soft-launch iOS without it |
+| Apple FamilyControls entitlement (4+ weeks) | iOS Screen Time blocked | Not on the launch path — native mobile is deferred to V0.2. Apply when mobile work is scheduled, allowing for the 1–4 week lead time. |
 | Neon 0.5GB storage limit | DB full at ~1000 users | Monitor `pg_database_size()`; upgrade at 400MB |
 | In-memory hub lost on VM restart | Active connections drop | Clients auto-reconnect; undelivered messages replayed from PostgreSQL |
 | Single Fly VM | Single point of failure | Acceptable for MVP; scale to 2 VMs later (requires Redis for hub) |
@@ -690,16 +736,24 @@ For any developer picking up this project:
 
 - `RUSTSEC-2023-0071` — `rsa` via `sqlx-mysql` and `jsonwebtoken` (no patched `rsa` release; sqlx-mysql is unreachable, JWT signing/verification path remains accepted risk pending upstream or auth-library replacement)
 
-**S0–S16 complete. Canvas Expansion + E2EE Media deployed. Code review remediation done.** Priority order:
+**S0–S16 complete. Canvas Expansion + E2EE Media deployed. Code review remediation done.**
 
-1. **E2E Testing** — Run 45 Playwright specs against staging (`e2e-nightly.yml` is manual and defaults to staging, test accounts needed)
-2. **macOS DMG build** — Run on Mac: `cargo tauri build --target universal-apple-darwin`
-3. **iOS build** — Run on Mac: `cd frontend/ios && pod install`, then Xcode archive + App Store Connect upload
-4. **Google Play submission** — Build AAB, create Play Console listing ($25 one-time)
-5. **Wishlist email blast** — Send launch announcement to all wishlist subscribers via Resend
-6. **Generate Tauri signing keys** — `cargo tauri signer generate`, set `TAURI_SIGNING_PRIVATE_KEY` + `TAURI_SIGNING_PASSWORD` as GitHub Secrets
-7. **Apple OAuth credentials** — Create Apple Sign-In service ID, configure redirect URIs
-8. **V0.2 features** — Gamification (XP/badges/leaderboards), game presence engine, LFG board, thread branching
+> **Current plan of record: [`LAUNCH_SPRINT_PLAN.md`](LAUNCH_SPRINT_PLAN.md)** (S17–S19). The priority list below is superseded by it.
+>
+> Two decisions taken 2026-07-20 that change the list:
+> - **Launch scope is desktop (Tauri) + web PWA. Native mobile is deferred to V0.2.** `frontend/ios/` and `frontend/android/` do **not** exist — no Capacitor platform has ever been set up (earlier docs claiming iOS/Android stubs were wrong). iOS/Android, the Apple FamilyControls entitlement, and both store submissions move to V0.2 together.
+> - **Backend hosting moves to self-hosted Coolify**, not an unpaused Fly.io. See [`COOLIFY_RUNBOOK.md`](COOLIFY_RUNBOOK.md). The commented-out Fly deploy jobs in `ci.yml` should be deleted rather than re-enabled; the Cloudflare Pages frontend deploy stays.
+
+Priority order:
+
+1. **E2E Testing** — Run the ~45 Playwright specs against staging (`e2e-nightly.yml` is manual and defaults to staging; seeded test accounts + `E2E_EMAIL`/`E2E_PASSWORD` needed). Never yet executed — the biggest unknown.
+2. **Coolify migration (S18b)** — backend + Postgres + Cloudflare Tunnel + encrypted backups.
+3. **macOS DMG build** — Run on Mac: `cargo tauri build --target universal-apple-darwin`
+4. **Linux AppImage build**
+5. **Generate Tauri signing keys** — `cargo tauri signer generate`, set `TAURI_SIGNING_PRIVATE_KEY` + `TAURI_SIGNING_PASSWORD` as GitHub Secrets
+6. **GitHub Release** with Windows NSIS + macOS DMG + Linux AppImage
+7. **Wishlist email blast** — Send launch announcement to all wishlist subscribers via Resend
+8. **V0.2** — native mobile (Capacitor iOS/Android + store submissions + Apple entitlement), Apple OAuth credentials, mentions push, >60-line refactors, gamification, game presence, LFG board, thread branching
 
 **Completed since last handover (rev 4 → rev 5, 2026-03-22):**
 - Code review remediation (HANDOVER compliance): HIGH-001 (DB error propagation in media/handlers.rs), HIGH-002 (15+ silent `catch(() => {})` fixed with logging/toasts), HIGH-003 (LiveCanvas admin role wired to serversStore), MED-001 (WS reconnect data refresh), MED-003/004 (hub.rs error logging + SAFETY comments), LOW-002 (NonZeroU32 SAFETY comment)
@@ -712,5 +766,5 @@ For any developer picking up this project:
 
 **Completed in rev 4:**
 - Canvas Expansion (S16): Full-stack implementation — migration `000029`, 23 new API endpoints, 13 WS events, 7 FE components
-- Security audit (S14): 0 Critical, 0 High. All compliance fixes applied, 217 BE + 52 FE tests
+- Security audit (S14): 0 Critical, 0 High. All compliance fixes applied, 275 BE (220 lib/unit + 51 integration) + 102 FE (24 test files) passing
 - All Dependabot PRs merged

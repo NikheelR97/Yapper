@@ -91,4 +91,9 @@ psi-result.json
 !/dev docs/STABILIZATION_AUDIT.md
 !/dev docs/STARTUP_CREDITS.md
 !/dev docs/TEST_CATALOG.md
+!/dev docs/LAUNCH_SPRINT_PLAN.md
+!/dev docs/COOLIFY_RUNBOOK.md
 wiki-repo/
+
+# Impeccable design-hook cache (local artifact, not source)
+**/.impeccable/hook.cache.json
